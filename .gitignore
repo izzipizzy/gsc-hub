@@ -1,0 +1,20 @@
+node_modules/
+.svelte-kit/
+build/
+.env
+.env.local
+data/
+*.db
+*.db-shm
+*.db-wal
+.DS_Store
+
+# Output
+.output
+.vercel
+.netlify
+.wrangler
+
+# Vite
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*

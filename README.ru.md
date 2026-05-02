@@ -1,0 +1,221 @@
+# gsc-hub
+
+> [English version](README.md)
+
+## Скриншоты
+
+| Sites — мульти-аккаунт-сводка | Dashboard — карточки со sparkline |
+|---|---|
+| ![Sites](docs/screenshots/sites.png) | ![Dashboard](docs/screenshots/dashboard.png) |
+
+![Top queries](docs/screenshots/queries.png)
+
+Локальный self-hosted мульти-аккаунт хаб для **Google Search Console**. Подключаешь несколько Google-аккаунтов через OAuth, видишь все Search Console сайты в одной таблице, агрегируешь ключи и страницы поверх аккаунтов, дашборд карточек по сайтам с sparkline-графиками и дельтой к предыдущему периоду, по клику на ключ — 16-месячная история позиции. Никаких внешних сервисов, никакие данные GSC не уходят с твоей машины, локально хранятся только OAuth-токены в SQLite.
+
+Сделан как личная альтернатива seogets-style SaaS-инструментам, когда у тебя несколько Google-аккаунтов (личный, рабочий, клиентские) и не хочется логиниться в каждый Search Console отдельно.
+
+> **Статус:** рабочий MVP, используется ежедневно на macOS dev. Production-deploy не входит в коробку (намеренно, см. секцию Architecture).
+
+## Возможности
+
+### Мульти-аккаунт OAuth
+- Подключай произвольное количество Google-аккаунтов. Каждый клик на **Connect Google account** запускает обычный Google consent flow (`webmasters.readonly` scope, `access_type=offline`, `prompt=consent`).
+- Токены хранятся в локальном SQLite-файле (`./data/gsc-hub.db`). Refresh-токены ротируются автоматически; access-токены обновляются прозрачно за 60 секунд до истечения.
+- Отозванные токены детектятся первым 401 от Google: аккаунт помечается как `revoked`, UI просит переподключиться, никаких тихих сбоев.
+
+### Объединённая таблица сайтов (`/properties`, в UI **Sites**)
+- Все Search Console properties со всех подключённых аккаунтов в одной full-bleed таблице.
+- Live-аггрегат на каждый сайт за выбранный период: **Clicks / Impressions / CTR / Avg Pos**, плюс колонка **CSV export** (queries или pages, период настраивается).
+- Сортировка и фильтр через URL: `?days=3|7|28&sort=clicks|impressions|ctr|position|site|account&dir=asc|desc`. Bookmark, шаринг, browser-back работают как ожидаешь.
+- Скрывай сайты, которые не нужны (хранится в localStorage браузера, не синкается между устройствами).
+- Domain properties отображаются как `example.com` (префикс `sc-domain:` GSC обрезается для UI, ссылка по-прежнему ведёт на `https://example.com/`).
+
+### Top queries (агрегированные, сортируемые)
+- Агрегат по ключам поверх всех видимых (не скрытых) сайтов за выбранный период. Clicks, impressions, CTR (вычисляемый), Avg Pos (взвешенный по impressions).
+- Клик на строку разворачивает **inline-график 16-месячной истории** для этого ключа: красная линия позиции + синие столбики impressions, gridlines, подписи диапазона. Агрегация по дням только по видимым сайтам.
+- Client-side сортировка по столбцам (Query / Clicks / Impressions / CTR / Avg Pos), независимо от сортировки таблицы сайтов.
+
+### Top pages (агрегированные, сортируемые)
+- Тот же паттерн что и Top queries, но на уровне URL страниц. Полезно для поиска страницы, которая дала всплеск трафика.
+
+### Dashboard (`/dashboard`)
+- Сетка карточек по сайтам: account label, домен, sparkline дневных кликов за текущий период, четыре метрики с **дельтой к предыдущему периоду той же длины** (например, последние 7 дней vs предыдущие 7 дней). Зелёный/красный, плюс знак `+` / `−` чтобы colour-blind пользователи видели сигнал.
+- Конфигурируемая плотность: **2 / 4 / 6 колонок** через URL `?cols=`. Тот же period filter что и на Sites.
+- Стабильный порядок при перезагрузке (clicks desc, tiebreaker по impressions, потом alphabetically).
+
+### CSV экспорты
+- Queries или pages, последние N дней (соответствует period filter), безопасное имя файла. Стримит `text/csv; charset=utf-8` с `Content-Disposition: attachment`. Скачивается с `/properties/export?account=...&site=...&days=...&dim=query|page`.
+
+### Operator-grade UX
+- **Refresh** сохраняет всё URL-состояние (period, sort, dir, cols) через SvelteKit `invalidateAll()`. Никаких `<form method="POST">` redirect-танцев.
+- Все числа в таблицах — tabular-nums для вертикального выравнивания.
+- Лёгкий hover на строках. Сортируемые заголовки показывают ↑ / ↓.
+- **Никаких server-side кешей.** Каждая загрузка страницы — свежий fan-out по active-аккаунтам. Цена — честная задержка. Польза — ты видишь ровно то, что видит GSC прямо сейчас.
+- Никаких background-задач, cron, очередей, email-рассылок.
+
+## Quickstart
+
+Требования: **Node 22+**, **pnpm**.
+
+```bash
+git clone https://github.com/izzipizzy/gsc-hub.git
+cd gsc-hub
+pnpm install
+cp .env.example .env
+# заполни GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, AUTH_SECRET
+pnpm dev
+```
+
+Открой <http://localhost:5173>, кликни **Connect Google account**, пройди consent, повтори для каждого аккаунта.
+
+## Google Cloud setup
+
+1. Открой <https://console.cloud.google.com/apis/credentials>.
+2. **Create credentials** → **OAuth client ID** → Application type **Web application**, имя `gsc-hub`.
+3. Authorized redirect URIs:
+   - `http://localhost:5173/auth/callback/google` (dev)
+   - `https://your-domain.example/auth/callback/google` (только если будешь деплоить)
+4. Включи **Search Console API** в том же проекте: <https://console.cloud.google.com/apis/library/searchconsole.googleapis.com>.
+5. **OAuth consent screen** (теперь это **Google Auth Platform → Audience**): User Type — **External**. Дальше либо **Publish** (любой Google-аккаунт сможет залогиниться), либо оставь в **Testing** и добавь свои email-адреса в Test users.
+6. Скопируй Client ID и Client Secret в `.env`. Сгенерируй `AUTH_SECRET` через `openssl rand -base64 32`.
+
+`webmasters.readonly` технически считается у Google «restricted scope», но для personal-tier использования (несколько аккаунтов) формальная verification не требуется. На consent screen увидишь предупреждение «unverified app» если не публикуешь приложение, кликни **Advanced → Go to gsc-hub (unsafe)** чтобы продолжить.
+
+## Конфигурация
+
+Переменные `.env` (см. `.env.example`):
+
+| ключ | обязательный | описание |
+|------|-------------|----------|
+| `GOOGLE_CLIENT_ID` | да | OAuth Web Application client ID |
+| `GOOGLE_CLIENT_SECRET` | да | OAuth Web Application client secret |
+| `AUTH_SECRET` | да | Случайный 32-byte base64 secret для Auth.js (`openssl rand -base64 32`) |
+| `AUTH_TRUST_HOST` | рекомендуется | `true` для self-hosted/proxy |
+| `DB_PATH` | опционально | Путь к SQLite-файлу. По умолчанию `./data/gsc-hub.db` |
+
+## Архитектура
+
+```
+[браузер] ──> [SvelteKit (Node) :5173] ──> Google Search Console API
+                       │
+                       └──> ./data/gsc-hub.db  (только OAuth-токены)
+```
+
+Один Node-процесс. Один SQLite-файл. Схема БД — одна таблица:
+
+```sql
+CREATE TABLE google_accounts (
+  id            TEXT PRIMARY KEY,    -- google sub
+  email         TEXT NOT NULL,
+  label         TEXT,
+  access_token  TEXT NOT NULL,
+  refresh_token TEXT NOT NULL,
+  expires_at    INTEGER NOT NULL,
+  scope         TEXT NOT NULL,
+  status        TEXT NOT NULL DEFAULT 'active',  -- active | revoked | error
+  last_error    TEXT,
+  added_at      INTEGER NOT NULL
+);
+```
+
+**Никакие данные GSC не сохраняются.** Любой запрос на `/properties`, `/dashboard`, query-history endpoint или CSV-экспорт делает свежий fan-out в Google. Скрытые сайты живут только в localStorage браузера.
+
+Это упрощает архитектуру, убирает класс багов «устаревший кеш», и делает БД-файл крошечным (несколько КБ на аккаунт). Цена — задержка page-load пропорциональна количеству активных сайтов: примерно 2N параллельных API-вызовов для Sites, 3N для Dashboard, 1N для query history.
+
+### Auth.js custom signIn callback
+
+Auth.js v5 настроен с кастомным `signIn` callback, который **вместо создания app-сессии апсертит профиль и токены Google в `google_accounts`** по `profile.sub`, потом возвращает `'/'` чтобы Auth.js сделал редирект без сессионной куки. У приложения нет понятия «залогиненный пользователь», есть только локальный trust (single-user тул, защищённый `127.0.0.1` binding в dev).
+
+## Стек
+
+- [SvelteKit](https://kit.svelte.dev/) (Svelte 5 runes) + TypeScript, Node adapter
+- [Auth.js](https://authjs.dev/) (`@auth/sveltekit`) для Google OAuth
+- [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) для локального хранилища токенов
+- [TailwindCSS v3](https://tailwindcss.com/) для стилей (без расширения дефолтной палитры; токены задокументированы в [DESIGN.md](DESIGN.md))
+- [Vitest](https://vitest.dev/) для unit-тестов
+
+Никаких chart-библиотек: каждый sparkline и query-history chart нарисованы руками SVG (`<rect>` + `<path>`). Никаких icon-fonts: каждая иконка — inline 14×14 SVG.
+
+## Структура проекта
+
+```
+gsc-hub/
+├── PRODUCT.md             — стратегический контекст (юзеры, принципы, anti-references)
+├── DESIGN.md              — визуальная система (цвета, типографика, компоненты, правила)
+├── DESIGN.json            — sidecar с HTML/CSS-снипетами на компонент
+├── CLAUDE.md              — инструкции для AI-ассистентов работающих в этой репе
+├── src/
+│   ├── auth.ts            — SvelteKitAuth конфиг + custom signIn callback
+│   ├── hooks.server.ts
+│   ├── app.css            — Tailwind + Operator Console utilities
+│   ├── lib/
+│   │   ├── server/
+│   │   │   ├── db.ts      — SQLite open + миграция
+│   │   │   ├── accounts.ts — CRUD по google_accounts (единственный файл с SQL)
+│   │   │   ├── google.ts  — GSC client, refresh, fan-out, search analytics
+│   │   │   └── csv.ts     — RFC 4180 CSV writer
+│   │   └── utils/site.ts  — обрезает sc-domain: префикс, строит правильный href
+│   └── routes/
+│       ├── +page.svelte           — Accounts list (/)
+│       ├── auth/[...auth]/        — Auth.js catch-all
+│       ├── accounts/[id]/         — delete, relabel
+│       └── properties/
+│           ├── +page.svelte       — Sites table + Top queries + Top pages
+│           ├── export/+server.ts  — CSV stream
+│           └── query-history/+server.ts — 16-месячная история по ключу
+├── tests/                          — Vitest, моки fetch/env
+└── data/gsc-hub.db                 — gitignored, создаётся при первом запуске
+```
+
+## Команды
+
+| команда | описание |
+|---|---|
+| `pnpm dev` | Dev-сервер на http://localhost:5173 |
+| `pnpm build` | Production build (Node target) |
+| `pnpm preview` | Preview production-сборки |
+| `pnpm test` | Запустить Vitest |
+| `pnpm test:watch` | Watch-режим |
+| `pnpm check` | `svelte-check` type-check |
+
+## Тесты
+
+31 unit-тест покрывает server-модули:
+- SQLite миграция и схема (`tests/db.test.ts`)
+- Accounts CRUD включая `markActive` / `markRevoked` / `markError` (`tests/accounts.test.ts`)
+- GSC client: skew window для refresh-токена, 5xx → markError, 401/invalid_grant → markRevoked, fan-out агрегация, per-site queries / pages / daily breakdown / query-history (`tests/google.test.ts`)
+- RFC 4180 CSV escaping (`tests/csv.test.ts`)
+
+Маршруты не покрыты unit-тестами; smoke-тестятся через `curl` против `pnpm dev`.
+
+## Приватность и данные
+
+- На твоей машине сохраняется только строка с OAuth-токеном на каждый подключённый Google-аккаунт.
+- Никакие данные Search Console (queries, clicks, impressions, URL страниц, позиции) никогда не пишутся на диск.
+- Никакой аналитики, никакой телеметрии, никаких outbound-вызовов кроме Google API.
+- SQLite-файл лежит в `./data/` (gitignored). Удали его — все подключения сбросятся.
+- Токены хранятся plaintext. Это приемлемо для локального single-user тула; зашифруй at rest если когда-нибудь будешь выставлять это за пределы `127.0.0.1`.
+
+## Деплой за пределы localhost (не входит в коробку)
+
+В репе нет production-deploy сценария по умолчанию. Если хочешь выставить это на хостнейме (`gsc.your-domain`):
+
+- Запусти через `pm2 start build/index.js` после `pnpm build`, listen на `127.0.0.1`.
+- Поставь перед ним [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) или любой reverse-proxy.
+- Защити **Cloudflare Access** (или другим identity-aware proxy) с allowlist по своему email — у приложения нет встроенной app-аутентификации, только Google-connection flow.
+- Добавь production callback URL в свой Google OAuth client.
+
+Это намеренно не зашито в код: deploy зависит от среды, тул работает и без него.
+
+## Roadmap (Phase B, ещё не сделано)
+
+- Daily background pull агрегатов в Postgres для трендов и сравнения периодов длиной в недели/месяцы без перезапросов GSC на каждый клик.
+- Графики с tooltip'ами на hover в карточках dashboard.
+- URL Inspection bulk + sitemap monitoring.
+- Алерты на падения трафика.
+
+MVP намеренно cache-free; Phase B добавит кеш когда usage покажет что нужен. Пока — каждая загрузка свежая.
+
+## Лицензия
+
+MIT. См. [LICENSE](LICENSE).

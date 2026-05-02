@@ -1,0 +1,301 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-05-02T00:00:00Z",
+  "title": "Design System: gsc-hub",
+  "extensions": {
+    "colorMeta": {
+      "operator-blue": {
+        "role": "primary",
+        "displayName": "Operator Blue",
+        "canonical": "#2563eb",
+        "tonalRamp": ["#172554", "#1e3a8a", "#1e40af", "#1d4ed8", "#2563eb", "#3b82f6", "#60a5fa", "#93c5fd"]
+      },
+      "operator-blue-deep": {
+        "role": "primary-state",
+        "displayName": "Operator Blue Deep (hover)",
+        "canonical": "#1d4ed8",
+        "tonalRamp": []
+      },
+      "operator-blue-mist": {
+        "role": "primary-soft",
+        "displayName": "Operator Blue Mist",
+        "canonical": "#dbeafe",
+        "tonalRamp": []
+      },
+      "operator-blue-haze": {
+        "role": "primary-soft",
+        "displayName": "Operator Blue Haze",
+        "canonical": "#eff6ff",
+        "tonalRamp": []
+      },
+      "rank-decay-red": {
+        "role": "tertiary-chart",
+        "displayName": "Rank Decay Red",
+        "canonical": "#dc2626",
+        "tonalRamp": ["#450a0a", "#7f1d1d", "#991b1b", "#b91c1c", "#dc2626", "#ef4444", "#f87171", "#fca5a5"]
+      },
+      "drift-red": {
+        "role": "destructive",
+        "displayName": "Drift Red",
+        "canonical": "#b91c1c",
+        "tonalRamp": []
+      },
+      "drift-red-tint": {
+        "role": "destructive-soft",
+        "displayName": "Drift Red Tint",
+        "canonical": "#fee2e2",
+        "tonalRamp": []
+      },
+      "drift-red-vapor": {
+        "role": "destructive-soft",
+        "displayName": "Drift Red Vapor",
+        "canonical": "#fef2f2",
+        "tonalRamp": []
+      },
+      "alert-red-edge": {
+        "role": "destructive-state",
+        "displayName": "Alert Red Edge",
+        "canonical": "#fca5a5",
+        "tonalRamp": []
+      },
+      "drift-red-ink": {
+        "role": "destructive-text",
+        "displayName": "Drift Red Ink",
+        "canonical": "#991b1b",
+        "tonalRamp": []
+      },
+      "live-pulse-green": {
+        "role": "positive",
+        "displayName": "Live Pulse Green",
+        "canonical": "#16a34a",
+        "tonalRamp": ["#052e16", "#14532d", "#166534", "#15803d", "#16a34a", "#22c55e", "#4ade80", "#86efac"]
+      },
+      "live-pulse-tint": {
+        "role": "positive-soft",
+        "displayName": "Live Pulse Tint",
+        "canonical": "#dcfce7",
+        "tonalRamp": []
+      },
+      "live-pulse-ink": {
+        "role": "positive-text",
+        "displayName": "Live Pulse Ink",
+        "canonical": "#166534",
+        "tonalRamp": []
+      },
+      "warning-amber-tint": {
+        "role": "warning-soft",
+        "displayName": "Warning Amber Tint",
+        "canonical": "#fef9c3",
+        "tonalRamp": []
+      },
+      "warning-amber-ink": {
+        "role": "warning-text",
+        "displayName": "Warning Amber Ink",
+        "canonical": "#854d0e",
+        "tonalRamp": []
+      },
+      "impression-mist": {
+        "role": "tertiary-chart-bg",
+        "displayName": "Impression Mist",
+        "canonical": "#bfdbfe",
+        "tonalRamp": []
+      },
+      "console-fog-50": {
+        "role": "neutral",
+        "displayName": "Console Fog 50",
+        "canonical": "#f9fafb",
+        "tonalRamp": ["#030712", "#111827", "#1f2937", "#374151", "#4b5563", "#6b7280", "#9ca3af", "#d1d5db"]
+      },
+      "console-fog-100": {
+        "role": "neutral",
+        "displayName": "Console Fog 100",
+        "canonical": "#f3f4f6",
+        "tonalRamp": []
+      },
+      "console-fog-200": {
+        "role": "neutral",
+        "displayName": "Console Fog 200",
+        "canonical": "#e5e7eb",
+        "tonalRamp": []
+      },
+      "console-fog-300": {
+        "role": "neutral",
+        "displayName": "Console Fog 300",
+        "canonical": "#d1d5db",
+        "tonalRamp": []
+      },
+      "console-fog-400": {
+        "role": "neutral-text",
+        "displayName": "Console Fog 400",
+        "canonical": "#9ca3af",
+        "tonalRamp": []
+      },
+      "console-fog-500": {
+        "role": "neutral-text",
+        "displayName": "Console Fog 500",
+        "canonical": "#6b7280",
+        "tonalRamp": []
+      },
+      "console-fog-600": {
+        "role": "neutral-text",
+        "displayName": "Console Fog 600",
+        "canonical": "#4b5563",
+        "tonalRamp": []
+      },
+      "console-fog-700": {
+        "role": "neutral-text",
+        "displayName": "Console Fog 700",
+        "canonical": "#374151",
+        "tonalRamp": []
+      },
+      "console-fog-800": {
+        "role": "neutral-text-strong",
+        "displayName": "Console Fog 800",
+        "canonical": "#1f2937",
+        "tonalRamp": []
+      },
+      "paper-white": {
+        "role": "surface",
+        "displayName": "Paper White",
+        "canonical": "#ffffff",
+        "tonalRamp": []
+      }
+    },
+    "typographyMeta": {
+      "page-title": { "displayName": "Page Title", "purpose": "Top-of-page title. One per route." },
+      "section-title": { "displayName": "Section Title", "purpose": "Top queries / Top pages / Errors block headings." },
+      "body": { "displayName": "Body", "purpose": "Default size for tables, forms, dashboard card bodies." },
+      "metric-number": { "displayName": "Metric Number", "purpose": "Large numbers in dashboard card metric grids." },
+      "caption": { "displayName": "Caption", "purpose": "Small captions, status badges, account labels, delta text." }
+    },
+    "shadows": [
+      {
+        "name": "site-card-lift",
+        "value": "0 1px 2px 0 rgb(0 0 0 / 0.05)",
+        "purpose": "Slight separation for dashboard <article> cards from the page background. Only place a shadow appears."
+      }
+    ],
+    "motion": [],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "xl", "value": "1280px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Main call-to-action: Connect Google account, active period/columns toggle.",
+      "html": "<button class=\"ds-btn-primary\">+ Connect Google account</button>",
+      "css": ".ds-btn-primary { background: #2563eb; color: #ffffff; padding: 8px 16px; border: none; border-radius: 4px; font-size: 0.875rem; font-weight: 400; cursor: pointer; transition: background 120ms ease-out; } .ds-btn-primary:hover { background: #1d4ed8; } .ds-btn-primary:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Quiet action: Refresh, Hide, inactive period/columns toggle.",
+      "html": "<button class=\"ds-btn-secondary\">Refresh</button>",
+      "css": ".ds-btn-secondary { background: #f3f4f6; color: #374151; padding: 8px 16px; border: none; border-radius: 4px; font-size: 0.875rem; font-weight: 400; cursor: pointer; transition: background 120ms ease-out; } .ds-btn-secondary:hover { background: #e5e7eb; } .ds-btn-secondary:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }"
+    },
+    {
+      "name": "Destructive Button",
+      "kind": "button",
+      "refersTo": "button-destructive",
+      "description": "Delete account. Compact, never accent.",
+      "html": "<button class=\"ds-btn-destructive\">Delete</button>",
+      "css": ".ds-btn-destructive { background: #fee2e2; color: #b91c1c; padding: 4px 8px; border: none; border-radius: 4px; font-size: 0.875rem; font-weight: 400; cursor: pointer; transition: background 120ms ease-out, color 120ms ease-out; } .ds-btn-destructive:hover { background: #fca5a5; color: #991b1b; }"
+    },
+    {
+      "name": "Status Badge — Active",
+      "kind": "chip",
+      "refersTo": "badge-active",
+      "description": "Healthy connected account.",
+      "html": "<span class=\"ds-badge-active\">active</span>",
+      "css": ".ds-badge-active { display: inline-block; background: #dcfce7; color: #166534; border-radius: 4px; padding: 4px 8px; font-size: 0.75rem; font-weight: 400; }"
+    },
+    {
+      "name": "Status Badge — Revoked",
+      "kind": "chip",
+      "refersTo": "badge-revoked",
+      "description": "Token rejected by Google. User must reconnect.",
+      "html": "<span class=\"ds-badge-revoked\" title=\"refresh 400: invalid_grant\">revoked</span>",
+      "css": ".ds-badge-revoked { display: inline-block; background: #fee2e2; color: #991b1b; border-radius: 4px; padding: 4px 8px; font-size: 0.75rem; font-weight: 400; }"
+    },
+    {
+      "name": "Properties Table Row",
+      "kind": "custom",
+      "refersTo": "table-row",
+      "description": "One row in /properties site table — full-bleed, only border-b.",
+      "html": "<table class=\"ds-table\"><thead><tr><th>Site URL</th><th>Permission</th><th>Account</th><th>Clicks</th><th>Impressions</th></tr></thead><tbody><tr><td><a class=\"ds-link\" href=\"https://example.com/\">example.com</a></td><td>siteOwner</td><td>analyst@example.com</td><td>1,243</td><td>18,421</td></tr></tbody></table>",
+      "css": ".ds-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; color: #1f2937; } .ds-table thead tr { border-bottom: 1px solid #e5e7eb; text-align: left; } .ds-table tbody tr { border-bottom: 1px solid #e5e7eb; } .ds-table th, .ds-table td { padding: 8px 8px 8px 0; font-weight: 400; } .ds-table th { color: #1f2937; font-weight: 700; } .ds-link { color: #2563eb; text-decoration: none; } .ds-link:hover { text-decoration: underline; }"
+    },
+    {
+      "name": "Site Card (Dashboard)",
+      "kind": "card",
+      "refersTo": "card-site",
+      "description": "Per-site card on /dashboard with sparkline and metric grid.",
+      "html": "<article class=\"ds-card-site\"><header class=\"ds-card-header\"><div class=\"ds-card-account\">analyst@example.com</div><a class=\"ds-card-title\" href=\"https://example.com/\">example.com</a></header><svg viewBox=\"0 0 100 30\" class=\"ds-card-spark\"><path d=\"M0,18 L20,12 L40,15 L60,8 L80,11 L100,5\" stroke=\"#2563eb\" stroke-width=\"1.5\" fill=\"none\" /></svg><dl class=\"ds-card-metrics\"><div><dt>Clicks</dt><dd class=\"ds-card-value\">1,243</dd><dd class=\"ds-card-delta-pos\">+12.4%</dd></div><div><dt>Impressions</dt><dd class=\"ds-card-value\">18,421</dd><dd class=\"ds-card-delta-pos\">+5.1%</dd></div><div><dt>CTR</dt><dd class=\"ds-card-value\">6.7%</dd><dd class=\"ds-card-delta-neg\">-0.3%</dd></div><div><dt>Avg Pos</dt><dd class=\"ds-card-value\">8.4</dd><dd class=\"ds-card-delta-pos\">-1.2%</dd></div></dl></article>",
+      "css": ".ds-card-site { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); } .ds-card-header { margin-bottom: 12px; } .ds-card-account { font-size: 0.75rem; color: #6b7280; } .ds-card-title { display: block; font-size: 0.875rem; font-weight: 500; color: #2563eb; word-break: break-all; text-decoration: none; } .ds-card-title:hover { text-decoration: underline; } .ds-card-spark { display: block; height: 48px; width: 100%; margin-bottom: 12px; } .ds-card-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.875rem; margin: 0; } .ds-card-metrics dt { font-size: 0.75rem; color: #6b7280; margin: 0; } .ds-card-metrics dd { margin: 0; } .ds-card-value { font-weight: 600; } .ds-card-delta-pos { font-size: 0.75rem; color: #16a34a; } .ds-card-delta-neg { font-size: 0.75rem; color: #dc2626; }"
+    },
+    {
+      "name": "Period Toggle",
+      "kind": "nav",
+      "refersTo": "button-secondary",
+      "description": "URL-driven 3/7/28-day period switcher. Active link is primary, others secondary.",
+      "html": "<div class=\"ds-toggle\"><span class=\"ds-toggle-label\">Period:</span><a class=\"ds-toggle-btn\" href=\"?days=3\">3d</a><a class=\"ds-toggle-btn\" href=\"?days=7\">7d</a><a class=\"ds-toggle-btn ds-toggle-active\" href=\"?days=28\">28d</a></div>",
+      "css": ".ds-toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 0.875rem; } .ds-toggle-label { color: #6b7280; } .ds-toggle-btn { padding: 4px 12px; border-radius: 4px; background: #f3f4f6; color: #374151; text-decoration: none; transition: background 120ms ease-out; } .ds-toggle-btn:hover { background: #e5e7eb; } .ds-toggle-active, .ds-toggle-active:hover { background: #2563eb; color: #ffffff; }"
+    },
+    {
+      "name": "Query History Chart",
+      "kind": "custom",
+      "refersTo": "card-site",
+      "description": "Inline expansion under a clicked query row — 16-month position line + impressions bars.",
+      "html": "<div class=\"ds-history\"><div class=\"ds-history-meta\">Aggregated across 12 visible sites. Position: 4.2–18.7. Max daily impressions: 240.</div><svg viewBox=\"0 0 800 200\" class=\"ds-history-svg\"><rect x=\"40\" y=\"120\" width=\"3\" height=\"50\" fill=\"#bfdbfe\"></rect><rect x=\"100\" y=\"100\" width=\"3\" height=\"70\" fill=\"#bfdbfe\"></rect><rect x=\"160\" y=\"80\" width=\"3\" height=\"90\" fill=\"#bfdbfe\"></rect><rect x=\"220\" y=\"60\" width=\"3\" height=\"110\" fill=\"#bfdbfe\"></rect><path d=\"M40,30 L100,42 L160,55 L220,38 L280,28 L340,32 L400,40 L460,30\" stroke=\"#dc2626\" stroke-width=\"1.5\" fill=\"none\"></path><text x=\"36\" y=\"13\" text-anchor=\"end\" font-size=\"10\" fill=\"#dc2626\">4.2</text><text x=\"36\" y=\"170\" text-anchor=\"end\" font-size=\"10\" fill=\"#dc2626\">18.7</text></svg><div class=\"ds-history-legend\"><span class=\"ds-history-legend-item\"><span class=\"ds-history-swatch ds-history-swatch-line\"></span>Position (lower = better)</span><span class=\"ds-history-legend-item\"><span class=\"ds-history-swatch ds-history-swatch-bar\"></span>Impressions per day</span></div></div>",
+      "css": ".ds-history { background: #f9fafb; padding: 12px; border-radius: 4px; } .ds-history-meta { font-size: 0.75rem; color: #6b7280; margin-bottom: 8px; } .ds-history-svg { width: 100%; max-width: 100%; height: auto; } .ds-history-legend { display: flex; gap: 16px; margin-top: 4px; font-size: 0.75rem; color: #6b7280; } .ds-history-legend-item { display: inline-flex; align-items: center; gap: 4px; } .ds-history-swatch { display: inline-block; width: 12px; height: 12px; } .ds-history-swatch-line { background: #dc2626; } .ds-history-swatch-bar { background: #bfdbfe; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Operator's Console",
+    "overview": "gsc-hub визуально напоминает терминал диспетчера, а не маркетинговый дашборд. Сетка таблиц во всю ширину окна, без декоративных карточек и теней, без отступов-впрок. Числа и домены — главные жители страницы, всё остальное служит читаемости. Палитра — практически чёрно-белая с одним рабочим синим (#2563eb) на интерактив и тремя статусными (зелёный жив, красный отозван, янтарный сбоит). Графики — два цвета без тултипов: rgb(220 38 38) для позиции, rgb(191 219 254) для столбиков impressions. Этот язык явно отвергает Salesforce-захламлённость, Notion-эмодзи, hero-метрики SaaS, AI-фиолетово-розовые градиенты, glassmorphism, тяжёлые chart-libs. Тон — Stripe Dashboard и Linear: спокойный, плотный, доверяет цифрам.",
+    "keyCharacteristics": [
+      "Full-bleed layout (w-full p-6) — никаких max-w-* ограничителей.",
+      "Mono-accent: один рабочий синий, всё остальное — нейтрали и статусы.",
+      "Flat surfaces — теней почти нет, разделение через border-b и tonal layering.",
+      "Density-first: text-sm (14px) как базовый размер тела, py-2 строки таблиц.",
+      "SVG-графики собраны вручную (<path>, <rect>) без библиотек."
+    ],
+    "rules": [
+      { "name": "The One-Voice Rule", "body": "Operator Blue — единственный «громкий» цвет интерфейса. Если на экране два разных синих или два разных зелёных — это ошибка композиции, а не вариативность. Статусные цвета (зелёный/красный/янтарь) применяются строго в роли индикатора состояния, никогда декоративно.", "section": "colors" },
+      { "name": "The No-Gradient Rule", "body": "Цвета — плоские. Никаких linear-gradient, radial-gradient, background-clip: text. Ни в кнопках, ни в заголовках, ни в фонах. Один цвет — одна плоскость.", "section": "colors" },
+      { "name": "The System-Font Rule", "body": "font-family — только системный sans-стек. Ни Inter, ни SF Pro Display, ни Roboto. Производительность и аутентичность ОС важнее «дизайнерского» шрифта.", "section": "typography" },
+      { "name": "The Numbers-Don't-Whisper Rule", "body": "Метрики выводятся через Intl.NumberFormat('en-US') с разделителями. Числа без разделителей в таблице из 50 строк — нечитаемы.", "section": "typography" },
+      { "name": "The Flat-By-Default Rule", "body": "Любой новый компонент рисуется без тени. Тень добавляется только если без неё компонент сливается с соседом. Никаких декоративных теней «для глубины».", "section": "elevation" },
+      { "name": "The No-Glass Rule", "body": "backdrop-filter, filter: blur, полупрозрачные фоны с blur — запрещены. Glassmorphism является явным анти-референсом PRODUCT.md.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do держать full-bleed layout (w-full p-6). Любой новый верхнеуровневый <main> использует именно это.",
+      "Do использовать text-sm (14px) как базовый размер тела. Метрики, таблицы, формы — всё в нём.",
+      "Do Tailwind-default colors через семантические описательные имена в DESIGN.md/JSON.",
+      "Do хранить состояние страницы (period, sort, dir, cols) в URL query-params.",
+      "Do использовать Intl.NumberFormat('en-US').format(n) для всех целых чисел в таблицах.",
+      "Do отображать домен через displaySite(siteUrl) — sc-domain: префикс GSC скрывается.",
+      "Do дублировать цвет дельт знаком (+12.4% / −3.0%) — для colour-blind users.",
+      "Do дать каждому external-link target=\"_blank\" rel=\"noopener noreferrer\"."
+    ],
+    "donts": [
+      "Don't добавлять max-w-* обёртки на главный <main>. PRODUCT.md явно требует «полную ширину окна».",
+      "Don't использовать border-left или border-right >1px как декоративную полосу слева у карточки/строки.",
+      "Don't использовать background-clip: text с градиентом ни в одном заголовке. Gradient-text — анти-референс.",
+      "Don't использовать backdrop-filter: blur, filter: blur, bg-white/70 для glassmorphism. Анти-референс.",
+      "Don't делать hero-метрики уровня Salesforce. Числа в карточках — text-sm font-semibold, не text-5xl.",
+      "Don't добавлять chart.js, ECharts, ApexCharts, Recharts. SVG-графики собираются вручную.",
+      "Don't добавлять Inter, SF Pro, Roboto, любой @import url('https://fonts...'). Только системный sans-стек.",
+      "Don't использовать эмодзи в UI или иконки sparkle/✨ в любых заголовках. Анти-референс.",
+      "Don't обёртывать таблицу в <div class=\"card\"> или <section class=\"rounded-xl shadow-md p-6 border\">.",
+      "Don't превращать Refresh в полноценный <form method=\"POST\"> с redirect — должен быть invalidateAll() чтобы URL state сохранялся."
+    ]
+  }
+}

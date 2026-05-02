@@ -1,0 +1,131 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    color: theme('colors.gray.800');
+    background: #ffffff;
+    -webkit-font-smoothing: antialiased;
+  }
+  table {
+    font-variant-numeric: tabular-nums;
+  }
+  /* respect reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+  }
+}
+
+@layer components {
+  /* App toolbar — used on every top-level page header */
+  .app-toolbar {
+    @apply mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-gray-200 pb-4;
+  }
+  .app-toolbar-left {
+    @apply flex flex-col gap-1;
+  }
+  .app-toolbar-right {
+    @apply flex flex-wrap items-center gap-3;
+  }
+  .app-toolbar-divider {
+    @apply h-5 w-px bg-gray-200;
+  }
+  .app-breadcrumbs {
+    @apply flex items-center gap-2 text-xs text-gray-500;
+  }
+  .app-breadcrumbs a {
+    @apply text-gray-500 hover:text-gray-800 hover:underline;
+  }
+  .app-pagetitle {
+    @apply text-2xl font-bold tracking-tight text-gray-900;
+  }
+  /* Segmented control — for period (3/7/28) + columns (2/4/6) toggles */
+  .app-segmented {
+    @apply inline-flex items-center gap-0.5 rounded-md bg-gray-100 p-0.5;
+  }
+  .app-segmented-label {
+    @apply px-2 text-xs text-gray-500;
+  }
+  .app-segmented a {
+    @apply rounded px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors duration-150 hover:text-gray-900;
+  }
+  .app-segmented a.is-active {
+    @apply bg-white text-gray-900 shadow-sm;
+  }
+  /* Pill button — small icon + label */
+  .app-pill {
+    @apply inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors duration-150;
+  }
+  .app-pill-secondary {
+    @apply bg-gray-100 hover:bg-gray-200;
+  }
+  .app-pill-primary {
+    @apply bg-blue-600 text-white hover:bg-blue-700;
+  }
+  /* Section title pattern — h2 with subtitle */
+  .app-section {
+    @apply mt-12;
+  }
+  .app-section-head {
+    @apply mb-4 flex items-baseline justify-between gap-3 border-b border-gray-200 pb-2;
+  }
+  .app-section-title {
+    @apply text-base font-semibold tracking-tight text-gray-900;
+  }
+  .app-section-sub {
+    @apply text-xs text-gray-500;
+  }
+  /* Status dot inside badges */
+  .app-status-dot {
+    @apply mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle;
+  }
+  /* Errors plate */
+  .app-errors {
+    @apply mb-6 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-900;
+  }
+  .app-errors-title {
+    @apply mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-red-700;
+  }
+  /* Empty state */
+  .app-empty {
+    @apply rounded border border-dashed border-gray-200 px-4 py-8 text-center;
+  }
+  .app-empty-title {
+    @apply text-sm font-medium text-gray-700;
+  }
+  .app-empty-sub {
+    @apply mt-1 text-xs text-gray-500;
+  }
+  /* Table primitives */
+  .app-table {
+    @apply w-full border-collapse text-sm;
+  }
+  .app-table thead tr {
+    @apply border-b border-gray-200 text-left text-xs font-semibold uppercase tracking-wide text-gray-500;
+  }
+  .app-table thead th {
+    @apply py-2 font-semibold;
+  }
+  .app-table tbody tr {
+    @apply border-b border-gray-100 transition-colors duration-150;
+  }
+  .app-table tbody tr:hover {
+    @apply bg-gray-50;
+  }
+  .app-table tbody tr.is-hidden-row {
+    @apply opacity-50;
+  }
+  .app-table td {
+    @apply py-2 align-middle;
+  }
+  .app-num {
+    @apply font-mono text-[13px] tabular-nums;
+  }
+  .app-footer {
+    @apply mt-16 flex flex-wrap items-center justify-center gap-2 border-t border-gray-100 px-6 py-4 text-[11px] text-gray-400;
+  }
+  .app-footer a {
+    @apply text-gray-500 transition-colors duration-150 hover:text-gray-800 hover:underline;
+  }
+}
