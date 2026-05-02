@@ -29,6 +29,7 @@ Built as a personal alternative to seogets-style SaaS tools when you have multip
 - URL-driven sort and filter: `?days=3|7|28&sort=clicks|impressions|ctr|position|site|account&dir=asc|desc`. Bookmark, share, browser-back work as expected.
 - Hide sites you don't care about (kept in localStorage per browser; doesn't sync).
 - Domain properties displayed as `example.com` (the `sc-domain:` GSC prefix is stripped for display, link still goes to `https://example.com/`).
+- Click any site row to expand a quick **URL Inspection** report for its top 10 URLs (verdict, coverage, robots, last crawl, canonical mismatch). Uses Google's URL Inspection API; daily quota is 2000 per Google account.
 
 ### Top queries (aggregated, sortable)
 - Aggregated query-level rollup across all visible (non-hidden) sites for the selected period. Clicks, impressions, CTR (computed), Avg Pos (impression-weighted).

@@ -12,7 +12,8 @@ import {
   fetchPerSiteQueries,
   fetchPerSitePages,
   fetchDailyBreakdown,
-  fetchQueryHistory
+  fetchQueryHistory,
+  bulkInspect
 } from '../src/lib/server/google';
 
 const REFRESH_URL = 'https://oauth2.googleapis.com/token';
@@ -655,5 +656,61 @@ describe('google.fetchQueryHistory', () => {
     expect(result.entries[0].rows).toHaveLength(2);
     expect(result.entries[0].rows[0].date).toBe('2026-04-01');
     expect(result.entries[0].rows[1].position).toBe(4.5);
+  });
+});
+
+describe('google.bulkInspect', () => {
+  let dir: string;
+  let db: Db;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'gsc-hub-'));
+    db = openDb(join(dir, 'test.db'));
+    vi.stubEnv('GOOGLE_CLIENT_ID', 'cid');
+    vi.stubEnv('GOOGLE_CLIENT_SECRET', 'csec');
+  });
+
+  afterEach(() => {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  it('inspects multiple URLs in parallel and tags each ok/error', async () => {
+    const future = Math.floor(Date.now() / 1000) + 3600;
+    upsertAccount(db, {
+      id: 'a1', email: 'a1@x', access_token: 't1', refresh_token: 'r', expires_at: future, scope: 's'
+    });
+
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = init?.body ? JSON.parse(init.body as string) : {};
+      if (body.inspectionUrl === 'https://a.com/ok') {
+        return new Response(JSON.stringify({
+          inspectionResult: {
+            indexStatusResult: {
+              verdict: 'PASS',
+              coverageState: 'Submitted and indexed',
+              robotsTxtState: 'ALLOWED',
+              indexingState: 'INDEXING_ALLOWED',
+              lastCrawlTime: '2026-04-20T08:00:00Z'
+            }
+          }
+        }), { status: 200 });
+      }
+      return new Response('boom', { status: 500 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const acc = getAccount(db, 'a1')!;
+    const result = await bulkInspect(db, acc, 'https://a.com/', [
+      'https://a.com/ok',
+      'https://a.com/fail'
+    ]);
+    expect(result).toHaveLength(2);
+    expect(result[0].status).toBe('ok');
+    expect(result[0].index?.verdict).toBe('PASS');
+    expect(result[1].status).toBe('error');
+    expect(result[1].error).toMatch(/500/);
   });
 });

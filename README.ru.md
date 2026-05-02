@@ -29,6 +29,7 @@
 - Сортировка и фильтр через URL: `?days=3|7|28&sort=clicks|impressions|ctr|position|site|account&dir=asc|desc`. Bookmark, шаринг, browser-back работают как ожидаешь.
 - Скрывай сайты, которые не нужны (хранится в localStorage браузера, не синкается между устройствами).
 - Domain properties отображаются как `example.com` (префикс `sc-domain:` GSC обрезается для UI, ссылка по-прежнему ведёт на `https://example.com/`).
+- Клик по строке сайта разворачивает быстрый отчёт **URL Inspection** для топ-10 URL'ов (verdict, coverage, robots, last crawl, mismatch canonical). Использует Google URL Inspection API; дневная квота 2000 на Google-аккаунт.
 
 ### Top queries (агрегированные, сортируемые)
 - Агрегат по ключам поверх всех видимых (не скрытых) сайтов за выбранный период. Clicks, impressions, CTR (вычисляемый), Avg Pos (взвешенный по impressions).

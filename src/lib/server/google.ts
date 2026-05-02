@@ -193,6 +193,80 @@ export async function revokeToken(token: string): Promise<void> {
   await fetch(REVOKE_URL(token), { method: 'POST' });
 }
 
+// ---------------------------------------------------------------------------
+// URL Inspection API
+// ---------------------------------------------------------------------------
+
+const URL_INSPECTION_URL =
+  'https://searchconsole.googleapis.com/v1/urlInspection/index:inspect';
+
+export interface IndexStatusResult {
+  verdict: 'PASS' | 'FAIL' | 'PARTIAL' | 'NEUTRAL' | 'VERDICT_UNSPECIFIED';
+  coverageState?: string;
+  robotsTxtState?: string;
+  indexingState?: string;
+  lastCrawlTime?: string;
+  pageFetchState?: string;
+  googleCanonical?: string;
+  userCanonical?: string;
+}
+
+export interface InspectedUrl {
+  inspectionUrl: string;
+  status: 'ok' | 'error';
+  index?: IndexStatusResult;
+  error?: string;
+}
+
+export async function inspectUrl(
+  db: Db,
+  acc: AccountRow,
+  siteUrl: string,
+  inspectionUrl: string,
+  languageCode: string = 'en-US'
+): Promise<IndexStatusResult> {
+  const res = await authorizedFetch(db, acc, URL_INSPECTION_URL, {
+    method: 'POST',
+    body: JSON.stringify({ inspectionUrl, siteUrl, languageCode })
+  });
+  if (res.status === 401) {
+    markRevoked(db, acc.id, 'urlInspection 401');
+    throw new Error('urlInspection 401 unauthorized');
+  }
+  if (res.status === 429) {
+    throw new Error('urlInspection 429 quota exceeded (2000/day)');
+  }
+  if (!res.ok) {
+    throw new Error(
+      `urlInspection ${res.status}: ${(await res.text()).slice(0, 200)}`
+    );
+  }
+  const json = (await res.json()) as {
+    inspectionResult?: { indexStatusResult?: IndexStatusResult };
+  };
+  return json.inspectionResult?.indexStatusResult ?? { verdict: 'VERDICT_UNSPECIFIED' };
+}
+
+export async function bulkInspect(
+  db: Db,
+  acc: AccountRow,
+  siteUrl: string,
+  urls: string[]
+): Promise<InspectedUrl[]> {
+  const settled = await Promise.allSettled(
+    urls.map((u) => inspectUrl(db, acc, siteUrl, u))
+  );
+  return urls.map((u, i) => {
+    const r = settled[i];
+    if (r.status === 'fulfilled') return { inspectionUrl: u, status: 'ok', index: r.value };
+    return {
+      inspectionUrl: u,
+      status: 'error',
+      error: (r.reason as Error).message.slice(0, 200)
+    };
+  });
+}
+
 export interface DailyRow {
   date: string; // YYYY-MM-DD
   clicks: number;

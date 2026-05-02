@@ -231,6 +231,107 @@
     }
   }
 
+  // URL Inspection expansion
+  type InspectedUrl = {
+    inspectionUrl: string;
+    status: 'ok' | 'error';
+    index?: {
+      verdict: 'PASS' | 'FAIL' | 'PARTIAL' | 'NEUTRAL' | 'VERDICT_UNSPECIFIED';
+      coverageState?: string;
+      robotsTxtState?: string;
+      indexingState?: string;
+      lastCrawlTime?: string;
+      googleCanonical?: string;
+      userCanonical?: string;
+    };
+    error?: string;
+  };
+
+  type InspectState =
+    | { kind: 'idle' }
+    | { kind: 'loading'; total: number }
+    | { kind: 'error'; message: string }
+    | { kind: 'loaded'; results: InspectedUrl[]; site: string; siteHrefStr: string };
+
+  let expandedSite = $state<string | null>(null); // composite key accountId|siteUrl
+  let inspectState = $state<InspectState>({ kind: 'idle' });
+
+  async function toggleSite(s: { accountId: string; siteUrl: string }) {
+    const key = `${s.accountId}|${s.siteUrl}`;
+    if (expandedSite === key) {
+      expandedSite = null;
+      inspectState = { kind: 'idle' };
+      return;
+    }
+
+    // Pull top 10 URLs for this site from already-loaded pageEntries.
+    const entry = data.pageEntries.find(
+      (e) => e.accountId === s.accountId && e.siteUrl === s.siteUrl
+    );
+    const urls = entry
+      ? entry.rows
+          .slice()
+          .sort((a, b) => b.impressions - a.impressions)
+          .slice(0, 10)
+          .map((r) => r.page)
+          .filter((u) => !!u)
+      : [];
+
+    expandedSite = key;
+    if (urls.length === 0) {
+      inspectState = {
+        kind: 'error',
+        message:
+          'No top pages available for this site (no impressions data in current period). Try increasing the period to 28d.'
+      };
+      return;
+    }
+
+    inspectState = { kind: 'loading', total: urls.length };
+    try {
+      const res = await fetch('/properties/inspect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account: s.accountId, site: s.siteUrl, urls })
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+      const json = await res.json();
+      inspectState = {
+        kind: 'loaded',
+        results: json.results,
+        site: s.siteUrl,
+        siteHrefStr: siteHref(s.siteUrl)
+      };
+    } catch (e) {
+      inspectState = { kind: 'error', message: (e as Error).message };
+    }
+  }
+
+  function verdictBadge(v: string) {
+    if (v === 'PASS') return { cls: 'bg-green-50 text-green-800', dot: 'bg-green-500', label: 'Indexed' };
+    if (v === 'PARTIAL') return { cls: 'bg-yellow-50 text-yellow-800', dot: 'bg-yellow-500', label: 'Partial' };
+    if (v === 'FAIL') return { cls: 'bg-red-50 text-red-800', dot: 'bg-red-500', label: 'Not indexed' };
+    if (v === 'NEUTRAL') return { cls: 'bg-gray-100 text-gray-700', dot: 'bg-gray-400', label: 'Neutral' };
+    return { cls: 'bg-gray-100 text-gray-500', dot: 'bg-gray-400', label: 'Unknown' };
+  }
+
+  function fmtCrawlTime(ts?: string): string {
+    if (!ts) return '—';
+    const d = new Date(ts);
+    return d.toISOString().slice(0, 10);
+  }
+
+  function shortUrl(u: string, site: string): string {
+    try {
+      const url = new URL(u);
+      const sitePrefix = site.startsWith('sc-domain:') ? '' : site;
+      if (sitePrefix && u.startsWith(sitePrefix)) return u.slice(sitePrefix.length) || '/';
+      return url.pathname + url.search;
+    } catch {
+      return u;
+    }
+  }
+
   function buildHistoryChart(allRows: DailyAggregate[]) {
     const width = 800;
     const height = 200;
@@ -395,9 +496,14 @@
       </thead>
       <tbody>
         {#each visibleSites as s}
+          {@const sKey = `${s.accountId}|${s.siteUrl}`}
+          {@const expanded = expandedSite === sKey}
           {@const isHidden = hidden.has(keyOf(s))}
-          <tr class:is-hidden-row={isHidden}>
-            <td><a class="text-blue-600 hover:underline" href={siteHref(s.siteUrl)} target="_blank" rel="noopener noreferrer">{displaySite(s.siteUrl)}</a></td>
+          <tr class="cursor-pointer hover:bg-gray-50 {isHidden ? 'is-hidden-row' : ''}" onclick={() => toggleSite(s)}>
+            <td>
+              <span class="mr-1 text-gray-400">{expanded ? '▾' : '▸'}</span>
+              <a class="text-blue-600 hover:underline" href={siteHref(s.siteUrl)} target="_blank" rel="noopener noreferrer" onclick={(e) => e.stopPropagation()}>{displaySite(s.siteUrl)}</a>
+            </td>
             <td class="text-gray-500">{s.permissionLevel}</td>
             <td>
               {s.accountLabel ?? s.accountEmail}
@@ -416,7 +522,7 @@
                 — <span class="inline-block h-2 w-2 rounded-full bg-red-500" title={s.summaryError ?? 'error'}></span>
               </td>
             {/if}
-            <td>
+            <td onclick={(e) => e.stopPropagation()}>
               <a
                 class="rounded bg-blue-100 px-2 py-1 text-xs text-blue-700 hover:bg-blue-200"
                 href="/properties/export?account={encodeURIComponent(s.accountId)}&site={encodeURIComponent(s.siteUrl)}&days={data.days}&dim=query"
@@ -426,20 +532,81 @@
                 href="/properties/export?account={encodeURIComponent(s.accountId)}&site={encodeURIComponent(s.siteUrl)}&days={data.days}&dim=page"
               >page CSV</a>
             </td>
-            <td>
+            <td onclick={(e) => e.stopPropagation()}>
               {#if !isHidden}
                 <button
+                  type="button"
                   class="rounded bg-gray-100 px-2 py-1 text-xs text-gray-700 hover:bg-gray-200"
                   onclick={() => hideSite(s)}
                 >Hide</button>
               {:else}
                 <button
+                  type="button"
                   class="rounded bg-yellow-100 px-2 py-1 text-xs text-yellow-800 hover:bg-yellow-200"
                   onclick={() => unhideSite(s)}
                 >Unhide</button>
               {/if}
             </td>
           </tr>
+          {#if expanded}
+            <tr class="border-b bg-gray-50">
+              <td class="px-3 py-3" colspan="9">
+                {#if inspectState.kind === 'loading'}
+                  <div class="text-sm text-gray-500">Inspecting {inspectState.total} top URLs (URL Inspection API, ~3-5s)…</div>
+                {:else if inspectState.kind === 'error'}
+                  <div class="text-sm text-red-600">{inspectState.message}</div>
+                {:else if inspectState.kind === 'loaded'}
+                  <div class="mb-2 text-xs text-gray-500">
+                    Top {inspectState.results.length} URLs of <span class="font-mono text-gray-700">{displaySite(inspectState.site)}</span> by impressions in current period. URL Inspection daily quota is 2000 per Google account.
+                  </div>
+                  <table class="w-full border-collapse text-xs">
+                    <thead>
+                      <tr class="border-b border-gray-200 text-left uppercase tracking-wide text-gray-500">
+                        <th class="py-1.5">URL</th>
+                        <th class="py-1.5">Status</th>
+                        <th class="py-1.5">Coverage</th>
+                        <th class="py-1.5">Robots</th>
+                        <th class="py-1.5">Last crawl</th>
+                        <th class="py-1.5">Canonical</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {#each inspectState.results as r}
+                        <tr class="border-b border-gray-100">
+                          <td class="py-1.5">
+                            <a class="font-mono text-blue-600 hover:underline" href={r.inspectionUrl} target="_blank" rel="noopener noreferrer">{shortUrl(r.inspectionUrl, inspectState.site)}</a>
+                          </td>
+                          {#if r.status === 'error'}
+                            <td colspan="5" class="py-1.5 text-red-600">{r.error}</td>
+                          {:else if r.index}
+                            {@const v = verdictBadge(r.index.verdict)}
+                            <td class="py-1.5">
+                              <span class="inline-flex items-center rounded px-1.5 py-0.5 {v.cls}">
+                                <span class="mr-1.5 inline-block h-1.5 w-1.5 rounded-full {v.dot}"></span>
+                                {v.label}
+                              </span>
+                            </td>
+                            <td class="py-1.5 text-gray-700">{r.index.coverageState ?? '—'}</td>
+                            <td class="py-1.5 {r.index.robotsTxtState === 'DISALLOWED' ? 'text-red-700' : 'text-gray-700'}">{r.index.robotsTxtState ?? '—'}</td>
+                            <td class="app-num py-1.5 text-gray-600">{fmtCrawlTime(r.index.lastCrawlTime)}</td>
+                            <td class="py-1.5 text-gray-600">
+                              {#if r.index.googleCanonical && r.index.userCanonical && r.index.googleCanonical !== r.index.userCanonical}
+                                <span class="text-amber-700" title="Google: {r.index.googleCanonical}\nUser: {r.index.userCanonical}">Mismatch</span>
+                              {:else if r.index.googleCanonical}
+                                <span class="font-mono text-[11px]">{shortUrl(r.index.googleCanonical, inspectState.site)}</span>
+                              {:else}
+                                —
+                              {/if}
+                            </td>
+                          {/if}
+                        </tr>
+                      {/each}
+                    </tbody>
+                  </table>
+                {/if}
+              </td>
+            </tr>
+          {/if}
         {/each}
       </tbody>
     </table>
