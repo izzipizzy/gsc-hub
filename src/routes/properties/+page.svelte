@@ -259,10 +259,65 @@
         siteHrefStr: string;
         cached: boolean;
         fetchedAt: number;
+        source: 'page-entries' | 'page-entries+sitemap' | 'sitemap';
+        sitemapNote?: string;
       };
 
   let expandedSite = $state<string | null>(null); // composite key accountId|siteUrl
   let inspectState = $state<InspectState>({ kind: 'idle' });
+
+  const TARGET = 10;
+
+  async function collectUrlsForSite(
+    s: { accountId: string; siteUrl: string }
+  ): Promise<{ urls: string[]; source: 'page-entries' | 'page-entries+sitemap' | 'sitemap'; sitemapErr?: string }> {
+    const entry = data.pageEntries.find(
+      (e) => e.accountId === s.accountId && e.siteUrl === s.siteUrl
+    );
+    const fromPages = entry
+      ? entry.rows
+          .slice()
+          .sort((a, b) => b.impressions - a.impressions)
+          .map((r) => r.page)
+          .filter(Boolean)
+      : [];
+
+    // Always include the homepage first.
+    const home = siteHref(s.siteUrl);
+    const chosen: string[] = [home];
+
+    // Add page-entries (skip homepage if already there).
+    for (const u of fromPages) {
+      if (chosen.length >= TARGET) break;
+      if (!chosen.includes(u)) chosen.push(u);
+    }
+
+    let source: 'page-entries' | 'page-entries+sitemap' | 'sitemap' = 'page-entries';
+    let sitemapErr: string | undefined;
+
+    // If we still don't have enough, ask the server for sitemap URLs.
+    if (chosen.length < TARGET) {
+      try {
+        const r = await fetch(
+          `/properties/sitemap-urls?account=${encodeURIComponent(s.accountId)}&site=${encodeURIComponent(s.siteUrl)}&limit=${TARGET * 3}`
+        );
+        const sitemapData = await r.json();
+        if (sitemapData.source !== 'none') {
+          source = chosen.length > 1 ? 'page-entries+sitemap' : 'sitemap';
+          for (const u of sitemapData.urls as string[]) {
+            if (chosen.length >= TARGET) break;
+            if (!chosen.includes(u)) chosen.push(u);
+          }
+        } else if (sitemapData.error) {
+          sitemapErr = sitemapData.error;
+        }
+      } catch (e) {
+        sitemapErr = (e as Error).message;
+      }
+    }
+
+    return { urls: chosen, source, sitemapErr };
+  }
 
   async function toggleSite(s: { accountId: string; siteUrl: string }) {
     const key = `${s.accountId}|${s.siteUrl}`;
@@ -272,25 +327,15 @@
       return;
     }
 
-    // Pull top 10 URLs for this site from already-loaded pageEntries.
-    const entry = data.pageEntries.find(
-      (e) => e.accountId === s.accountId && e.siteUrl === s.siteUrl
-    );
-    const urls = entry
-      ? entry.rows
-          .slice()
-          .sort((a, b) => b.impressions - a.impressions)
-          .slice(0, 10)
-          .map((r) => r.page)
-          .filter((u) => !!u)
-      : [];
-
     expandedSite = key;
+    inspectState = { kind: 'loading', total: TARGET };
+
+    const { urls, source, sitemapErr } = await collectUrlsForSite(s);
+
     if (urls.length === 0) {
       inspectState = {
         kind: 'error',
-        message:
-          'No top pages available for this site (no impressions data in current period). Try increasing the period to 28d.'
+        message: sitemapErr ?? 'No URLs to inspect (no impressions and no sitemap accessible).'
       };
       return;
     }
@@ -311,7 +356,9 @@
         accountId: s.accountId,
         siteHrefStr: siteHref(s.siteUrl),
         cached: !!json.cached,
-        fetchedAt: json.fetchedAt ?? Math.floor(Date.now() / 1000)
+        fetchedAt: json.fetchedAt ?? Math.floor(Date.now() / 1000),
+        source,
+        sitemapNote: sitemapErr
       };
     } catch (e) {
       inspectState = { kind: 'error', message: (e as Error).message };
@@ -319,12 +366,7 @@
   }
 
   async function refreshInspection(s: { accountId: string; siteUrl: string }) {
-    const entry = data.pageEntries.find(
-      (e) => e.accountId === s.accountId && e.siteUrl === s.siteUrl
-    );
-    const urls = entry
-      ? entry.rows.slice().sort((a, b) => b.impressions - a.impressions).slice(0, 10).map((r) => r.page).filter(Boolean)
-      : [];
+    const { urls, source, sitemapErr } = await collectUrlsForSite(s);
     if (urls.length === 0) return;
 
     inspectState = { kind: 'loading', total: urls.length };
@@ -343,7 +385,9 @@
         accountId: s.accountId,
         siteHrefStr: siteHref(s.siteUrl),
         cached: !!responseData.cached,
-        fetchedAt: responseData.fetchedAt ?? Math.floor(Date.now() / 1000)
+        fetchedAt: responseData.fetchedAt ?? Math.floor(Date.now() / 1000),
+        source,
+        sitemapNote: sitemapErr
       };
     } catch (e) {
       inspectState = { kind: 'error', message: (e as Error).message };
@@ -611,12 +655,15 @@
                   {@const loadedState = inspectState}
                   <div class="mb-2 flex items-center justify-between text-xs text-gray-500">
                     <span>
-                      Top {loadedState.results.length} URLs of <span class="font-mono text-gray-700">{displaySite(loadedState.site)}</span> by impressions in current period.
-                      {#if loadedState.cached}
-                        <span class="ml-1 text-gray-400">· Cached {fmtCacheTime(loadedState.fetchedAt)}</span>
+                      {#if loadedState.source === 'page-entries'}
+                        Top {loadedState.results.length} URLs by impressions in current period.
+                      {:else if loadedState.source === 'page-entries+sitemap'}
+                        {loadedState.results.length} URLs (top by impressions plus sitemap fill-in).
                       {:else}
-                        <span class="ml-1 text-gray-400">· Fresh</span>
+                        {loadedState.results.length} URLs from sitemap (no impressions in current period).
                       {/if}
+                      {#if loadedState.cached}<span class="ml-1 text-gray-400">· Cached {fmtCacheTime(loadedState.fetchedAt)}</span>{:else}<span class="ml-1 text-gray-400">· Fresh</span>{/if}
+                      {#if loadedState.sitemapNote}<span class="ml-2 text-amber-700" title={loadedState.sitemapNote}>(sitemap note)</span>{/if}
                     </span>
                     <button type="button" class="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700 hover:bg-gray-200" onclick={(e) => { e.stopPropagation(); refreshInspection({ accountId: loadedState.accountId, siteUrl: loadedState.site }); }}>
                       Force refresh

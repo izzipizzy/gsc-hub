@@ -194,6 +194,42 @@ export async function revokeToken(token: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Sitemaps API
+// ---------------------------------------------------------------------------
+
+export interface GscSitemap {
+  path: string;            // submitted sitemap URL
+  isPending: boolean;
+  isSitemapsIndex: boolean;
+  type: string;            // "WEB", "VIDEO", etc.
+  lastSubmitted?: string;
+  lastDownloaded?: string;
+  warnings?: string;
+  errors?: string;
+  contents?: { type: string; submitted?: string; indexed?: string }[];
+}
+
+const SITEMAPS_LIST_URL = (siteUrl: string) =>
+  `https://searchconsole.googleapis.com/webmasters/v3/sites/${encodeURIComponent(siteUrl)}/sitemaps`;
+
+export async function listSitemaps(
+  db: Db,
+  acc: AccountRow,
+  siteUrl: string
+): Promise<GscSitemap[]> {
+  const res = await authorizedFetch(db, acc, SITEMAPS_LIST_URL(siteUrl));
+  if (res.status === 401) {
+    markRevoked(db, acc.id, 'sitemaps.list 401');
+    throw new Error('sitemaps.list 401');
+  }
+  if (!res.ok) {
+    throw new Error(`sitemaps.list ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  }
+  const json = (await res.json()) as { sitemap?: GscSitemap[] };
+  return json.sitemap ?? [];
+}
+
+// ---------------------------------------------------------------------------
 // URL Inspection API
 // ---------------------------------------------------------------------------
 
