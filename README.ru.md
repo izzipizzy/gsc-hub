@@ -29,7 +29,7 @@
 - Сортировка и фильтр через URL: `?days=3|7|28&sort=clicks|impressions|ctr|position|site|account&dir=asc|desc`. Bookmark, шаринг, browser-back работают как ожидаешь.
 - Скрывай сайты, которые не нужны (хранится в localStorage браузера, не синкается между устройствами).
 - Domain properties отображаются как `example.com` (префикс `sc-domain:` GSC обрезается для UI, ссылка по-прежнему ведёт на `https://example.com/`).
-- Клик по строке сайта разворачивает быстрый отчёт **URL Inspection** для топ-10 URL'ов (verdict, coverage, robots, last crawl, mismatch canonical). Использует Google URL Inspection API; дневная квота 2000 на Google-аккаунт.
+- Клик по строке сайта разворачивает быстрый отчёт **URL Inspection** для топ-10 URL'ов (verdict, coverage, robots, last crawl, mismatch canonical). Использует Google URL Inspection API; дневная квота 2000 на Google-аккаунт. Результаты **кешируются на 12 часов** в SQLite (ключ: account + site + хэш url-набора). Повторный клик берёт из кеша; кнопка **Force refresh** — обновить с нуля. Кеш нужен потому что URL Inspection имеет жёсткий лимит 2000 вызовов/сутки на Google-аккаунт.
 
 ### Top queries (агрегированные, сортируемые)
 - Агрегат по ключам поверх всех видимых (не скрытых) сайтов за выбранный период. Clicks, impressions, CTR (вычисляемый), Avg Pos (взвешенный по impressions).
@@ -102,7 +102,7 @@ pnpm dev
                        └──> ./data/gsc-hub.db  (только OAuth-токены)
 ```
 
-Один Node-процесс. Один SQLite-файл. Схема БД — одна таблица:
+Один Node-процесс. Один SQLite-файл. Схема БД — две таблицы:
 
 ```sql
 CREATE TABLE google_accounts (
@@ -117,9 +117,18 @@ CREATE TABLE google_accounts (
   last_error    TEXT,
   added_at      INTEGER NOT NULL
 );
+
+CREATE TABLE url_inspection_cache (
+  account_id   TEXT NOT NULL,
+  site_url     TEXT NOT NULL,
+  urls_hash    TEXT NOT NULL,
+  fetched_at   INTEGER NOT NULL,
+  payload      TEXT NOT NULL,
+  PRIMARY KEY (account_id, site_url, urls_hash)
+);
 ```
 
-**Никакие данные GSC не сохраняются.** Любой запрос на `/properties`, `/dashboard`, query-history endpoint или CSV-экспорт делает свежий fan-out в Google. Скрытые сайты живут только в localStorage браузера.
+**Никакие аналитические данные GSC не сохраняются.** Любой запрос на `/properties`, `/dashboard`, query-history endpoint или CSV-экспорт делает свежий fan-out в Google. Скрытые сайты живут только в localStorage браузера.
 
 Это упрощает архитектуру, убирает класс багов «устаревший кеш», и делает БД-файл крошечным (несколько КБ на аккаунт). Цена — задержка page-load пропорциональна количеству активных сайтов: примерно 2N параллельных API-вызовов для Sites, 3N для Dashboard, 1N для query history.
 
@@ -151,10 +160,11 @@ gsc-hub/
 │   ├── app.css            — Tailwind + Operator Console utilities
 │   ├── lib/
 │   │   ├── server/
-│   │   │   ├── db.ts      — SQLite open + миграция
-│   │   │   ├── accounts.ts — CRUD по google_accounts (единственный файл с SQL)
-│   │   │   ├── google.ts  — GSC client, refresh, fan-out, search analytics
-│   │   │   └── csv.ts     — RFC 4180 CSV writer
+│   │   │   ├── db.ts               — SQLite open + миграция
+│   │   │   ├── accounts.ts         — CRUD по google_accounts
+│   │   │   ├── inspection_cache.ts — 12h SQLite кеш для URL Inspection ответов
+│   │   │   ├── google.ts           — GSC client, refresh, fan-out, search analytics
+│   │   │   └── csv.ts              — RFC 4180 CSV writer
 │   │   └── utils/site.ts  — обрезает sc-domain: префикс, строит правильный href
 │   └── routes/
 │       ├── +page.svelte           — Accounts list (/)
@@ -181,8 +191,9 @@ gsc-hub/
 
 ## Тесты
 
-31 unit-тест покрывает server-модули:
-- SQLite миграция и схема (`tests/db.test.ts`)
+36 unit-тестов покрывают server-модули:
+- SQLite миграция и схема, включая таблицу `url_inspection_cache` (`tests/db.test.ts`)
+- Кеш URL Inspection: детерминизм хэша, промах, попадание, TTL, upsert, удаление (`tests/inspection_cache.test.ts`)
 - Accounts CRUD включая `markActive` / `markRevoked` / `markError` (`tests/accounts.test.ts`)
 - GSC client: skew window для refresh-токена, 5xx → markError, 401/invalid_grant → markRevoked, fan-out агрегация, per-site queries / pages / daily breakdown / query-history (`tests/google.test.ts`)
 - RFC 4180 CSV escaping (`tests/csv.test.ts`)
@@ -196,6 +207,7 @@ gsc-hub/
 - Никакой аналитики, никакой телеметрии, никаких outbound-вызовов кроме Google API.
 - SQLite-файл лежит в `./data/` (gitignored). Удали его — все подключения сбросятся.
 - Токены хранятся plaintext. Это приемлемо для локального single-user тула; зашифруй at rest если когда-нибудь будешь выставлять это за пределы `127.0.0.1`.
+- Исключение — кеш URL Inspection (таблица `url_inspection_cache`) хранит payload'ы ответов под ключом `(account_id, site_url, urls_hash)` на 12 часов, чтобы не жечь дневной лимит 2000 вызовов на повторных кликах. Удали `data/gsc-hub.db` чтобы сбросить.
 
 ## Деплой за пределы localhost (не входит в коробку)
 

@@ -17,6 +17,15 @@ CREATE TABLE IF NOT EXISTS google_accounts (
   last_error    TEXT,
   added_at      INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS url_inspection_cache (
+  account_id   TEXT NOT NULL,
+  site_url     TEXT NOT NULL,
+  urls_hash    TEXT NOT NULL,
+  fetched_at   INTEGER NOT NULL,
+  payload      TEXT NOT NULL,
+  PRIMARY KEY (account_id, site_url, urls_hash)
+);
 `;
 
 export function openDb(path: string): Db {

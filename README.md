@@ -29,7 +29,7 @@ Built as a personal alternative to seogets-style SaaS tools when you have multip
 - URL-driven sort and filter: `?days=3|7|28&sort=clicks|impressions|ctr|position|site|account&dir=asc|desc`. Bookmark, share, browser-back work as expected.
 - Hide sites you don't care about (kept in localStorage per browser; doesn't sync).
 - Domain properties displayed as `example.com` (the `sc-domain:` GSC prefix is stripped for display, link still goes to `https://example.com/`).
-- Click any site row to expand a quick **URL Inspection** report for its top 10 URLs (verdict, coverage, robots, last crawl, canonical mismatch). Uses Google's URL Inspection API; daily quota is 2000 per Google account.
+- Click any site row to expand a quick **URL Inspection** report for its top 10 URLs (verdict, coverage, robots, last crawl, canonical mismatch). Uses Google's URL Inspection API; daily quota is 2000 per Google account. Results are cached for **12 hours** in SQLite (key: account + site + url-set hash). Re-clicking the same site reuses the cache; **Force refresh** button bypasses it. The cache exists because URL Inspection has a hard 2000-call/day quota per Google account.
 
 ### Top queries (aggregated, sortable)
 - Aggregated query-level rollup across all visible (non-hidden) sites for the selected period. Clicks, impressions, CTR (computed), Avg Pos (impression-weighted).
@@ -102,7 +102,7 @@ The `webmasters.readonly` scope is technically a "restricted scope" in Google's 
                        └──> ./data/gsc-hub.db  (only OAuth tokens)
 ```
 
-One Node process. One SQLite file. The DB schema has a single table:
+One Node process. One SQLite file. The DB schema has two tables:
 
 ```sql
 CREATE TABLE google_accounts (
@@ -117,9 +117,18 @@ CREATE TABLE google_accounts (
   last_error    TEXT,
   added_at      INTEGER NOT NULL
 );
+
+CREATE TABLE url_inspection_cache (
+  account_id   TEXT NOT NULL,
+  site_url     TEXT NOT NULL,
+  urls_hash    TEXT NOT NULL,
+  fetched_at   INTEGER NOT NULL,
+  payload      TEXT NOT NULL,
+  PRIMARY KEY (account_id, site_url, urls_hash)
+);
 ```
 
-**No GSC data is persisted.** Every request to `/properties`, `/dashboard`, the query-history endpoint or the CSV export does a fresh fan-out to Google. Hidden sites are kept in browser localStorage only.
+**No GSC analytics data is persisted.** Every request to `/properties`, `/dashboard`, the query-history endpoint or the CSV export does a fresh fan-out to Google. Hidden sites are kept in browser localStorage only.
 
 This keeps things simple, eliminates a "stale data" UX class, and means the database file you care about is tiny (a few KB per account). The trade-off is page-load latency proportional to the number of active sites: roughly 2N parallel API calls for the sites view, 3N for the dashboard, 1N for query history.
 
@@ -151,10 +160,11 @@ gsc-hub/
 │   ├── app.css            — Tailwind + Operator Console utilities
 │   ├── lib/
 │   │   ├── server/
-│   │   │   ├── db.ts      — SQLite open + migration
-│   │   │   ├── accounts.ts — CRUD over google_accounts (only file with SQL)
-│   │   │   ├── google.ts  — GSC client, refresh, fan-out, search analytics
-│   │   │   └── csv.ts     — RFC 4180 CSV writer
+│   │   │   ├── db.ts               — SQLite open + migration
+│   │   │   ├── accounts.ts         — CRUD over google_accounts (only file with SQL for that table)
+│   │   │   ├── inspection_cache.ts — 12h SQLite cache for URL Inspection responses
+│   │   │   ├── google.ts           — GSC client, refresh, fan-out, search analytics
+│   │   │   └── csv.ts              — RFC 4180 CSV writer
 │   │   └── utils/site.ts  — strip sc-domain: prefix, build proper href
 │   └── routes/
 │       ├── +page.svelte           — Accounts list (/)
@@ -181,8 +191,9 @@ gsc-hub/
 
 ## Tests
 
-31 unit tests cover the server modules:
-- SQLite migration and schema (`tests/db.test.ts`)
+36 unit tests cover the server modules:
+- SQLite migration and schema, including `url_inspection_cache` table (`tests/db.test.ts`)
+- URL Inspection cache: hash determinism, miss, hit, TTL expiry, upsert, delete (`tests/inspection_cache.test.ts`)
 - Accounts CRUD including `markActive` / `markRevoked` / `markError` (`tests/accounts.test.ts`)
 - GSC client: token refresh skew window, 5xx → markError, 401/invalid_grant → markRevoked, fan-out aggregation, per-site queries / pages / daily breakdown / query-history (`tests/google.test.ts`)
 - RFC 4180 CSV escaping (`tests/csv.test.ts`)
@@ -196,6 +207,7 @@ Routes are not unit-tested; smoke-tested via `curl` against `pnpm dev`.
 - No analytics, no telemetry, no outbound calls except to Google's APIs.
 - The SQLite file lives in `./data/` (gitignored). Delete it to wipe all connections.
 - Tokens are stored in plaintext. This is acceptable for a local single-user tool; encrypt at rest if you ever expose this beyond `127.0.0.1`.
+- The exception is the URL Inspection cache (`url_inspection_cache` table) which stores response payloads keyed by `(account_id, site_url, urls_hash)` for 12 hours, to avoid burning the daily 2000-call quota on repeat clicks. Delete `data/gsc-hub.db` to wipe it.
 
 ## Deploying beyond localhost (not shipped)
 

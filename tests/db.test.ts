@@ -51,4 +51,18 @@ describe('db', () => {
     );
     db.close();
   });
+
+  it('creates url_inspection_cache table with expected columns', () => {
+    const db = openDb(dbPath);
+    const row = db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='url_inspection_cache'")
+      .get();
+    expect(row).toBeTruthy();
+    const cols = db
+      .prepare("PRAGMA table_info('url_inspection_cache')")
+      .all() as Array<{ name: string }>;
+    const names = cols.map((c) => c.name).sort();
+    expect(names).toEqual(['account_id', 'fetched_at', 'payload', 'site_url', 'urls_hash'].sort());
+    db.close();
+  });
 });

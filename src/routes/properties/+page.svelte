@@ -251,7 +251,15 @@
     | { kind: 'idle' }
     | { kind: 'loading'; total: number }
     | { kind: 'error'; message: string }
-    | { kind: 'loaded'; results: InspectedUrl[]; site: string; siteHrefStr: string };
+    | {
+        kind: 'loaded';
+        results: InspectedUrl[];
+        site: string;
+        accountId: string;
+        siteHrefStr: string;
+        cached: boolean;
+        fetchedAt: number;
+      };
 
   let expandedSite = $state<string | null>(null); // composite key accountId|siteUrl
   let inspectState = $state<InspectState>({ kind: 'idle' });
@@ -300,11 +308,55 @@
         kind: 'loaded',
         results: json.results,
         site: s.siteUrl,
-        siteHrefStr: siteHref(s.siteUrl)
+        accountId: s.accountId,
+        siteHrefStr: siteHref(s.siteUrl),
+        cached: !!json.cached,
+        fetchedAt: json.fetchedAt ?? Math.floor(Date.now() / 1000)
       };
     } catch (e) {
       inspectState = { kind: 'error', message: (e as Error).message };
     }
+  }
+
+  async function refreshInspection(s: { accountId: string; siteUrl: string }) {
+    const entry = data.pageEntries.find(
+      (e) => e.accountId === s.accountId && e.siteUrl === s.siteUrl
+    );
+    const urls = entry
+      ? entry.rows.slice().sort((a, b) => b.impressions - a.impressions).slice(0, 10).map((r) => r.page).filter(Boolean)
+      : [];
+    if (urls.length === 0) return;
+
+    inspectState = { kind: 'loading', total: urls.length };
+    try {
+      const res = await fetch('/properties/inspect?force=1', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account: s.accountId, site: s.siteUrl, urls })
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+      const responseData = await res.json();
+      inspectState = {
+        kind: 'loaded',
+        results: responseData.results,
+        site: s.siteUrl,
+        accountId: s.accountId,
+        siteHrefStr: siteHref(s.siteUrl),
+        cached: !!responseData.cached,
+        fetchedAt: responseData.fetchedAt ?? Math.floor(Date.now() / 1000)
+      };
+    } catch (e) {
+      inspectState = { kind: 'error', message: (e as Error).message };
+    }
+  }
+
+  function fmtCacheTime(ts: number): string {
+    const d = new Date(ts * 1000);
+    const now = Date.now();
+    const ageMin = Math.round((now - d.getTime()) / 60_000);
+    if (ageMin < 1) return 'just now';
+    if (ageMin < 60) return `${ageMin}m ago`;
+    return `${Math.round(ageMin / 60)}h ago`;
   }
 
   function verdictBadge(v: string) {
@@ -556,8 +608,19 @@
                 {:else if inspectState.kind === 'error'}
                   <div class="text-sm text-red-600">{inspectState.message}</div>
                 {:else if inspectState.kind === 'loaded'}
-                  <div class="mb-2 text-xs text-gray-500">
-                    Top {inspectState.results.length} URLs of <span class="font-mono text-gray-700">{displaySite(inspectState.site)}</span> by impressions in current period. URL Inspection daily quota is 2000 per Google account.
+                  {@const loadedState = inspectState}
+                  <div class="mb-2 flex items-center justify-between text-xs text-gray-500">
+                    <span>
+                      Top {loadedState.results.length} URLs of <span class="font-mono text-gray-700">{displaySite(loadedState.site)}</span> by impressions in current period.
+                      {#if loadedState.cached}
+                        <span class="ml-1 text-gray-400">· Cached {fmtCacheTime(loadedState.fetchedAt)}</span>
+                      {:else}
+                        <span class="ml-1 text-gray-400">· Fresh</span>
+                      {/if}
+                    </span>
+                    <button type="button" class="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700 hover:bg-gray-200" onclick={(e) => { e.stopPropagation(); refreshInspection({ accountId: loadedState.accountId, siteUrl: loadedState.site }); }}>
+                      Force refresh
+                    </button>
                   </div>
                   <table class="w-full border-collapse text-xs">
                     <thead>
@@ -571,10 +634,10 @@
                       </tr>
                     </thead>
                     <tbody>
-                      {#each inspectState.results as r}
+                      {#each loadedState.results as r}
                         <tr class="border-b border-gray-100">
                           <td class="py-1.5">
-                            <a class="font-mono text-blue-600 hover:underline" href={r.inspectionUrl} target="_blank" rel="noopener noreferrer">{shortUrl(r.inspectionUrl, inspectState.site)}</a>
+                            <a class="font-mono text-blue-600 hover:underline" href={r.inspectionUrl} target="_blank" rel="noopener noreferrer">{shortUrl(r.inspectionUrl, loadedState.site)}</a>
                           </td>
                           {#if r.status === 'error'}
                             <td colspan="5" class="py-1.5 text-red-600">{r.error}</td>
@@ -593,7 +656,7 @@
                               {#if r.index.googleCanonical && r.index.userCanonical && r.index.googleCanonical !== r.index.userCanonical}
                                 <span class="text-amber-700" title="Google: {r.index.googleCanonical}\nUser: {r.index.userCanonical}">Mismatch</span>
                               {:else if r.index.googleCanonical}
-                                <span class="font-mono text-[11px]">{shortUrl(r.index.googleCanonical, inspectState.site)}</span>
+                                <span class="font-mono text-[11px]">{shortUrl(r.index.googleCanonical, loadedState.site)}</span>
                               {:else}
                                 —
                               {/if}
