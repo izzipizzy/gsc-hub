@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { invalidateAll } from '$app/navigation';
   import { displaySite, siteHref } from '$lib/utils/site';
+  import { googleSerpUrl } from '$lib/utils/country';
   import type { PageData } from './$types';
   let { data }: { data: PageData } = $props();
 
@@ -71,27 +72,30 @@
   }
 
   // Queries table: client-side sort state
-  let qSort = $state<'query' | 'clicks' | 'impressions' | 'ctr' | 'position'>('impressions');
+  let qSort = $state<'query' | 'page' | 'country' | 'clicks' | 'impressions' | 'ctr' | 'position'>('impressions');
   let qDir = $state<'asc' | 'desc'>('desc');
 
   const aggregatedQueries = $derived.by(() => {
-    type Bucket = { clicks: number; impressions: number; posSum: number; posWeight: number };
+    type Bucket = { query: string; page: string; country: string; clicks: number; impressions: number; posSum: number; posWeight: number };
     const map = new Map<string, Bucket>();
     for (const entry of data.queryEntries) {
       const k = `${entry.accountId}|${entry.siteUrl}`;
       if (hidden.has(k)) continue;
       for (const r of entry.rows) {
         if (!r.query) continue;
-        const cur = map.get(r.query) ?? { clicks: 0, impressions: 0, posSum: 0, posWeight: 0 };
+        const key = `${r.query}|${r.page}|${r.country}`;
+        const cur = map.get(key) ?? { query: r.query, page: r.page, country: r.country, clicks: 0, impressions: 0, posSum: 0, posWeight: 0 };
         cur.clicks += r.clicks;
         cur.impressions += r.impressions;
         cur.posSum += r.position * r.impressions;
         cur.posWeight += r.impressions;
-        map.set(r.query, cur);
+        map.set(key, cur);
       }
     }
-    const arr = Array.from(map.entries()).map(([query, b]) => ({
-      query,
+    const arr = Array.from(map.values()).map((b) => ({
+      query: b.query,
+      page: b.page,
+      country: b.country,
       clicks: b.clicks,
       impressions: b.impressions,
       ctr: b.impressions > 0 ? b.clicks / b.impressions : 0,
@@ -99,9 +103,9 @@
     }));
     const dirMul = qDir === 'desc' ? -1 : 1;
     arr.sort((a, b) => {
-      if (qSort === 'query') {
-        return dirMul * a.query.localeCompare(b.query);
-      }
+      if (qSort === 'query') return dirMul * a.query.localeCompare(b.query);
+      if (qSort === 'page') return dirMul * a.page.localeCompare(b.page);
+      if (qSort === 'country') return dirMul * a.country.localeCompare(b.country);
       return dirMul * (a[qSort] - b[qSort]);
     });
     return arr.slice(0, 200);
@@ -187,16 +191,17 @@
     | { kind: 'error'; message: string }
     | { kind: 'loaded'; aggregated: DailyAggregate[]; entries: QueryHistoryEntry[] };
 
-  let expandedQuery = $state<string | null>(null);
+  let expandedQuery = $state<string | null>(null); // composite key `${query}|${page}|${country}`
   let historyState = $state<HistoryState>({ kind: 'idle' });
 
-  async function toggleQuery(query: string) {
-    if (expandedQuery === query) {
+  async function toggleQuery(query: string, page: string, country: string) {
+    const key = `${query}|${page}|${country}`;
+    if (expandedQuery === key) {
       expandedQuery = null;
       historyState = { kind: 'idle' };
       return;
     }
-    expandedQuery = query;
+    expandedQuery = key;
     historyState = { kind: 'loading' };
     try {
       const res = await fetch(`/properties/query-history?q=${encodeURIComponent(query)}&days=480`);
@@ -498,7 +503,7 @@
 
 <svelte:head><title>Sites — gsc-hub</title></svelte:head>
 
-<main class="w-full p-6">
+<main class="w-full p-3 sm:p-6">
   <header class="app-toolbar">
     <div class="app-toolbar-left">
       <nav class="app-breadcrumbs">
@@ -513,7 +518,7 @@
       <span class="app-toolbar-divider" aria-hidden="true"></span>
       <div class="app-segmented">
         <span class="app-segmented-label">Period</span>
-        {#each [3, 7, 28] as d}
+        {#each [1, 3, 7, 28, 60] as d}
           <a class:is-active={data.days === d} href="?days={d}&sort={data.sort}&dir={data.dir}">{d}d</a>
         {/each}
       </div>
@@ -552,16 +557,17 @@
       <p class="app-empty-sub">Connect a Google account on <a class="text-blue-600 hover:underline" href="/">Accounts</a>.</p>
     </div>
   {:else}
+    <div class="-mx-3 overflow-x-auto sm:-mx-6">
     <table class="app-table">
       <thead>
         <tr>
-          <th>
+          <th class="pl-3 sm:pl-6">
             <a class="cursor-pointer hover:underline" href={sortHref('site', data.sort, data.dir, data.days)}>
               Site URL{sortIndicator('site', data.sort, data.dir)}
             </a>
           </th>
-          <th>Permission</th>
-          <th>
+          <th class="hidden lg:table-cell">Permission</th>
+          <th class="hidden md:table-cell">
             <a class="cursor-pointer hover:underline" href={sortHref('account', data.sort, data.dir, data.days)}>
               Account{sortIndicator('account', data.sort, data.dir)}
             </a>
@@ -571,23 +577,23 @@
               Clicks{sortIndicator('clicks', data.sort, data.dir)}
             </a>
           </th>
-          <th>
+          <th class="hidden sm:table-cell">
             <a class="cursor-pointer hover:underline" href={sortHref('impressions', data.sort, data.dir, data.days)}>
               Impressions{sortIndicator('impressions', data.sort, data.dir)}
             </a>
           </th>
-          <th>
+          <th class="hidden md:table-cell">
             <a class="cursor-pointer hover:underline" href={sortHref('ctr', data.sort, data.dir, data.days)}>
               CTR{sortIndicator('ctr', data.sort, data.dir)}
             </a>
           </th>
-          <th>
+          <th class="pr-3 sm:pr-0">
             <a class="cursor-pointer hover:underline" href={sortHref('position', data.sort, data.dir, data.days)}>
               Avg Pos{sortIndicator('position', data.sort, data.dir)}
             </a>
           </th>
-          <th>Export</th>
-          <th>Visibility</th>
+          <th class="hidden md:table-cell">Export</th>
+          <th class="hidden md:table-cell">Visibility</th>
         </tr>
       </thead>
       <tbody>
@@ -596,29 +602,29 @@
           {@const expanded = expandedSite === sKey}
           {@const isHidden = hidden.has(keyOf(s))}
           <tr class="cursor-pointer hover:bg-gray-50 {isHidden ? 'is-hidden-row' : ''}" onclick={() => toggleSite(s)}>
-            <td>
+            <td class="pl-3 sm:pl-6">
               <span class="mr-1 text-gray-400">{expanded ? '▾' : '▸'}</span>
               <a class="text-blue-600 hover:underline" href={siteHref(s.siteUrl)} target="_blank" rel="noopener noreferrer" onclick={(e) => e.stopPropagation()}>{displaySite(s.siteUrl)}</a>
             </td>
-            <td class="text-gray-500">{s.permissionLevel}</td>
-            <td>
+            <td class="hidden text-gray-500 lg:table-cell">{s.permissionLevel}</td>
+            <td class="hidden md:table-cell">
               {s.accountLabel ?? s.accountEmail}
               {#if s.accountLabel}<span class="text-gray-400"> ({s.accountEmail})</span>{/if}
             </td>
             {#if s.summary !== null}
               <td class="app-num">{fmtNum(s.summary.clicks)}</td>
-              <td class="app-num">{fmtNum(s.summary.impressions)}</td>
-              <td class="app-num">{fmtCtr(s.summary.ctr)}</td>
-              <td class="app-num">{fmtPos(s.summary.position)}</td>
+              <td class="app-num hidden sm:table-cell">{fmtNum(s.summary.impressions)}</td>
+              <td class="app-num hidden md:table-cell">{fmtCtr(s.summary.ctr)}</td>
+              <td class="app-num pr-3 sm:pr-0">{fmtPos(s.summary.position)}</td>
             {:else}
               <td class="text-gray-400" title={s.summaryError ?? ''}>—</td>
-              <td class="text-gray-400" title={s.summaryError ?? ''}>—</td>
-              <td class="text-gray-400" title={s.summaryError ?? ''}>—</td>
-              <td class="text-gray-400" title={s.summaryError ?? ''}>
+              <td class="hidden text-gray-400 sm:table-cell" title={s.summaryError ?? ''}>—</td>
+              <td class="hidden text-gray-400 md:table-cell" title={s.summaryError ?? ''}>—</td>
+              <td class="pr-3 text-gray-400 sm:pr-0" title={s.summaryError ?? ''}>
                 — <span class="inline-block h-2 w-2 rounded-full bg-red-500" title={s.summaryError ?? 'error'}></span>
               </td>
             {/if}
-            <td onclick={(e) => e.stopPropagation()}>
+            <td class="hidden md:table-cell" onclick={(e) => e.stopPropagation()}>
               <a
                 class="rounded bg-blue-100 px-2 py-1 text-xs text-blue-700 hover:bg-blue-200"
                 href="/properties/export?account={encodeURIComponent(s.accountId)}&site={encodeURIComponent(s.siteUrl)}&days={data.days}&dim=query"
@@ -628,7 +634,7 @@
                 href="/properties/export?account={encodeURIComponent(s.accountId)}&site={encodeURIComponent(s.siteUrl)}&days={data.days}&dim=page"
               >page CSV</a>
             </td>
-            <td onclick={(e) => e.stopPropagation()}>
+            <td class="hidden md:table-cell" onclick={(e) => e.stopPropagation()}>
               {#if !isHidden}
                 <button
                   type="button"
@@ -720,6 +726,7 @@
         {/each}
       </tbody>
     </table>
+    </div>
   {/if}
 
   {#if data.queryEntries.length > 0}
@@ -727,35 +734,58 @@
       <div class="app-section-head">
         <div>
           <h2 class="app-section-title">Top queries</h2>
-          <p class="app-section-sub">Aggregated across visible sites only. Per-site rowLimit 200. Click a row to expand 16-month history.</p>
+          <p class="app-section-sub font-mono text-[11px] tracking-tight text-gray-400">visible sites · query × page × country · rowLimit 1000 · click pos → SERP · click row → 16-mo history</p>
         </div>
         <span class="text-xs text-gray-500">{aggregatedQueries.length} of {data.queryEntries.length > 0 ? data.queryEntries.reduce((a, e) => a + e.rows.length, 0) : 0}</span>
       </div>
+      <div class="-mx-3 overflow-x-auto sm:-mx-6">
       <table class="app-table">
         <thead>
           <tr>
-            <th class="cursor-pointer hover:underline" onclick={() => toggleQSort('query')}>Query{qIndicator('query')}</th>
+            <th class="cursor-pointer pl-3 hover:underline sm:pl-6" onclick={() => toggleQSort('query')}>Query{qIndicator('query')}</th>
+            <th class="hidden cursor-pointer hover:underline md:table-cell" onclick={() => toggleQSort('page')}>Page{qIndicator('page')}</th>
+            <th class="cursor-pointer hover:underline" onclick={() => toggleQSort('country')}>Country{qIndicator('country')}</th>
             <th class="cursor-pointer hover:underline" onclick={() => toggleQSort('clicks')}>Clicks{qIndicator('clicks')}</th>
-            <th class="cursor-pointer hover:underline" onclick={() => toggleQSort('impressions')}>Impressions{qIndicator('impressions')}</th>
-            <th class="cursor-pointer hover:underline" onclick={() => toggleQSort('ctr')}>CTR{qIndicator('ctr')}</th>
-            <th class="cursor-pointer hover:underline" onclick={() => toggleQSort('position')}>Avg Pos{qIndicator('position')}</th>
+            <th class="hidden cursor-pointer hover:underline sm:table-cell" onclick={() => toggleQSort('impressions')}>Impressions{qIndicator('impressions')}</th>
+            <th class="hidden cursor-pointer hover:underline md:table-cell" onclick={() => toggleQSort('ctr')}>CTR{qIndicator('ctr')}</th>
+            <th class="cursor-pointer pr-3 hover:underline sm:pr-0" onclick={() => toggleQSort('position')}>Avg Pos{qIndicator('position')}</th>
           </tr>
         </thead>
         <tbody>
           {#each aggregatedQueries as q}
-            <tr class="cursor-pointer" onclick={() => toggleQuery(q.query)}>
-              <td>
-                <span class="mr-1 text-gray-400">{expandedQuery === q.query ? '▾' : '▸'}</span>
+            {@const qKey = `${q.query}|${q.page}|${q.country}`}
+            {@const serpUrl = googleSerpUrl(q.query, q.country)}
+            <tr class="cursor-pointer" onclick={() => toggleQuery(q.query, q.page, q.country)}>
+              <td class="pl-3 sm:pl-6">
+                <span class="mr-1 text-gray-400">{expandedQuery === qKey ? '▾' : '▸'}</span>
                 {q.query}
               </td>
+              <td class="hidden break-all md:table-cell">
+                {#if q.page}
+                  <a class="text-blue-600 hover:underline" href={q.page} target="_blank" rel="noopener noreferrer" onclick={(e) => e.stopPropagation()}>{q.page}</a>
+                {:else}
+                  <span class="text-gray-400">—</span>
+                {/if}
+              </td>
+              <td>
+                {#if q.country}
+                  <span class="inline-flex items-center rounded-sm bg-gray-100 px-1.5 py-0.5 font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-gray-600">{q.country}</span>
+                {/if}
+              </td>
               <td class="app-num">{fmtNum(q.clicks)}</td>
-              <td class="app-num">{fmtNum(q.impressions)}</td>
-              <td class="app-num">{fmtCtr(q.ctr)}</td>
-              <td class="app-num">{fmtPos(q.position)}</td>
+              <td class="app-num hidden sm:table-cell">{fmtNum(q.impressions)}</td>
+              <td class="app-num hidden md:table-cell">{fmtCtr(q.ctr)}</td>
+              <td class="app-num pr-3 sm:pr-0">
+                {#if serpUrl}
+                  <a class="group inline-flex items-baseline gap-0.5 text-gray-800 transition-colors duration-150 hover:text-blue-600 hover:underline hover:decoration-blue-600 hover:underline-offset-2" href={serpUrl} target="_blank" rel="noopener noreferrer" onclick={(e) => e.stopPropagation()} title="Open Google SERP · {q.country.toUpperCase()}">{fmtPos(q.position)}<span class="text-[9px] text-gray-400 transition-colors duration-150 group-hover:text-blue-500">↗</span></a>
+                {:else}
+                  {fmtPos(q.position)}
+                {/if}
+              </td>
             </tr>
-            {#if expandedQuery === q.query}
+            {#if expandedQuery === qKey}
               <tr class="bg-gray-50">
-                <td class="px-2 py-3" colspan="5">
+                <td class="px-2 py-3" colspan="7">
                   {#if historyState.kind === 'loading'}
                     <div class="text-sm text-gray-500">Loading 16-month history…</div>
                   {:else if historyState.kind === 'error'}
@@ -799,6 +829,7 @@
           {/each}
         </tbody>
       </table>
+      </div>
     </section>
   {/if}
 
@@ -811,30 +842,32 @@
         </div>
         <span class="text-xs text-gray-500">{aggregatedPages.length} of {data.pageEntries.length > 0 ? data.pageEntries.reduce((a, e) => a + e.rows.length, 0) : 0}</span>
       </div>
+      <div class="-mx-3 overflow-x-auto sm:-mx-6">
       <table class="app-table">
         <thead>
           <tr>
-            <th class="cursor-pointer hover:underline" onclick={() => togglePSort('page')}>Page{pIndicator('page')}</th>
+            <th class="cursor-pointer pl-3 hover:underline sm:pl-6" onclick={() => togglePSort('page')}>Page{pIndicator('page')}</th>
             <th class="cursor-pointer hover:underline" onclick={() => togglePSort('clicks')}>Clicks{pIndicator('clicks')}</th>
-            <th class="cursor-pointer hover:underline" onclick={() => togglePSort('impressions')}>Impressions{pIndicator('impressions')}</th>
-            <th class="cursor-pointer hover:underline" onclick={() => togglePSort('ctr')}>CTR{pIndicator('ctr')}</th>
-            <th class="cursor-pointer hover:underline" onclick={() => togglePSort('position')}>Avg Pos{pIndicator('position')}</th>
+            <th class="hidden cursor-pointer hover:underline sm:table-cell" onclick={() => togglePSort('impressions')}>Impressions{pIndicator('impressions')}</th>
+            <th class="hidden cursor-pointer hover:underline md:table-cell" onclick={() => togglePSort('ctr')}>CTR{pIndicator('ctr')}</th>
+            <th class="cursor-pointer pr-3 hover:underline sm:pr-0" onclick={() => togglePSort('position')}>Avg Pos{pIndicator('position')}</th>
           </tr>
         </thead>
         <tbody>
           {#each aggregatedPages as p}
             <tr>
-              <td class="break-all">
+              <td class="break-all pl-3 sm:pl-6">
                 <a class="text-blue-600 hover:underline" href={p.page} target="_blank" rel="noopener noreferrer">{p.page}</a>
               </td>
               <td class="app-num">{fmtNum(p.clicks)}</td>
-              <td class="app-num">{fmtNum(p.impressions)}</td>
-              <td class="app-num">{fmtCtr(p.ctr)}</td>
-              <td class="app-num">{fmtPos(p.position)}</td>
+              <td class="app-num hidden sm:table-cell">{fmtNum(p.impressions)}</td>
+              <td class="app-num hidden md:table-cell">{fmtCtr(p.ctr)}</td>
+              <td class="app-num pr-3 sm:pr-0">{fmtPos(p.position)}</td>
             </tr>
           {/each}
         </tbody>
       </table>
+      </div>
     </section>
   {/if}
 </main>

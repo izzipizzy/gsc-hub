@@ -2,7 +2,7 @@ import type { PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { listSitesWithSummary, fetchPerSiteQueries, fetchPerSitePages, type SiteWithSummary } from '$lib/server/google';
 
-const ALLOWED_DAYS = [3, 7, 28] as const;
+const ALLOWED_DAYS = [1, 3, 7, 28, 60] as const;
 type AllowedDays = (typeof ALLOWED_DAYS)[number];
 
 const SORT_FIELDS = ['clicks', 'impressions', 'ctr', 'position', 'site', 'account'] as const;

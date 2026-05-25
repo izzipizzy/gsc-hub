@@ -164,6 +164,21 @@ export interface SearchAnalyticsBody {
   rowLimit?: number;
   startRow?: number;
   dimensionFilterGroups?: DimensionFilterGroup[];
+  dataState?: 'all' | 'final';
+}
+
+function isoDateDaysAgo(daysAgo: number, now: number = Date.now()): string {
+  return new Date(now - daysAgo * 86400_000).toISOString().slice(0, 10);
+}
+
+// Trailing window of `days` calendar days ending today (inclusive).
+// Pair with dataState: 'all' so days=1 returns the last ~24h, including
+// partial fresh data — same behavior as GSC UI's 24h view.
+function gscDateRange(days: number, now: number = Date.now()): { startDate: string; endDate: string } {
+  return {
+    startDate: isoDateDaysAgo(days, now),
+    endDate: isoDateDaysAgo(0, now)
+  };
 }
 
 export async function searchAnalyticsQuery(
@@ -172,11 +187,14 @@ export async function searchAnalyticsQuery(
   siteUrl: string,
   body: SearchAnalyticsBody
 ): Promise<SearchAnalyticsRow[]> {
+  // Default to fresh data ('all') so short windows like days=1 work.
+  // Callers can override with dataState: 'final' for stable-only queries.
+  const payload: SearchAnalyticsBody = { dataState: 'all', ...body };
   const res = await authorizedFetch(
     db,
     acc,
     SEARCH_ANALYTICS_URL(siteUrl),
-    { method: 'POST', body: JSON.stringify(body) }
+    { method: 'POST', body: JSON.stringify(payload) }
   );
   if (res.status === 401) {
     markRevoked(db, acc.id, 'searchAnalytics 401');
@@ -381,8 +399,7 @@ export async function fetchDailyBreakdown(
 
   // Date math: current period = [now-days, now], previous = [now-2*days, now-days-1].
   const now = Date.now();
-  const isoFrom = (offsetDays: number) =>
-    new Date(now - offsetDays * 86400_000).toISOString().slice(0, 10);
+  const isoFrom = (offsetDays: number) => isoDateDaysAgo(offsetDays, now);
   const currentEnd = isoFrom(0);
   const currentStart = isoFrom(days);
   const prevStart = isoFrom(days * 2);
@@ -455,6 +472,8 @@ export async function fetchDailyBreakdown(
 
 export interface AggregatedQuery {
   query: string;
+  page: string;
+  country: string;   // ISO 3166-1 alpha-3 lowercase from GSC (e.g. 'rus', 'usa'); '' if missing
   clicks: number;
   impressions: number;
   ctr: number;       // clicks / impressions
@@ -475,7 +494,7 @@ export interface PerSiteQueriesFanOut {
 export async function fetchPerSiteQueries(
   db: Db,
   days: number,
-  perSiteLimit: number = 200
+  perSiteLimit: number = 1000
 ): Promise<PerSiteQueriesFanOut> {
   const accounts = listAccounts(db).filter((a) => a.status === 'active');
 
@@ -502,15 +521,14 @@ export async function fetchPerSiteQueries(
 
   if (pairs.length === 0) return { entries: [], errors };
 
-  const startDate = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
-  const endDate = new Date().toISOString().slice(0, 10);
+  const { startDate, endDate } = gscDateRange(days);
 
   const perSite = await Promise.allSettled(
     pairs.map(({ acc, site }) =>
       searchAnalyticsQuery(db, acc, site.siteUrl, {
         startDate,
         endDate,
-        dimensions: ['query'],
+        dimensions: ['query', 'page', 'country'],
         rowLimit: perSiteLimit
       })
     )
@@ -522,6 +540,8 @@ export async function fetchPerSiteQueries(
     if (r.status !== 'fulfilled') return;
     const rows: AggregatedQuery[] = r.value.map((row) => ({
       query: row.keys[0] ?? '',
+      page: row.keys[1] ?? '',
+      country: row.keys[2] ?? '',
       clicks: row.clicks,
       impressions: row.impressions,
       ctr: row.ctr,
@@ -582,8 +602,7 @@ export async function fetchPerSitePages(
 
   if (pairs.length === 0) return { entries: [], errors };
 
-  const startDate = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
-  const endDate = new Date().toISOString().slice(0, 10);
+  const { startDate, endDate } = gscDateRange(days);
 
   const perSite = await Promise.allSettled(
     pairs.map(({ acc, site }) =>
@@ -630,14 +649,6 @@ export interface SitesWithSummaryFanOut {
   errors: { accountId: string; accountEmail: string; reason: string }[];
 }
 
-function dateNDaysAgo(n: number): string {
-  return new Date(Date.now() - n * 86400_000).toISOString().slice(0, 10);
-}
-
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 export async function listSitesWithSummary(
   db: Db,
   days = 28
@@ -665,8 +676,7 @@ export async function listSitesWithSummary(
   });
 
   // Step 2: parallel summaries — one call per site.
-  const startDate = dateNDaysAgo(days);
-  const endDate = todayIso();
+  const { startDate, endDate } = gscDateRange(days);
   const summaries = await Promise.allSettled(
     pairs.map(({ acc, site }) =>
       searchAnalyticsQuery(db, acc, site.siteUrl, {
@@ -752,9 +762,7 @@ export async function fetchQueryHistory(
 
   if (pairs.length === 0) return { entries: [], errors };
 
-  const now = Date.now();
-  const startDate = new Date(now - days * 86400_000).toISOString().slice(0, 10);
-  const endDate = new Date(now).toISOString().slice(0, 10);
+  const { startDate, endDate } = gscDateRange(days);
 
   const fetches = await Promise.allSettled(
     pairs.map(({ acc, site }) =>

@@ -2,7 +2,7 @@ import type { PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { fetchDailyBreakdown } from '$lib/server/google';
 
-const ALLOWED_DAYS = [3, 7, 28] as const;
+const ALLOWED_DAYS = [1, 3, 7, 28, 60] as const;
 type AllowedDays = (typeof ALLOWED_DAYS)[number];
 
 const ALLOWED_COLS = [2, 4, 6] as const;

@@ -9,7 +9,7 @@
 
 <svelte:head><title>Accounts — gsc-hub</title></svelte:head>
 
-<main class="w-full p-6">
+<main class="w-full p-3 sm:p-6">
   <header class="app-toolbar">
     <div class="app-toolbar-left">
       <nav class="app-breadcrumbs">
@@ -39,21 +39,22 @@
       <p class="app-empty-sub">Click <span class="font-medium text-gray-700">Connect Google account</span> above to authorize one or more accounts. OAuth tokens stay local in <code class="rounded bg-gray-100 px-1 py-0.5 text-[11px] text-gray-700">data/gsc-hub.db</code>.</p>
     </div>
   {:else}
+    <div class="-mx-3 overflow-x-auto sm:-mx-6">
     <table class="app-table">
       <thead>
         <tr>
-          <th>Email</th>
-          <th>Label</th>
+          <th class="pl-3 sm:pl-6">Email</th>
+          <th class="hidden sm:table-cell">Label</th>
           <th>Status</th>
-          <th>Added</th>
-          <th class="w-px text-right">Actions</th>
+          <th class="hidden md:table-cell">Added</th>
+          <th class="w-px pr-3 text-right sm:pr-6">Actions</th>
         </tr>
       </thead>
       <tbody>
         {#each data.accounts as a (a.id)}
           <tr>
-            <td class="font-medium text-gray-900">{a.email}</td>
-            <td>
+            <td class="break-all pl-3 font-medium text-gray-900 sm:pl-6">{a.email}</td>
+            <td class="hidden sm:table-cell">
               <form method="POST" action="/accounts/{a.id}/relabel" class="flex items-center gap-1">
                 <input
                   name="label"
@@ -70,8 +71,8 @@
                 {a.status}
               </span>
             </td>
-            <td class="app-num text-xs text-gray-500">{fmtDate(a.added_at)}</td>
-            <td class="text-right">
+            <td class="app-num hidden text-xs text-gray-500 md:table-cell">{fmtDate(a.added_at)}</td>
+            <td class="pr-3 text-right sm:pr-6">
               <form method="POST" action="/accounts/{a.id}/delete" class="inline-block">
                 <button
                   type="submit"
@@ -86,5 +87,6 @@
         {/each}
       </tbody>
     </table>
+    </div>
   {/if}
 </main>

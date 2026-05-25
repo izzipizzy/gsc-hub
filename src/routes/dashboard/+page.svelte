@@ -87,7 +87,7 @@
 
 <svelte:head><title>Dashboard — gsc-hub</title></svelte:head>
 
-<main class="w-full p-6">
+<main class="w-full p-3 sm:p-6">
   <header class="app-toolbar">
     <div class="app-toolbar-left">
       <nav class="app-breadcrumbs">
@@ -102,7 +102,7 @@
       <span class="app-toolbar-divider" aria-hidden="true"></span>
       <div class="app-segmented">
         <span class="app-segmented-label">Period</span>
-        {#each [3, 7, 28] as d}
+        {#each [1, 3, 7, 28, 60] as d}
           <a class:is-active={data.days === d} href="?days={d}&cols={data.cols}">{d}d</a>
         {/each}
       </div>
