@@ -1,6 +1,6 @@
 # gsc-hub
 
-Локальный мульти-аккаунт SvelteKit-апп для Google Search Console. Один пользователь (персональный инструмент). Доступен через cloudflared-туннель на gsc.doxer.top + локально на :5173.
+Локальный мульти-аккаунт SvelteKit-апп для Google Search Console. Один пользователь (персональный инструмент). Запускается в docker compose под OrbStack, доступен по `https://gsc.local`.
 
 ## Стек
 
@@ -35,10 +35,13 @@
 
 ## Команды
 
-- `pnpm dev` — dev-сервер
-- `pnpm build && node build/index.js` — прод-запуск
-- `pnpm test` — Vitest
-- `pnpm check` — svelte-check (type-check)
+- `pnpm dev` — dev-сервер на хосте (для итерации с hot-reload)
+- `docker compose up -d --build` — собрать и поднять прод-контейнер
+- `docker compose logs -f gsc` — логи
+- `docker compose restart gsc` — рестарт
+- `docker compose down` — снести (данные в `./data` сохраняются)
+- `pnpm test` — Vitest (на хосте)
+- `pnpm check` — svelte-check (на хосте)
 
 ## Секреты
 
@@ -53,10 +56,13 @@
 
 ## Деплой
 
-Локально на маке:
-- `pm2 start "node build/index.js" --name gsc-hub` (или launchd-агент)
-- `cloudflared tunnel run` с маршрутом `gsc.doxer.top → 127.0.0.1:5173`
-- Cloudflare Access policy: allow только email пользователя
+Локально на маке через OrbStack:
+- `docker compose up -d --build` — поднять
+- OrbStack стартует с логином пользователя, контейнер с `restart: unless-stopped` сам поднимается после ребута
+- Доступ: `https://gsc.local` (OrbStack proxy с автоматическим TLS) или `https://gsc.orb.local` (auto-домен по имени контейнера)
+- Порт на хост **не пробрасывается** — снаружи OrbStack-сети сервис недоступен
+
+Для добавления Google-аккаунта redirect URI в GCP OAuth-клиенте должен включать `https://gsc.local/auth/callback/google`.
 
 ## Что вне MVP
 
