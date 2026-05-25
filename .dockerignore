@@ -1,0 +1,13 @@
+node_modules
+.svelte-kit
+build
+data
+.env
+.env.*
+.git
+.vscode
+docs
+tests
+*.md
+DESIGN.json
+ecosystem.config.cjs
