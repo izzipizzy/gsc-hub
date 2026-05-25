@@ -1,16 +1,16 @@
 import { SvelteKitAuth } from '@auth/sveltekit';
 import Google from '@auth/core/providers/google';
-import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, AUTH_SECRET } from '$env/static/private';
+import { env as privateEnv } from '$env/dynamic/private';
 import { db } from '$lib/server/db';
 import { upsertAccount } from '$lib/server/accounts';
 
 export const { handle, signIn, signOut } = SvelteKitAuth({
-  secret: AUTH_SECRET,
+  secret: privateEnv.AUTH_SECRET,
   trustHost: true,
   providers: [
     Google({
-      clientId: GOOGLE_CLIENT_ID,
-      clientSecret: GOOGLE_CLIENT_SECRET,
+      clientId: privateEnv.GOOGLE_CLIENT_ID,
+      clientSecret: privateEnv.GOOGLE_CLIENT_SECRET,
       authorization: {
         params: {
           scope:
