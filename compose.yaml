@@ -1,0 +1,15 @@
+services:
+  gsc:
+    build: .
+    container_name: gsc
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+      DB_PATH: /data/gsc-hub.db
+    volumes:
+      - ./data:/data
+    labels:
+      dev.orbstack.domains: gsc.local
+      dev.orbstack.http_port: "3000"
