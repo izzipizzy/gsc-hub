@@ -15,7 +15,7 @@
 **Что хранится в БД:** только токены подключённых Google-аккаунтов (`google_accounts`).
 **Что НЕ хранится:** никакие данные GSC (Properties, queries, clicks). Всегда live-fetch.
 
-**OAuth-flow (мульти-аккаунт):** Auth.js `signIn`-callback переопределён. Вместо создания app-сессии callback апсертит запись в `google_accounts` по `profile.sub` и возвращает редирект-URL (`'/'`). Auth.js при этом не создаёт сессионную куки и просто кидает обратно на главную. Апп защищён cloudflared+Cloudflare Access снаружи и localhost-binding изнутри.
+**OAuth-flow (мульти-аккаунт):** Auth.js `signIn`-callback переопределён. Вместо создания app-сессии callback апсертит запись в `google_accounts` по `profile.sub` и возвращает редирект-URL (`'/'`). Auth.js при этом не создаёт сессионную куки и просто кидает обратно на главную. Апп доступен только из локальной OrbStack-сети (`https://gsc.local`) — порт на хост не пробрасывается, наружу не выходит.
 
 **Refresh access-токена:** перед каждым GSC-вызовом проверяется `expires_at`. Если истёк — обмен через `https://oauth2.googleapis.com/token`. При 401 после refresh — `status='revoked'`, UI показывает «Reconnect».
 
