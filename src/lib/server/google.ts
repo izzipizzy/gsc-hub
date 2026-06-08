@@ -230,6 +230,11 @@ export interface GscSitemap {
 const SITEMAPS_LIST_URL = (siteUrl: string) =>
   `https://searchconsole.googleapis.com/webmasters/v3/sites/${encodeURIComponent(siteUrl)}/sitemaps`;
 
+const SITEMAP_SUBMIT_URL = (siteUrl: string, feedpath: string) =>
+  `https://searchconsole.googleapis.com/webmasters/v3/sites/${encodeURIComponent(
+    siteUrl
+  )}/sitemaps/${encodeURIComponent(feedpath)}`;
+
 export async function listSitemaps(
   db: Db,
   acc: AccountRow,
@@ -245,6 +250,73 @@ export async function listSitemaps(
   }
   const json = (await res.json()) as { sitemap?: GscSitemap[] };
   return json.sitemap ?? [];
+}
+
+// PUT a single sitemap feedpath — tells Google to (re)submit it. Empty body, 2xx = ok.
+export async function submitSitemap(
+  db: Db,
+  acc: AccountRow,
+  siteUrl: string,
+  feedpath: string
+): Promise<void> {
+  const res = await authorizedFetch(db, acc, SITEMAP_SUBMIT_URL(siteUrl, feedpath), {
+    method: 'PUT'
+  });
+  if (res.status === 401) {
+    markRevoked(db, acc.id, 'sitemaps.submit 401');
+    throw new Error('sitemaps.submit 401');
+  }
+  if (!res.ok) {
+    throw new Error(`sitemaps.submit ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  }
+}
+
+function siteHomepage(siteUrl: string): string {
+  if (siteUrl.startsWith('sc-domain:')) return `https://${siteUrl.slice('sc-domain:'.length)}/`;
+  return siteUrl;
+}
+
+export interface SitemapSubmitResult {
+  submitted: string[];
+  failed: { path: string; reason: string }[];
+  source: 'gsc-list' | 'guess' | 'none';
+}
+
+// Resubmit every sitemap GSC already knows for this site. If none are listed,
+// fall back to guessing {site}/sitemap.xml and submitting that.
+export async function resubmitSitemapsForSite(
+  db: Db,
+  acc: AccountRow,
+  siteUrl: string
+): Promise<SitemapSubmitResult> {
+  let paths: string[] = [];
+  let source: SitemapSubmitResult['source'] = 'gsc-list';
+
+  try {
+    const sitemaps = await listSitemaps(db, acc, siteUrl);
+    paths = sitemaps.map((s) => s.path).filter(Boolean);
+  } catch {
+    // sitemaps.list failed (other than 401, which already threw) — fall through to guess.
+    paths = [];
+  }
+
+  if (paths.length === 0) {
+    paths = [new URL('/sitemap.xml', siteHomepage(siteUrl)).toString()];
+    source = 'guess';
+  }
+
+  const settled = await Promise.allSettled(
+    paths.map((p) => submitSitemap(db, acc, siteUrl, p))
+  );
+
+  const submitted: string[] = [];
+  const failed: { path: string; reason: string }[] = [];
+  settled.forEach((r, i) => {
+    if (r.status === 'fulfilled') submitted.push(paths[i]);
+    else failed.push({ path: paths[i], reason: (r.reason as Error).message.slice(0, 200) });
+  });
+
+  return { submitted, failed, source: submitted.length === 0 && source === 'guess' ? 'none' : source };
 }
 
 // ---------------------------------------------------------------------------

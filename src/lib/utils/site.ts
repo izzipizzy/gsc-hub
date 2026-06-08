@@ -13,3 +13,12 @@ export function siteHref(siteUrl: string): string {
   if (siteUrl.startsWith('sc-domain:')) return `https://${siteUrl.slice('sc-domain:'.length)}/`;
   return siteUrl;
 }
+
+// Google-поиск `site:domain` для ручной проверки индексации.
+// Для domain-property — голый домен; для URL-prefix — host+path без схемы.
+export function siteSearchHref(siteUrl: string): string {
+  const target = siteUrl.startsWith('sc-domain:')
+    ? siteUrl.slice('sc-domain:'.length)
+    : siteUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
+  return `https://www.google.com/search?q=${encodeURIComponent(`site:${target}`)}`;
+}

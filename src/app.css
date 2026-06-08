@@ -63,6 +63,10 @@
   .app-pill-primary {
     @apply bg-blue-600 text-white hover:bg-blue-700;
   }
+  /* Google `site:` search badge — manual indexation check */
+  .app-gsearch {
+    @apply ml-1.5 inline-flex h-4 w-4 items-center justify-center rounded-sm bg-gray-100 align-middle text-[10px] font-bold leading-none text-gray-500 transition-colors hover:bg-blue-600 hover:text-white;
+  }
   /* Section title pattern — h2 with subtitle */
   .app-section {
     @apply mt-12;

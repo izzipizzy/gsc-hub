@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { invalidateAll } from '$app/navigation';
-  import { displaySite, siteHref } from '$lib/utils/site';
+  import { displaySite, siteHref, siteSearchHref } from '$lib/utils/site';
   import { googleSerpUrl } from '$lib/utils/country';
   import type { PageData } from './$types';
   let { data }: { data: PageData } = $props();
@@ -399,6 +399,72 @@
     }
   }
 
+  // Sitemap (re)submit state
+  type SubmitState =
+    | { kind: 'loading' }
+    | { kind: 'done'; submitted: number; failed: number; source: string }
+    | { kind: 'error'; message: string };
+
+  let submitStates = $state<Map<string, SubmitState>>(new Map());
+  let submitAllState = $state<
+    | { kind: 'idle' }
+    | { kind: 'loading'; done: number; total: number }
+    | { kind: 'done'; sites: number; sitemaps: number; failed: number }
+  >({ kind: 'idle' });
+
+  function setSubmitState(key: string, st: SubmitState) {
+    submitStates.set(key, st);
+    submitStates = new Map(submitStates);
+  }
+
+  async function submitSitemapFor(
+    s: { accountId: string; siteUrl: string }
+  ): Promise<{ submitted: number; failed: number; source: string } | null> {
+    const key = `${s.accountId}|${s.siteUrl}`;
+    setSubmitState(key, { kind: 'loading' });
+    try {
+      const res = await fetch('/properties/sitemap-submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account: s.accountId, site: s.siteUrl })
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+      const r = await res.json();
+      const summary = { submitted: r.submitted.length, failed: r.failed.length, source: r.source };
+      setSubmitState(key, { kind: 'done', ...summary });
+      return summary;
+    } catch (e) {
+      setSubmitState(key, { kind: 'error', message: (e as Error).message });
+      return null;
+    }
+  }
+
+  async function submitAllSitemaps() {
+    const sites = visibleSites;
+    if (sites.length === 0) return;
+    submitAllState = { kind: 'loading', done: 0, total: sites.length };
+    let sitemaps = 0;
+    let failed = 0;
+    let doneCount = 0;
+    const results = await Promise.all(
+      sites.map(async (s) => {
+        const r = await submitSitemapFor({ accountId: s.accountId, siteUrl: s.siteUrl });
+        doneCount++;
+        submitAllState = { kind: 'loading', done: doneCount, total: sites.length };
+        return r;
+      })
+    );
+    for (const r of results) {
+      if (r) {
+        sitemaps += r.submitted;
+        failed += r.failed;
+      } else {
+        failed += 1;
+      }
+    }
+    submitAllState = { kind: 'done', sites: sites.length, sitemaps, failed };
+  }
+
   function fmtCacheTime(ts: number): string {
     const d = new Date(ts * 1000);
     const now = Date.now();
@@ -526,6 +592,10 @@
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 7a4.5 4.5 0 0 1 7.96-2.86M11.5 7a4.5 4.5 0 0 1-7.96 2.86M11 2.5v2.5h-2.5M3 11.5v-2.5h2.5"/></svg>
         Refresh
       </button>
+      <button type="button" class="app-pill app-pill-secondary" onclick={submitAllSitemaps} disabled={submitAllState.kind === 'loading'}>
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 1.5v7M4 5l3-3 3 3M2.5 9.5v2a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1v-2"/></svg>
+        {#if submitAllState.kind === 'loading'}Submitting {submitAllState.done}/{submitAllState.total}…{:else}Submit all sitemaps{/if}
+      </button>
     </div>
   </header>
 
@@ -541,6 +611,12 @@
         {/each}
       </ul>
     </div>
+  {/if}
+
+  {#if submitAllState.kind === 'done'}
+    <p class="mb-3 text-xs {submitAllState.failed > 0 ? 'text-amber-700' : 'text-green-700'}">
+      Submit all: {submitAllState.sitemaps} sitemap{submitAllState.sitemaps === 1 ? '' : 's'} submitted across {submitAllState.sites} site{submitAllState.sites === 1 ? '' : 's'}{#if submitAllState.failed > 0} · {submitAllState.failed} failed{/if}.
+    </p>
   {/if}
 
   {#if hidden.size > 0}
@@ -566,7 +642,6 @@
               Site URL{sortIndicator('site', data.sort, data.dir)}
             </a>
           </th>
-          <th class="hidden lg:table-cell">Permission</th>
           <th class="hidden md:table-cell">
             <a class="cursor-pointer hover:underline" href={sortHref('account', data.sort, data.dir, data.days)}>
               Account{sortIndicator('account', data.sort, data.dir)}
@@ -601,12 +676,33 @@
           {@const sKey = `${s.accountId}|${s.siteUrl}`}
           {@const expanded = expandedSite === sKey}
           {@const isHidden = hidden.has(keyOf(s))}
+          {@const subSt = submitStates.get(sKey)}
           <tr class="cursor-pointer hover:bg-gray-50 {isHidden ? 'is-hidden-row' : ''}" onclick={() => toggleSite(s)}>
             <td class="pl-3 sm:pl-6">
               <span class="mr-1 text-gray-400">{expanded ? '▾' : '▸'}</span>
               <a class="text-blue-600 hover:underline" href={siteHref(s.siteUrl)} target="_blank" rel="noopener noreferrer" onclick={(e) => e.stopPropagation()}>{displaySite(s.siteUrl)}</a>
+              <a
+                class="app-gsearch"
+                href={siteSearchHref(s.siteUrl)}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Google site:{displaySite(s.siteUrl)} — проверить индексацию"
+                aria-label="Google site search"
+                onclick={(e) => e.stopPropagation()}
+              >G</a>
+              <button
+                type="button"
+                class="ml-1 rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+                title="Resubmit sitemap(s) to Google"
+                disabled={subSt?.kind === 'loading'}
+                onclick={(e) => { e.stopPropagation(); submitSitemapFor({ accountId: s.accountId, siteUrl: s.siteUrl }); }}
+              >{subSt?.kind === 'loading' ? '…' : 'Submit sitemap'}</button>
+              {#if subSt?.kind === 'done'}
+                <span class="ml-1 text-[11px] {subSt.failed > 0 ? 'text-amber-700' : 'text-green-700'}" title="source: {subSt.source}">✓ {subSt.submitted}{#if subSt.failed > 0} · ✗ {subSt.failed}{/if}</span>
+              {:else if subSt?.kind === 'error'}
+                <span class="ml-1 text-[11px] text-red-600" title={subSt.message}>✗ failed</span>
+              {/if}
             </td>
-            <td class="hidden text-gray-500 lg:table-cell">{s.permissionLevel}</td>
             <td class="hidden md:table-cell">
               {s.accountLabel ?? s.accountEmail}
               {#if s.accountLabel}<span class="text-gray-400"> ({s.accountEmail})</span>{/if}
@@ -652,7 +748,7 @@
           </tr>
           {#if expanded}
             <tr class="border-b bg-gray-50">
-              <td class="px-3 py-3" colspan="9">
+              <td class="px-3 py-3" colspan="8">
                 {#if inspectState.kind === 'loading'}
                   <div class="text-sm text-gray-500">Inspecting {inspectState.total} top URLs (URL Inspection API, ~3-5s)…</div>
                 {:else if inspectState.kind === 'error'}
@@ -755,7 +851,8 @@
           {#each aggregatedQueries as q}
             {@const qKey = `${q.query}|${q.page}|${q.country}`}
             {@const serpUrl = googleSerpUrl(q.query, q.country)}
-            <tr class="cursor-pointer" onclick={() => toggleQuery(q.query, q.page, q.country)}>
+            {@const posClass = q.position > 0 && q.position <= 10 ? 'bg-green-50 hover:bg-green-100' : q.position > 0 && q.position <= 20 ? 'bg-yellow-50 hover:bg-yellow-100' : 'hover:bg-gray-50'}
+            <tr class="cursor-pointer {posClass}" onclick={() => toggleQuery(q.query, q.page, q.country)}>
               <td class="pl-3 sm:pl-6">
                 <span class="mr-1 text-gray-400">{expandedQuery === qKey ? '▾' : '▸'}</span>
                 {q.query}
