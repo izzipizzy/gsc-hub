@@ -14,7 +14,7 @@ export const { handle, signIn, signOut } = SvelteKitAuth({
       authorization: {
         params: {
           scope:
-            'openid email https://www.googleapis.com/auth/webmasters.readonly',
+            'openid email https://www.googleapis.com/auth/webmasters',
           access_type: 'offline',
           prompt: 'consent',
           include_granted_scopes: 'true'

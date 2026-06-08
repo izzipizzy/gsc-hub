@@ -402,7 +402,7 @@
   // Sitemap (re)submit state
   type SubmitState =
     | { kind: 'loading' }
-    | { kind: 'done'; submitted: number; failed: number; source: string }
+    | { kind: 'done'; submitted: number; failed: number; source: string; failReasons: string[] }
     | { kind: 'error'; message: string };
 
   let submitStates = $state<Map<string, SubmitState>>(new Map());
@@ -430,8 +430,11 @@
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
       const r = await res.json();
+      const failReasons = (r.failed as { path: string; reason: string }[]).map(
+        (f) => `${f.path}: ${f.reason}`
+      );
       const summary = { submitted: r.submitted.length, failed: r.failed.length, source: r.source };
-      setSubmitState(key, { kind: 'done', ...summary });
+      setSubmitState(key, { kind: 'done', ...summary, failReasons });
       return summary;
     } catch (e) {
       setSubmitState(key, { kind: 'error', message: (e as Error).message });
@@ -698,7 +701,7 @@
                 onclick={(e) => { e.stopPropagation(); submitSitemapFor({ accountId: s.accountId, siteUrl: s.siteUrl }); }}
               >{subSt?.kind === 'loading' ? '…' : 'Submit sitemap'}</button>
               {#if subSt?.kind === 'done'}
-                <span class="ml-1 text-[11px] {subSt.failed > 0 ? 'text-amber-700' : 'text-green-700'}" title="source: {subSt.source}">✓ {subSt.submitted}{#if subSt.failed > 0} · ✗ {subSt.failed}{/if}</span>
+                <span class="ml-1 text-[11px] {subSt.failed > 0 ? 'text-amber-700' : 'text-green-700'}" title={subSt.failed > 0 ? subSt.failReasons.join('\n') : `source: ${subSt.source}`}>✓ {subSt.submitted}{#if subSt.failed > 0} · ✗ {subSt.failed}{/if}</span>
               {:else if subSt?.kind === 'error'}
                 <span class="ml-1 text-[11px] text-red-600" title={subSt.message}>✗ failed</span>
               {/if}

@@ -28,7 +28,7 @@
 		"vitest": "^4.1.5"
 	},
 	"dependencies": {
-		"@auth/core": "^0.34.3",
+		"@auth/core": "0.41.2",
 		"@auth/sveltekit": "^1.11.2",
 		"better-sqlite3": "^12.9.0"
 	}
