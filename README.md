@@ -14,25 +14,32 @@ Local self-hosted multi-account hub for **Google Search Console**. Connect sever
 
 Built as a personal alternative to seogets-style SaaS tools when you have multiple Google accounts (personal, work, clients) and don't want to log in to each Search Console separately.
 
-> **Status:** working MVP. Used daily on macOS dev. No production deploy story shipped (intentional, see Architecture).
+> **Status:** working MVP, used daily on macOS. Ships with a Docker Compose + OrbStack deploy served at `https://gsc.local`. Accounts are connected over `http://localhost:5173` because Google rejects OAuth redirects to `.local` domains (see [Deploying](#deploying-with-docker-compose--orbstack)).
 
 ## Features
 
 ### Multi-account OAuth
-- Connect any number of Google accounts. Each click on **Connect Google account** runs a normal Google consent flow (`webmasters.readonly` scope, `access_type=offline`, `prompt=consent`).
+- Connect any number of Google accounts. Each click on **Connect Google account** runs a normal Google consent flow (`webmasters` read-write scope, `access_type=offline`, `prompt=consent`). The read-write scope is required to submit sitemaps; if you only need read access, change `src/auth.ts` back to `webmasters.readonly`.
 - Tokens are stored in a local SQLite file (`./data/gsc-hub.db`). Refresh tokens auto-rotate; access tokens are refreshed transparently 60 seconds before they expire.
 - Revoked tokens detected via the first 401 from Google: account is marked `revoked`, UI prompts reconnect, no silent failures.
 
 ### Unified sites table (`/properties`, displayed as **Sites**)
 - All Search Console properties from all connected accounts, in one full-bleed table.
 - Per-site live aggregate for the selected period: **Clicks / Impressions / CTR / Avg Pos**, plus a **CSV export** column (queries or pages, configurable period).
-- URL-driven sort and filter: `?days=3|7|28&sort=clicks|impressions|ctr|position|site|account&dir=asc|desc`. Bookmark, share, browser-back work as expected.
+- URL-driven sort and filter: `?days=1|3|7|28|60&sort=clicks|impressions|ctr|position|site|account&dir=asc|desc`. Bookmark, share, browser-back work as expected.
+- A **"G" badge** next to each site opens a Google `site:` search for a quick manual indexation check.
 - Hide sites you don't care about (kept in localStorage per browser; doesn't sync).
 - Domain properties displayed as `example.com` (the `sc-domain:` GSC prefix is stripped for display, link still goes to `https://example.com/`).
 - Click any site row to expand a quick **URL Inspection** report for its top 10 URLs (verdict, coverage, robots, last crawl, canonical mismatch). Uses Google's URL Inspection API; daily quota is 2000 per Google account. Results are cached for **12 hours** in SQLite (key: account + site + url-set hash). Re-clicking the same site reuses the cache; **Force refresh** button bypasses it. The cache exists because URL Inspection has a hard 2000-call/day quota per Google account. Sites with no/low impressions in the current period fall back to URLs from their **sitemap**: gsc-hub asks Search Console which sitemaps the site submitted, downloads the first one (following sitemapindex if needed), and uses up to 10 page URLs from there. The homepage is always included.
 
+### Sitemap submit
+- **Submit sitemap** button per site: resubmits every sitemap Search Console already knows for that property, falling back to a guessed `/sitemap.xml` if none are registered. Inline status (`✓ N` / failure reason in the tooltip).
+- **Submit all sitemaps** button in the toolbar: fans out across all visible (non-hidden) sites in parallel, with progress and an aggregate result.
+- Requires the read-write `webmasters` scope (see Multi-account OAuth).
+
 ### Top queries (aggregated, sortable)
-- Aggregated query-level rollup across all visible (non-hidden) sites for the selected period. Clicks, impressions, CTR (computed), Avg Pos (impression-weighted).
+- Aggregated query-level rollup across all visible (non-hidden) sites for the selected period, broken down by **query × page × country**. Clicks, impressions, CTR (computed), Avg Pos (impression-weighted).
+- Click the position cell to open the **Google SERP** for that query in the matching country.
 - Click a row to expand a **16-month inline history chart** for that exact query: red position line + blue impression bars, gridlines, axis range labels. Aggregated by day across visible sites only.
 - Client-side column sort (Query / Clicks / Impressions / CTR / Avg Pos), independent from the sites-table sort.
 
@@ -69,6 +76,10 @@ pnpm dev
 
 Open <http://localhost:5173>, click **Connect Google account**, complete consent, repeat for each account you want to connect.
 
+For a long-running local deploy, use Docker Compose instead — see [Deploying with Docker Compose + OrbStack](#deploying-with-docker-compose--orbstack).
+
+> **Connect accounts over `http://localhost:5173`, not `https://gsc.local`.** Google's OAuth policy rejects redirects to the `.local` TLD (`Error 400: invalid_request`). The Compose setup exposes a loopback port specifically so the consent flow can run on localhost; day-to-day you can still use `https://gsc.local`. The SQLite DB is shared, so a token obtained on localhost works on `gsc.local` too.
+
 ## Google Cloud setup
 
 1. Open <https://console.cloud.google.com/apis/credentials>.
@@ -80,7 +91,7 @@ Open <http://localhost:5173>, click **Connect Google account**, complete consent
 5. **OAuth consent screen** (now under **Google Auth Platform → Audience**): set User Type to **External**. Either **Publish** the app (any Google account can sign in) or keep it in **Testing** and add your Google emails as Test users.
 6. Copy the Client ID and Client Secret into `.env`. Generate `AUTH_SECRET` via `openssl rand -base64 32`.
 
-The `webmasters.readonly` scope is technically a "restricted scope" in Google's classification, but Google does not require formal verification for personal-tier usage (a handful of accounts). You'll see an "unverified app" warning on the consent screen if you don't publish; click **Advanced → Go to gsc-hub (unsafe)** to proceed.
+The `webmasters` scope is a "sensitive scope" in Google's classification, but Google does not require formal verification for personal-tier usage (the OAuth user cap allows up to 100 consenting users for unverified sensitive scopes). You'll see an "unverified app" warning on the consent screen; click **Advanced → Go to gsc-hub (unsafe)** to proceed. Only register `http://localhost:5173/auth/callback/google` as the redirect URI — Google will not accept a `.local` redirect.
 
 ## Configuration
 
@@ -97,9 +108,10 @@ The `webmasters.readonly` scope is technically a "restricted scope" in Google's 
 ## Architecture
 
 ```
-[browser] ──> [SvelteKit (Node) :5173] ──> Google Search Console API
-                       │
-                       └──> ./data/gsc-hub.db  (only OAuth tokens)
+[browser] ──┬─ https://gsc.local (OrbStack proxy, TLS) ──┐
+            └─ http://localhost:5173 (loopback, for OAuth)┴─> [SvelteKit (Node) :3000] ──> Google Search Console API
+                                                                       │
+                                                                       └──> ./data/gsc-hub.db  (only OAuth tokens)
 ```
 
 One Node process. One SQLite file. The DB schema has two tables:
@@ -154,6 +166,8 @@ gsc-hub/
 ├── DESIGN.md              — visual system (colors, typography, components, rules)
 ├── DESIGN.json            — sidecar with HTML/CSS snippets per component
 ├── CLAUDE.md              — instructions for AI assistants working in this repo
+├── Dockerfile             — multi-stage production image (Node runtime)
+├── compose.yaml           — Docker Compose: OrbStack domain + loopback port 5173
 ├── src/
 │   ├── auth.ts            — SvelteKitAuth config + custom signIn callback
 │   ├── hooks.server.ts
@@ -165,14 +179,20 @@ gsc-hub/
 │   │   │   ├── inspection_cache.ts — 12h SQLite cache for URL Inspection responses
 │   │   │   ├── google.ts           — GSC client, refresh, fan-out, search analytics
 │   │   │   └── csv.ts              — RFC 4180 CSV writer
-│   │   └── utils/site.ts  — strip sc-domain: prefix, build proper href
+│   │   └── utils/
+│   │       ├── site.ts            — strip sc-domain: prefix, build proper href + Google site: search
+│   │       └── country.ts         — map GSC country codes to Google SERP URLs
 │   └── routes/
 │       ├── +page.svelte           — Accounts list (/)
 │       ├── auth/[...auth]/        — Auth.js catch-all
 │       ├── accounts/[id]/         — delete, relabel
 │       └── properties/
 │           ├── +page.svelte       — Sites table + Top queries + Top pages
-│           ├── export/+server.ts  — CSV stream
+│           ├── export/+server.ts        — CSV stream
+│           ├── inspect/+server.ts       — URL Inspection (cached)
+│           ├── refresh/+server.ts       — force-refresh helpers
+│           ├── sitemap-urls/+server.ts  — fetch sitemap URLs for inspection fallback
+│           ├── sitemap-submit/+server.ts — (re)submit sitemaps to GSC
 │           └── query-history/+server.ts — 16-month per-query history
 ├── tests/                          — Vitest, mocks fetch/env
 └── data/gsc-hub.db                 — gitignored, created on first run
@@ -188,14 +208,18 @@ gsc-hub/
 | `pnpm test` | Run Vitest |
 | `pnpm test:watch` | Watch mode |
 | `pnpm check` | `svelte-check` type-check |
+| `docker compose up -d --build` | Build and run the production container (OrbStack) |
+| `docker compose logs -f gsc` | Follow container logs |
+| `docker compose down` | Stop and remove the container (data in `./data` persists) |
 
 ## Tests
 
-36 unit tests cover the server modules:
+39 unit tests cover the server modules:
 - SQLite migration and schema, including `url_inspection_cache` table (`tests/db.test.ts`)
 - URL Inspection cache: hash determinism, miss, hit, TTL expiry, upsert, delete (`tests/inspection_cache.test.ts`)
 - Accounts CRUD including `markActive` / `markRevoked` / `markError` (`tests/accounts.test.ts`)
 - GSC client: token refresh skew window, 5xx → markError, 401/invalid_grant → markRevoked, fan-out aggregation, per-site queries / pages / daily breakdown / query-history (`tests/google.test.ts`)
+- Sitemap URL fetching and parsing (`tests/sitemap.test.ts`)
 - RFC 4180 CSV escaping (`tests/csv.test.ts`)
 
 Routes are not unit-tested; smoke-tested via `curl` against `pnpm dev`.
@@ -209,16 +233,24 @@ Routes are not unit-tested; smoke-tested via `curl` against `pnpm dev`.
 - Tokens are stored in plaintext. This is acceptable for a local single-user tool; encrypt at rest if you ever expose this beyond `127.0.0.1`.
 - The exception is the URL Inspection cache (`url_inspection_cache` table) which stores response payloads keyed by `(account_id, site_url, urls_hash)` for 12 hours, to avoid burning the daily 2000-call quota on repeat clicks. Delete `data/gsc-hub.db` to wipe it.
 
-## Deploying beyond localhost (not shipped)
+## Deploying with Docker Compose + OrbStack
 
-The repo doesn't include a production deploy story by default. If you want to expose this on a hostname (`gsc.your-domain`):
+The repo ships a `Dockerfile` (multi-stage, Node runtime) and a `compose.yaml` tuned for [OrbStack](https://orbstack.dev/) on macOS:
 
-- Run with `pm2 start build/index.js` after `pnpm build`, listen on `127.0.0.1`.
-- Front it with [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) or any reverse proxy.
-- Lock it down with **Cloudflare Access** (or a similar identity-aware proxy) limited to your email — the app has no built-in app auth, only the Google-connection flow.
-- Add the production callback URL to your Google OAuth client.
+```bash
+docker compose up -d --build   # build and start
+docker compose logs -f gsc     # follow logs
+docker compose restart gsc     # restart
+docker compose down            # stop (data in ./data persists)
+```
 
-This was deliberately not included in the codebase: deploy strategy is environment-specific, and the tool works without it.
+- Served at **`https://gsc.local`** via the OrbStack proxy (automatic TLS) — set by the `dev.orbstack.domains` label. Also reachable at `https://gsc.orb.local` (auto domain by container name).
+- `restart: unless-stopped` brings the container back after a reboot (OrbStack starts on login).
+- The container also binds **`127.0.0.1:5173 → 3000`** (loopback only). This exists solely so the OAuth flow can run on `http://localhost:5173` — Google rejects `.local` redirects. Use this URL to connect accounts; use `https://gsc.local` for everyday work.
+- `.env` is read via `env_file`; secrets are injected at runtime through `$env/dynamic/private`, not baked into the image.
+- `./data` is bind-mounted, so the SQLite token store survives rebuilds and is shared with `pnpm dev`.
+
+**Security note:** the app has no built-in authentication (single-user tool). The port is intentionally bound to `127.0.0.1` only — do not expose it on `0.0.0.0` or the network, since the DB holds Google OAuth tokens. To publish on a public hostname, front it with an identity-aware proxy (e.g. Cloudflare Access) limited to your email, and add the production callback URL to your Google OAuth client.
 
 ## Roadmap (Phase B, not yet shipped)
 

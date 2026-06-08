@@ -14,25 +14,32 @@
 
 Сделан как личная альтернатива seogets-style SaaS-инструментам, когда у тебя несколько Google-аккаунтов (личный, рабочий, клиентские) и не хочется логиниться в каждый Search Console отдельно.
 
-> **Статус:** рабочий MVP, используется ежедневно на macOS dev. Production-deploy не входит в коробку (намеренно, см. секцию Architecture).
+> **Статус:** рабочий MVP, используется ежедневно на macOS. В коробке деплой через Docker Compose + OrbStack на `https://gsc.local`. Аккаунты подключаются через `http://localhost:5173`, потому что Google не принимает OAuth-redirect на `.local`-домены (см. [Деплой](#деплой-через-docker-compose--orbstack)).
 
 ## Возможности
 
 ### Мульти-аккаунт OAuth
-- Подключай произвольное количество Google-аккаунтов. Каждый клик на **Connect Google account** запускает обычный Google consent flow (`webmasters.readonly` scope, `access_type=offline`, `prompt=consent`).
+- Подключай произвольное количество Google-аккаунтов. Каждый клик на **Connect Google account** запускает обычный Google consent flow (`webmasters` read-write scope, `access_type=offline`, `prompt=consent`). Read-write scope нужен для отправки sitemap'ов; если нужен только доступ на чтение — верни в `src/auth.ts` `webmasters.readonly`.
 - Токены хранятся в локальном SQLite-файле (`./data/gsc-hub.db`). Refresh-токены ротируются автоматически; access-токены обновляются прозрачно за 60 секунд до истечения.
 - Отозванные токены детектятся первым 401 от Google: аккаунт помечается как `revoked`, UI просит переподключиться, никаких тихих сбоев.
 
 ### Объединённая таблица сайтов (`/properties`, в UI **Sites**)
 - Все Search Console properties со всех подключённых аккаунтов в одной full-bleed таблице.
 - Live-аггрегат на каждый сайт за выбранный период: **Clicks / Impressions / CTR / Avg Pos**, плюс колонка **CSV export** (queries или pages, период настраивается).
-- Сортировка и фильтр через URL: `?days=3|7|28&sort=clicks|impressions|ctr|position|site|account&dir=asc|desc`. Bookmark, шаринг, browser-back работают как ожидаешь.
+- Сортировка и фильтр через URL: `?days=1|3|7|28|60&sort=clicks|impressions|ctr|position|site|account&dir=asc|desc`. Bookmark, шаринг, browser-back работают как ожидаешь.
+- **Бейдж «G»** рядом с каждым сайтом открывает поиск Google `site:` для быстрой ручной проверки индексации.
 - Скрывай сайты, которые не нужны (хранится в localStorage браузера, не синкается между устройствами).
 - Domain properties отображаются как `example.com` (префикс `sc-domain:` GSC обрезается для UI, ссылка по-прежнему ведёт на `https://example.com/`).
 - Клик по строке сайта разворачивает быстрый отчёт **URL Inspection** для топ-10 URL'ов (verdict, coverage, robots, last crawl, mismatch canonical). Использует Google URL Inspection API; дневная квота 2000 на Google-аккаунт. Результаты **кешируются на 12 часов** в SQLite (ключ: account + site + хэш url-набора). Повторный клик берёт из кеша; кнопка **Force refresh** — обновить с нуля. Кеш нужен потому что URL Inspection имеет жёсткий лимит 2000 вызовов/сутки на Google-аккаунт. Для сайтов без impressions или с малыми impressions в текущем периоде используется fallback по **sitemap**: gsc-hub спрашивает у Search Console какие sitemap'ы сабмиттил сайт, скачивает первый (с обработкой sitemapindex), и берёт до 10 URL'ов оттуда. Главная всегда включается.
 
+### Отправка карт сайта (Sitemap submit)
+- Кнопка **Submit sitemap** на каждый сайт: переотправляет в Search Console все уже зарегистрированные sitemap'ы, а если их нет — пробует угаданный `/sitemap.xml`. Inline-статус (`✓ N` / причина ошибки в подсказке).
+- Кнопка **Submit all sitemaps** в тулбаре: параллельно по всем видимым (не скрытым) сайтам, с прогрессом и итоговой сводкой.
+- Требует read-write scope `webmasters` (см. Мульти-аккаунт OAuth).
+
 ### Top queries (агрегированные, сортируемые)
-- Агрегат по ключам поверх всех видимых (не скрытых) сайтов за выбранный период. Clicks, impressions, CTR (вычисляемый), Avg Pos (взвешенный по impressions).
+- Агрегат по ключам поверх всех видимых (не скрытых) сайтов за выбранный период, с разбивкой **query × page × country**. Clicks, impressions, CTR (вычисляемый), Avg Pos (взвешенный по impressions).
+- Клик по ячейке позиции открывает **Google SERP** для этого ключа в соответствующей стране.
 - Клик на строку разворачивает **inline-график 16-месячной истории** для этого ключа: красная линия позиции + синие столбики impressions, gridlines, подписи диапазона. Агрегация по дням только по видимым сайтам.
 - Client-side сортировка по столбцам (Query / Clicks / Impressions / CTR / Avg Pos), независимо от сортировки таблицы сайтов.
 
@@ -69,6 +76,10 @@ pnpm dev
 
 Открой <http://localhost:5173>, кликни **Connect Google account**, пройди consent, повтори для каждого аккаунта.
 
+Для постоянного локального деплоя используй Docker Compose — см. [Деплой через Docker Compose + OrbStack](#деплой-через-docker-compose--orbstack).
+
+> **Подключай аккаунты через `http://localhost:5173`, а не `https://gsc.local`.** OAuth-политика Google отклоняет redirect на `.local`-домен (`Error 400: invalid_request`). Compose-конфиг специально пробрасывает loopback-порт, чтобы consent-flow шёл через localhost; повседневно можно пользоваться `https://gsc.local`. БД общая, поэтому токен, полученный на localhost, работает и на `gsc.local`.
+
 ## Google Cloud setup
 
 1. Открой <https://console.cloud.google.com/apis/credentials>.
@@ -80,7 +91,7 @@ pnpm dev
 5. **OAuth consent screen** (теперь это **Google Auth Platform → Audience**): User Type — **External**. Дальше либо **Publish** (любой Google-аккаунт сможет залогиниться), либо оставь в **Testing** и добавь свои email-адреса в Test users.
 6. Скопируй Client ID и Client Secret в `.env`. Сгенерируй `AUTH_SECRET` через `openssl rand -base64 32`.
 
-`webmasters.readonly` технически считается у Google «restricted scope», но для personal-tier использования (несколько аккаунтов) формальная verification не требуется. На consent screen увидишь предупреждение «unverified app» если не публикуешь приложение, кликни **Advanced → Go to gsc-hub (unsafe)** чтобы продолжить.
+`webmasters` у Google — «sensitive scope», но для personal-tier использования формальная verification не требуется (OAuth user cap допускает до 100 пользователей для неподтверждённых sensitive-scope). На consent screen увидишь предупреждение «unverified app», кликни **Advanced → Go to gsc-hub (unsafe)** чтобы продолжить. В redirect URI указывай только `http://localhost:5173/auth/callback/google` — `.local`-redirect Google не примет.
 
 ## Конфигурация
 
@@ -97,9 +108,10 @@ pnpm dev
 ## Архитектура
 
 ```
-[браузер] ──> [SvelteKit (Node) :5173] ──> Google Search Console API
-                       │
-                       └──> ./data/gsc-hub.db  (только OAuth-токены)
+[браузер] ──┬─ https://gsc.local (OrbStack proxy, TLS) ──┐
+            └─ http://localhost:5173 (loopback, для OAuth)┴─> [SvelteKit (Node) :3000] ──> Google Search Console API
+                                                                       │
+                                                                       └──> ./data/gsc-hub.db  (только OAuth-токены)
 ```
 
 Один Node-процесс. Один SQLite-файл. Схема БД — две таблицы:
@@ -154,6 +166,8 @@ gsc-hub/
 ├── DESIGN.md              — визуальная система (цвета, типографика, компоненты, правила)
 ├── DESIGN.json            — sidecar с HTML/CSS-снипетами на компонент
 ├── CLAUDE.md              — инструкции для AI-ассистентов работающих в этой репе
+├── Dockerfile             — multi-stage production-образ (Node runtime)
+├── compose.yaml           — Docker Compose: OrbStack-домен + loopback-порт 5173
 ├── src/
 │   ├── auth.ts            — SvelteKitAuth конфиг + custom signIn callback
 │   ├── hooks.server.ts
@@ -165,14 +179,20 @@ gsc-hub/
 │   │   │   ├── inspection_cache.ts — 12h SQLite кеш для URL Inspection ответов
 │   │   │   ├── google.ts           — GSC client, refresh, fan-out, search analytics
 │   │   │   └── csv.ts              — RFC 4180 CSV writer
-│   │   └── utils/site.ts  — обрезает sc-domain: префикс, строит правильный href
+│   │   └── utils/
+│   │       ├── site.ts            — обрезает sc-domain: префикс, строит href + Google site: поиск
+│   │       └── country.ts         — маппинг кодов стран GSC в URL Google SERP
 │   └── routes/
 │       ├── +page.svelte           — Accounts list (/)
 │       ├── auth/[...auth]/        — Auth.js catch-all
 │       ├── accounts/[id]/         — delete, relabel
 │       └── properties/
 │           ├── +page.svelte       — Sites table + Top queries + Top pages
-│           ├── export/+server.ts  — CSV stream
+│           ├── export/+server.ts        — CSV stream
+│           ├── inspect/+server.ts       — URL Inspection (с кешем)
+│           ├── refresh/+server.ts       — force-refresh хелперы
+│           ├── sitemap-urls/+server.ts  — получение URL из sitemap для fallback инспекции
+│           ├── sitemap-submit/+server.ts — (пере)отправка sitemap'ов в GSC
 │           └── query-history/+server.ts — 16-месячная история по ключу
 ├── tests/                          — Vitest, моки fetch/env
 └── data/gsc-hub.db                 — gitignored, создаётся при первом запуске
@@ -188,14 +208,18 @@ gsc-hub/
 | `pnpm test` | Запустить Vitest |
 | `pnpm test:watch` | Watch-режим |
 | `pnpm check` | `svelte-check` type-check |
+| `docker compose up -d --build` | Собрать и поднять прод-контейнер (OrbStack) |
+| `docker compose logs -f gsc` | Логи контейнера |
+| `docker compose down` | Остановить и удалить контейнер (данные в `./data` сохраняются) |
 
 ## Тесты
 
-36 unit-тестов покрывают server-модули:
+39 unit-тестов покрывают server-модули:
 - SQLite миграция и схема, включая таблицу `url_inspection_cache` (`tests/db.test.ts`)
 - Кеш URL Inspection: детерминизм хэша, промах, попадание, TTL, upsert, удаление (`tests/inspection_cache.test.ts`)
 - Accounts CRUD включая `markActive` / `markRevoked` / `markError` (`tests/accounts.test.ts`)
 - GSC client: skew window для refresh-токена, 5xx → markError, 401/invalid_grant → markRevoked, fan-out агрегация, per-site queries / pages / daily breakdown / query-history (`tests/google.test.ts`)
+- Получение и парсинг URL из sitemap (`tests/sitemap.test.ts`)
 - RFC 4180 CSV escaping (`tests/csv.test.ts`)
 
 Маршруты не покрыты unit-тестами; smoke-тестятся через `curl` против `pnpm dev`.
@@ -209,16 +233,24 @@ gsc-hub/
 - Токены хранятся plaintext. Это приемлемо для локального single-user тула; зашифруй at rest если когда-нибудь будешь выставлять это за пределы `127.0.0.1`.
 - Исключение — кеш URL Inspection (таблица `url_inspection_cache`) хранит payload'ы ответов под ключом `(account_id, site_url, urls_hash)` на 12 часов, чтобы не жечь дневной лимит 2000 вызовов на повторных кликах. Удали `data/gsc-hub.db` чтобы сбросить.
 
-## Деплой за пределы localhost (не входит в коробку)
+## Деплой через Docker Compose + OrbStack
 
-В репе нет production-deploy сценария по умолчанию. Если хочешь выставить это на хостнейме (`gsc.your-domain`):
+В репе есть `Dockerfile` (multi-stage, Node runtime) и `compose.yaml` под [OrbStack](https://orbstack.dev/) на macOS:
 
-- Запусти через `pm2 start build/index.js` после `pnpm build`, listen на `127.0.0.1`.
-- Поставь перед ним [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) или любой reverse-proxy.
-- Защити **Cloudflare Access** (или другим identity-aware proxy) с allowlist по своему email — у приложения нет встроенной app-аутентификации, только Google-connection flow.
-- Добавь production callback URL в свой Google OAuth client.
+```bash
+docker compose up -d --build   # собрать и поднять
+docker compose logs -f gsc     # логи
+docker compose restart gsc     # рестарт
+docker compose down            # снести (данные в ./data сохраняются)
+```
 
-Это намеренно не зашито в код: deploy зависит от среды, тул работает и без него.
+- Доступ на **`https://gsc.local`** через OrbStack-proxy (авто-TLS) — задаётся label'ом `dev.orbstack.domains`. Также работает `https://gsc.orb.local` (auto-домен по имени контейнера).
+- `restart: unless-stopped` поднимает контейнер после ребута (OrbStack стартует с логином).
+- Контейнер также биндит **`127.0.0.1:5173 → 3000`** (только loopback). Это нужно исключительно для OAuth: consent-flow идёт через `http://localhost:5173`, потому что Google не принимает `.local`-redirect. Этот адрес используй для подключения аккаунтов, а `https://gsc.local` — для повседневной работы.
+- `.env` читается через `env_file`; секреты подставляются в рантайме через `$env/dynamic/private`, не вшиваются в образ.
+- `./data` примонтирован bind-mount'ом, поэтому SQLite-хранилище токенов переживает пересборки и общее с `pnpm dev`.
+
+**Про безопасность:** у приложения нет встроенной аутентификации (single-user тул). Порт намеренно привязан только к `127.0.0.1` — не открывай его на `0.0.0.0`/в сеть, т.к. в БД лежат OAuth-токены Google. Чтобы выставить на публичный хостнейм, поставь перед ним identity-aware proxy (например Cloudflare Access) с allowlist по своему email и добавь production callback URL в Google OAuth client.
 
 ## Roadmap (Phase B, ещё не сделано)
 
