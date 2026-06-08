@@ -15,7 +15,7 @@
 **Что хранится в БД:** только токены подключённых Google-аккаунтов (`google_accounts`).
 **Что НЕ хранится:** никакие данные GSC (Properties, queries, clicks). Всегда live-fetch.
 
-**OAuth-flow (мульти-аккаунт):** Auth.js `signIn`-callback переопределён. Вместо создания app-сессии callback апсертит запись в `google_accounts` по `profile.sub` и возвращает редирект-URL (`'/'`). Auth.js при этом не создаёт сессионную куки и просто кидает обратно на главную. Апп доступен только из локальной OrbStack-сети (`https://gsc.local`) — порт на хост не пробрасывается, наружу не выходит.
+**OAuth-flow (мульти-аккаунт):** Auth.js `signIn`-callback переопределён. Вместо создания app-сессии callback апсертит запись в `google_accounts` по `profile.sub` и возвращает редирект-URL (`'/'`). Auth.js при этом не создаёт сессионную куки и просто кидает обратно на главную. Апп доступен по `https://gsc.local` (OrbStack) и по `http://localhost:5173` (проброс порта только на loopback, для OAuth). Наружу из мака не выходит.
 
 **Refresh access-токена:** перед каждым GSC-вызовом проверяется `expires_at`. Если истёк — обмен через `https://oauth2.googleapis.com/token`. При 401 после refresh — `status='revoked'`, UI показывает «Reconnect».
 
@@ -60,9 +60,9 @@
 - `docker compose up -d --build` — поднять
 - OrbStack стартует с логином пользователя, контейнер с `restart: unless-stopped` сам поднимается после ребута
 - Доступ: `https://gsc.local` (OrbStack proxy с автоматическим TLS) или `https://gsc.orb.local` (auto-домен по имени контейнера)
-- Порт на хост **не пробрасывается** — снаружи OrbStack-сети сервис недоступен
+- Также проброшен `127.0.0.1:5173 → 3000` (только loopback) — нужен для OAuth: Google отклоняет redirect на `.local`-домен, поэтому **подключать аккаунты надо через `http://localhost:5173/`**, а повседневно пользоваться можно по `https://gsc.local`. БД общая, токен виден обоим адресам.
 
-Для добавления Google-аккаунта redirect URI в GCP OAuth-клиенте должен включать `https://gsc.local/auth/callback/google`.
+Для добавления Google-аккаунта redirect URI в GCP OAuth-клиенте должен включать `http://localhost:5173/auth/callback/google` (через `.local` OAuth работать не будет — политика Google).
 
 ## Что вне MVP
 

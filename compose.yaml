@@ -8,6 +8,10 @@ services:
       HOST: 0.0.0.0
       PORT: 3000
       DB_PATH: /data/gsc-hub.db
+    ports:
+      # Host port mirrors the dev port so OAuth via http://localhost:5173
+      # works (Google rejects the .local redirect). Container listens on 3000.
+      - "127.0.0.1:5173:3000"
     volumes:
       - ./data:/data
     labels:
