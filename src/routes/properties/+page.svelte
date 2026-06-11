@@ -61,6 +61,17 @@
     data.sites.filter(s => !hidden.has(keyOf(s)) || showHidden)
   );
 
+  // Totals across non-hidden sites for the selected period.
+  let totals = $derived.by(() => {
+    let clicks = 0, impressions = 0, sites = 0;
+    for (const s of data.sites) {
+      if (hidden.has(keyOf(s))) continue;
+      sites++;
+      if (s.summary) { clicks += s.summary.clicks; impressions += s.summary.impressions; }
+    }
+    return { sites, clicks, impressions };
+  });
+
   function sortHref(field: string, currentSort: string, currentDir: 'asc' | 'desc', days: number) {
     const nextDir = currentSort === field && currentDir === 'desc' ? 'asc' : 'desc';
     return `?days=${days}&sort=${field}&dir=${nextDir}`;
@@ -601,6 +612,21 @@
       </button>
     </div>
   </header>
+
+  <div class="mb-4 flex flex-wrap gap-2">
+    <span class="inline-flex items-baseline gap-1.5 rounded-md bg-gray-100 px-3 py-1.5 text-sm">
+      <span class="text-gray-500">Sites</span>
+      <span class="font-semibold tabular-nums text-gray-900">{fmtNum(totals.sites)}</span>
+    </span>
+    <span class="inline-flex items-baseline gap-1.5 rounded-md bg-gray-100 px-3 py-1.5 text-sm">
+      <span class="text-gray-500">Impressions</span>
+      <span class="font-semibold tabular-nums text-gray-900">{fmtNum(totals.impressions)}</span>
+    </span>
+    <span class="inline-flex items-baseline gap-1.5 rounded-md bg-gray-100 px-3 py-1.5 text-sm">
+      <span class="text-gray-500">Clicks</span>
+      <span class="font-semibold tabular-nums text-gray-900">{fmtNum(totals.clicks)}</span>
+    </span>
+  </div>
 
   {#if data.errors.length > 0}
     <div class="app-errors">

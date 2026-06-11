@@ -26,6 +26,7 @@ Built as a personal alternative to seogets-style SaaS tools when you have multip
 ### Unified sites table (`/properties`, displayed as **Sites**)
 - All Search Console properties from all connected accounts, in one full-bleed table.
 - Per-site live aggregate for the selected period: **Clicks / Impressions / CTR / Avg Pos**, plus a **CSV export** column (queries or pages, configurable period).
+- A **totals bar** above the table sums **Sites / Impressions / Clicks** across all non-hidden sites for the selected period.
 - URL-driven sort and filter: `?days=1|3|7|28|60&sort=clicks|impressions|ctr|position|site|account&dir=asc|desc`. Bookmark, share, browser-back work as expected.
 - A **"G" badge** next to each site opens a Google `site:` search for a quick manual indexation check.
 - Hide sites you don't care about (kept in localStorage per browser; doesn't sync).

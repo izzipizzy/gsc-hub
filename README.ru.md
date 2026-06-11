@@ -26,6 +26,7 @@
 ### Объединённая таблица сайтов (`/properties`, в UI **Sites**)
 - Все Search Console properties со всех подключённых аккаунтов в одной full-bleed таблице.
 - Live-аггрегат на каждый сайт за выбранный период: **Clicks / Impressions / CTR / Avg Pos**, плюс колонка **CSV export** (queries или pages, период настраивается).
+- **Строка итогов** над таблицей суммирует **Sites / Impressions / Clicks** по всем не скрытым сайтам за выбранный период.
 - Сортировка и фильтр через URL: `?days=1|3|7|28|60&sort=clicks|impressions|ctr|position|site|account&dir=asc|desc`. Bookmark, шаринг, browser-back работают как ожидаешь.
 - **Бейдж «G»** рядом с каждым сайтом открывает поиск Google `site:` для быстрой ручной проверки индексации.
 - Скрывай сайты, которые не нужны (хранится в localStorage браузера, не синкается между устройствами).

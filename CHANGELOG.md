@@ -3,6 +3,12 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions are git tags.
 
+## [0.3.1] — 2026-06-11
+
+### Added
+- **Totals bar** on `/properties`: sums Sites / Impressions / Clicks across all
+  non-hidden sites for the selected period.
+
 ## [0.3.0] — 2026-06-08
 
 Major release: deploy moved to Docker Compose + OrbStack, sitemap submitting was
