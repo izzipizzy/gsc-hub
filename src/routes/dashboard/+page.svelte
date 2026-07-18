@@ -1,21 +1,19 @@
 <script lang="ts">
   import type { PageData } from './$types';
   import { onMount } from 'svelte';
-  import { invalidateAll } from '$app/navigation';
+  import { goto, invalidateAll } from '$app/navigation';
   import { displaySite, siteHref } from '$lib/utils/site';
 
   let { data }: { data: PageData } = $props();
 
-  // Hidden sites (same localStorage key as /properties).
+  // Hidden sites — server-side store, shared with /properties (keyed accountId|siteUrl).
   let hidden = $state<Set<string>>(new Set());
 
-  onMount(() => {
+  onMount(async () => {
     try {
-      const raw = localStorage.getItem('gsc-hub:hidden-sites');
-      if (raw) {
-        const arr = JSON.parse(raw);
-        if (Array.isArray(arr)) hidden = new Set(arr);
-      }
+      const res = await fetch('/properties/hidden-sites');
+      const j = await res.json();
+      if (Array.isArray(j.hidden)) hidden = new Set(j.hidden);
     } catch (e) {
       console.warn('Failed to load hidden sites:', e);
     }
@@ -24,6 +22,19 @@
   const visibleEntries = $derived(
     data.entries.filter((e) => !hidden.has(`${e.accountId}|${e.siteUrl}`))
   );
+
+  // Custom day range, capped at GSC's 16-month window (480 days).
+  function goToDays(raw: string | number) {
+    const n = Math.floor(Number(raw));
+    if (!Number.isFinite(n) || n < 1) return;
+    goto(`?days=${Math.min(n, 480)}&cols=${data.cols}&sort=${data.sort}&dir=${data.dir}`);
+  }
+
+  // Toggle direction when re-clicking the active field, else default to desc.
+  function sortHref(field: 'clicks' | 'impressions') {
+    const dir = data.sort === field && data.dir === 'desc' ? 'asc' : 'desc';
+    return `?days=${data.days}&cols=${data.cols}&sort=${field}&dir=${dir}`;
+  }
 
   const nf = new Intl.NumberFormat('en-US');
   function fmtNum(n: number) { return nf.format(Math.round(n)); }
@@ -49,15 +60,21 @@
     return 'text-red-600';
   }
 
-  // Sparkline path generator.
-  function sparkPath(rows: { clicks: number }[], width = 100, height = 30): string {
+  // Sparkline path generator. Each metric is normalized to its own max so the
+  // clicks trend stays visible alongside the (much larger) impressions trend.
+  function sparkPath(
+    rows: { clicks: number; impressions: number }[],
+    key: 'clicks' | 'impressions' = 'clicks',
+    width = 100,
+    height = 30
+  ): string {
     if (rows.length === 0) return '';
-    const max = Math.max(1, ...rows.map((r) => r.clicks));
+    const max = Math.max(1, ...rows.map((r) => r[key]));
     const step = rows.length > 1 ? width / (rows.length - 1) : 0;
     return rows
       .map((r, i) => {
         const x = i * step;
-        const y = height - (r.clicks / max) * height;
+        const y = height - (r[key] / max) * height;
         return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
       })
       .join(' ');
@@ -103,13 +120,29 @@
       <div class="app-segmented">
         <span class="app-segmented-label">Period</span>
         {#each [1, 3, 7, 28, 60] as d}
-          <a class:is-active={data.days === d} href="?days={d}&cols={data.cols}">{d}d</a>
+          <a class:is-active={data.days === d} href="?days={d}&cols={data.cols}&sort={data.sort}&dir={data.dir}">{d}d</a>
         {/each}
+        <input
+          type="number"
+          min="1"
+          max="480"
+          placeholder="days"
+          value={[1, 3, 7, 28, 60].includes(data.days) ? '' : data.days}
+          class="ml-0.5 w-16 rounded border border-gray-200 bg-white px-1.5 py-1 text-xs text-gray-700"
+          title="Custom day range, up to 480 (16 months)"
+          onkeydown={(e) => { if (e.key === 'Enter') goToDays(e.currentTarget.value); }}
+          onchange={(e) => goToDays(e.currentTarget.value)}
+        />
+      </div>
+      <div class="app-segmented">
+        <span class="app-segmented-label">Sort</span>
+        <a class:is-active={data.sort === 'clicks'} href={sortHref('clicks')}>Clicks{data.sort === 'clicks' ? (data.dir === 'desc' ? ' ↓' : ' ↑') : ''}</a>
+        <a class:is-active={data.sort === 'impressions'} href={sortHref('impressions')}>Impr{data.sort === 'impressions' ? (data.dir === 'desc' ? ' ↓' : ' ↑') : ''}</a>
       </div>
       <div class="app-segmented">
         <span class="app-segmented-label">Cols</span>
         {#each [2, 4, 6] as c}
-          <a class:is-active={data.cols === c} href="?days={data.days}&cols={c}">{c}</a>
+          <a class:is-active={data.cols === c} href="?days={data.days}&cols={c}&sort={data.sort}&dir={data.dir}">{c}</a>
         {/each}
       </div>
       <button type="button" class="app-pill app-pill-secondary" onclick={() => invalidateAll()}>
@@ -155,6 +188,7 @@
             <div class="rounded bg-red-50 p-2 text-[11px] text-red-700">{e.error}</div>
           {:else}
             <svg viewBox="0 0 100 30" class="mb-3 h-12 w-full" preserveAspectRatio="none">
+              <path d={sparkPath(e.current, 'impressions')} fill="none" stroke="rgb(156 163 175)" stroke-width="1" stroke-opacity="0.7" stroke-linejoin="round" stroke-linecap="round" />
               <path d={sparkAreaPath(e.current)} fill="rgb(37 99 235)" fill-opacity="0.08" />
               <path d={sparkPath(e.current)} fill="none" stroke="rgb(37 99 235)" stroke-width="1.25" stroke-linejoin="round" stroke-linecap="round" />
             </svg>

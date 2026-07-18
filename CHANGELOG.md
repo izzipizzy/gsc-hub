@@ -3,6 +3,69 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions are git tags.
 
+Русская версия — [CHANGELOG.ru.md](CHANGELOG.ru.md).
+
+## [0.6.0] — 2026-07-18
+
+Big release: a full SEO analytics suite on top of Search Console — per-site
+deep-dives and a portfolio-wide view — plus Bing/IndexNow, site health checks,
+and optional multi-user login. All analytics are live-fetched; no GSC data is
+stored.
+
+### Added
+
+**Per-site analytics** — a new detail page at `/properties/[site]` with tabs:
+- **Striking Distance** — queries ranking at positions 4–20 with real
+  impressions (the fastest wins to page 1).
+- **Keyword Cannibalization** — queries where several of your own URLs compete,
+  with a clear winner/loser breakdown.
+- **CTR Benchmark** — your actual click-through rate by position vs an
+  industry-reference curve, plus the pages that under-perform it.
+- **Content Decay** — pages losing clicks **or impressions** vs the previous
+  period.
+- **Branded vs non-branded** split, with editable brand terms per site.
+- **Site Health** — SSL (expiry/issuer/grade), Google Safe Browsing, and Core
+  Web Vitals (PageSpeed Insights, mobile). Run on demand, cached per site.
+
+**Portfolio analytics** — a new `/properties/portfolio` view aggregating every
+non-hidden site:
+- Tabbed Striking / Cannibalization / CTR / Branded / Decay, all
+  **URL-addressable** (`?tab=`), computed from a single query fan-out.
+- **Country (Geo) filter** and **copy-queries-to-clipboard**, both respecting
+  the current filter.
+- Per-decaying-page **index status** via the GSC URL Inspection API, with a
+  direct link into the right Google account's inspection panel.
+- Async streaming (the shell renders immediately) + a short in-memory result
+  cache, so re-opens and period switches are instant.
+
+**Other**
+- **Sparklines** of daily clicks on the site cards.
+- **Privacy Blur** — one click blurs PII (emails, domains, metrics) for
+  screenshots and screen-sharing.
+- **Bing Webmaster + IndexNow** — Bing performance data, merged GSC/Bing keys,
+  submit sitemap to Bing, push URLs to IndexNow, and an IndexNow-key indicator.
+- **Optional login & roles** (`admin` / `manager`) for when you expose the app
+  beyond loopback: login form, server sessions (argon2-hashed passwords), a user
+  management page, and per-owner account scoping. Off by default — the tool stays
+  single-user and loopback-only unless `ADMIN_EMAIL`/`ADMIN_PASSWORD` are set.
+- `/properties` niceties: junk-query filters, custom day range, export-all-queries
+  CSV, print/PDF stylesheet, sitemap management popup, per-account totals, and an
+  average-position range filter.
+
+### Changed
+- Analytics are computed **live** — no GSC data is persisted. The database holds
+  only OAuth tokens plus small per-site config (brand terms) and a cache of the
+  external health checks.
+- Secure cookies turn on automatically when `ORIGIN` starts with `https://`.
+
+### Notes / upgrade
+- Site Health is optional and needs its own Google API key(s): set `PAGESPEED_KEY`
+  and `GOOGLE_SAFE_BROWSING_KEY` (one key works for both — enable the PageSpeed
+  Insights API and the Safe Browsing API). Without them the Health tab stays
+  hidden; nothing else needs them.
+- New tables (`site_branded_keywords`, `site_health`) are created automatically by
+  the startup migration.
+
 ## [0.3.1] — 2026-06-11
 
 ### Added
@@ -69,6 +132,8 @@ added, and query analytics / mobile UI were expanded.
   unified sites table, aggregated top queries/pages, per-site dashboard with
   sparklines and period-over-period deltas, 16-month query history, CSV exports.
 
+[0.6.0]: https://github.com/izzipizzy/gsc-hub/releases/tag/v0.6.0
+[0.3.1]: https://github.com/izzipizzy/gsc-hub/releases/tag/v0.3.1
 [0.3.0]: https://github.com/izzipizzy/gsc-hub/releases/tag/v0.3.0
 [0.2.0]: https://github.com/izzipizzy/gsc-hub/releases/tag/v0.2.0
 [0.1.0]: https://github.com/izzipizzy/gsc-hub/releases/tag/v0.1.0

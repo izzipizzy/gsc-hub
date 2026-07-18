@@ -3,10 +3,14 @@ import Google from '@auth/core/providers/google';
 import { env as privateEnv } from '$env/dynamic/private';
 import { db } from '$lib/server/db';
 import { upsertAccount } from '$lib/server/accounts';
+import { als } from '$lib/server/request-context';
 
 export const { handle, signIn, signOut } = SvelteKitAuth({
   secret: privateEnv.AUTH_SECRET,
   trustHost: true,
+  // Non-secure only on local http (localhost:5173); secure on an https origin.
+  // adapter-node would otherwise report http as https, causing PKCE cookie mismatch.
+  useSecureCookies: (privateEnv.ORIGIN ?? '').startsWith('https://'),
   providers: [
     Google({
       clientId: privateEnv.GOOGLE_CLIENT_ID,
@@ -14,7 +18,7 @@ export const { handle, signIn, signOut } = SvelteKitAuth({
       authorization: {
         params: {
           scope:
-            'openid email https://www.googleapis.com/auth/webmasters',
+            'openid email https://www.googleapis.com/auth/webmasters https://www.googleapis.com/auth/siteverification',
           access_type: 'offline',
           prompt: 'consent',
           include_granted_scopes: 'true'
@@ -35,6 +39,9 @@ export const { handle, signIn, signOut } = SvelteKitAuth({
         return '/?error=missing_token';
       }
 
+      const ownerId = als.getStore()?.userId ?? null;
+      if (!ownerId) return '/login?error=no_session';
+
       try {
         upsertAccount(db(), {
           id: profile.sub,
@@ -42,7 +49,8 @@ export const { handle, signIn, signOut } = SvelteKitAuth({
           access_token: account.access_token,
           refresh_token: account.refresh_token,
           expires_at: account.expires_at,
-          scope: (account.scope as string) ?? ''
+          scope: (account.scope as string) ?? '',
+          owner_id: ownerId
         });
       } catch (err) {
         console.error('[auth] upsertAccount failed:', err);

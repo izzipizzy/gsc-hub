@@ -3,8 +3,10 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { getAccount } from '$lib/server/accounts';
 import { resubmitSitemapsForSite } from '$lib/server/google';
+import { requireAdmin } from '$lib/server/guard';
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, locals }) => {
+  requireAdmin(locals);
   const { account, site } = (await request.json()) as { account?: string; site?: string };
   if (!account || !site) throw error(400, 'account and site required');
 

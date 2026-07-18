@@ -8,10 +8,12 @@ import {
   getCachedInspection,
   setCachedInspection
 } from '$lib/server/inspection_cache';
+import { requireAdmin } from '$lib/server/guard';
 
 const TTL_SEC = 12 * 3600;
 
-export const POST: RequestHandler = async ({ request, url }) => {
+export const POST: RequestHandler = async ({ request, url, locals }) => {
+  requireAdmin(locals);
   const body = (await request.json()) as { account?: string; site?: string; urls?: string[] };
   if (!body.account || !body.site || !Array.isArray(body.urls) || body.urls.length === 0) {
     throw error(400, 'account, site, urls[] required');

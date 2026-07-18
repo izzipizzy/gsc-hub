@@ -3,16 +3,10 @@ import type { Db } from './db';
 export type AccountStatus = 'active' | 'revoked' | 'error';
 
 export interface AccountRow {
-  id: string;
-  email: string;
-  label: string | null;
-  access_token: string;
-  refresh_token: string;
-  expires_at: number;
-  scope: string;
-  status: AccountStatus;
-  last_error: string | null;
-  added_at: number;
+  id: string; email: string; label: string | null;
+  access_token: string; refresh_token: string; expires_at: number;
+  scope: string; status: AccountStatus; last_error: string | null;
+  added_at: number; owner_id: string | null;
 }
 
 export interface UpsertInput {
@@ -22,6 +16,7 @@ export interface UpsertInput {
   refresh_token: string;
   expires_at: number;
   scope: string;
+  owner_id?: string | null;
 }
 
 export function upsertAccount(db: Db, a: UpsertInput): void {
@@ -29,9 +24,9 @@ export function upsertAccount(db: Db, a: UpsertInput): void {
   db.prepare(
     `
     INSERT INTO google_accounts
-      (id, email, label, access_token, refresh_token, expires_at, scope, status, last_error, added_at)
+      (id, email, label, access_token, refresh_token, expires_at, scope, status, last_error, added_at, owner_id)
     VALUES
-      (@id, @email, NULL, @access_token, @refresh_token, @expires_at, @scope, 'active', NULL, @added_at)
+      (@id, @email, NULL, @access_token, @refresh_token, @expires_at, @scope, 'active', NULL, @added_at, @owner_id)
     ON CONFLICT(id) DO UPDATE SET
       email = excluded.email,
       access_token = excluded.access_token,
@@ -41,10 +36,15 @@ export function upsertAccount(db: Db, a: UpsertInput): void {
       status = 'active',
       last_error = NULL
     `
-  ).run({ ...a, added_at: now });
+  ).run({ ...a, owner_id: a.owner_id ?? null, added_at: now });
 }
 
-export function listAccounts(db: Db): AccountRow[] {
+export function listAccounts(db: Db, ownerId?: string): AccountRow[] {
+  if (ownerId) {
+    return db
+      .prepare('SELECT * FROM google_accounts WHERE owner_id = ? ORDER BY added_at ASC, rowid ASC')
+      .all(ownerId) as AccountRow[];
+  }
   return db
     .prepare('SELECT * FROM google_accounts ORDER BY added_at ASC, rowid ASC')
     .all() as AccountRow[];

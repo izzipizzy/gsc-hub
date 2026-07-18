@@ -109,4 +109,15 @@ describe('accounts', () => {
     expect(row.expires_at).toBe(500);
     expect(row.status).toBe('revoked');
   });
+
+  it('filters by owner and preserves owner on reconnect', () => {
+    upsertAccount(db, { ...sample, id: 's1', owner_id: 'u1' });
+    upsertAccount(db, { ...sample, id: 's2', owner_id: 'u2' });
+    expect(listAccounts(db, 'u1').map((a) => a.id)).toEqual(['s1']);
+    expect(listAccounts(db).length).toBe(2); // admin: all
+    // reconnect s1 as a different user must NOT change owner
+    upsertAccount(db, { ...sample, id: 's1', owner_id: 'u2', access_token: 'AT2' });
+    expect(getAccount(db, 's1')!.owner_id).toBe('u1');
+    expect(getAccount(db, 's1')!.access_token).toBe('AT2');
+  });
 });

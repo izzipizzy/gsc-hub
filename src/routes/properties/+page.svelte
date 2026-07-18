@@ -1,15 +1,37 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { invalidateAll } from '$app/navigation';
-  import { displaySite, siteHref, siteSearchHref } from '$lib/utils/site';
+  import { goto, invalidateAll } from '$app/navigation';
+  import { env as pubenv } from '$env/dynamic/public';
+  import { displaySite, siteDomain, siteHref, siteSearchHref, bingWebmasterHref } from '$lib/utils/site';
+  import googleIcon from '$lib/assets/google.svg';
+  import bingIcon from '$lib/assets/bing.svg';
   import { googleSerpUrl } from '$lib/utils/country';
   import type { PageData } from './$types';
   let { data }: { data: PageData } = $props();
+
+  // AI/submit pages are normally opened on the local http origin (localhost:5174)
+  // so their http noVNC iframes aren't blocked as mixed content. In prod set
+  // PUBLIC_AI_BASE to the public https origin so the buttons open there instead.
+  const aiBase = pubenv.PUBLIC_AI_BASE || 'http://localhost:5174';
 
   const nf = new Intl.NumberFormat('en-US');
   function fmtNum(n: number) { return nf.format(n); }
   function fmtCtr(c: number) { return (c * 100).toFixed(1) + '%'; }
   function fmtPos(p: number) { return p.toFixed(1); }
+  function fmtDate(ts: number | null) { return ts ? new Date(ts * 1000).toISOString().slice(0, 10) : '—'; }
+
+  // Inline sparkline path from a daily-clicks series.
+  function sparkPath(series: number[], w = 64, h = 16): string {
+    if (!series || series.length === 0) return '';
+    const max = Math.max(...series, 1);
+    const step = series.length > 1 ? w / (series.length - 1) : w;
+    return series
+      .map((v, i) => `${i === 0 ? 'M' : 'L'}${(i * step).toFixed(1)},${(h - (v / max) * h).toFixed(1)}`)
+      .join(' ');
+  }
+  function detailHref(s: { siteUrl: string; accountId: string }) {
+    return `/properties/${encodeURIComponent(s.siteUrl)}?acc=${encodeURIComponent(s.accountId)}`;
+  }
 
   const STORAGE_KEY = 'gsc-hub:hidden-sites';
 
@@ -22,39 +44,59 @@
   let hidden = $state<Set<string>>(new Set());
   let showHidden = $state(false);
 
-  onMount(() => {
+  onMount(async () => {
+    // One-time migration: push any sites hidden in the old localStorage store to
+    // the server (INSERT OR IGNORE), then drop the local copy. The server is now
+    // the source of truth so the bulk submit-all / ai-all pages exclude them too.
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const arr = JSON.parse(raw);
-        if (Array.isArray(arr)) {
-          hidden = new Set(arr);
+        if (Array.isArray(arr) && arr.length) {
+          await Promise.all(
+            arr.map((k: string) => {
+              const i = k.indexOf('|');
+              return fetch('/properties/hidden-sites', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ account: k.slice(0, i), site: k.slice(i + 1) })
+              });
+            })
+          );
         }
+        localStorage.removeItem(STORAGE_KEY);
       }
     } catch (e) {
-      console.warn('[gsc-hub] Could not parse hidden sites from localStorage:', e);
-      hidden = new Set();
+      console.warn('[gsc-hub] hidden-sites migration failed:', e);
+    }
+
+    try {
+      const res = await fetch('/properties/hidden-sites');
+      const j = await res.json();
+      if (Array.isArray(j.hidden)) hidden = new Set(j.hidden);
+    } catch (e) {
+      console.warn('[gsc-hub] Could not load hidden sites:', e);
     }
   });
-
-  function persist() {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify([...hidden]));
-    } catch (e) {
-      console.warn('[gsc-hub] Could not persist hidden sites to localStorage:', e);
-    }
-  }
 
   function hideSite(s: SiteWithSummary) {
     hidden.add(keyOf(s));
     hidden = new Set(hidden);
-    persist();
+    fetch('/properties/hidden-sites', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account: s.accountId, site: s.siteUrl })
+    }).catch((e) => console.warn('[gsc-hub] Could not hide site:', e));
   }
 
   function unhideSite(s: SiteWithSummary) {
     hidden.delete(keyOf(s));
     hidden = new Set(hidden);
-    persist();
+    fetch('/properties/hidden-sites', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account: s.accountId, site: s.siteUrl })
+    }).catch((e) => console.warn('[gsc-hub] Could not unhide site:', e));
   }
 
   let visibleSites = $derived(
@@ -72,6 +114,28 @@
     return { sites, clicks, impressions };
   });
 
+  // Same totals, broken down per connected account (non-hidden sites only).
+  let perAccount = $derived.by(() => {
+    const map = new Map<string, { accountId: string; label: string; email: string; sites: number; clicks: number; impressions: number }>();
+    for (const s of data.sites) {
+      if (hidden.has(keyOf(s))) continue;
+      let a = map.get(s.accountId);
+      if (!a) {
+        a = { accountId: s.accountId, label: s.accountLabel ?? s.accountEmail, email: s.accountEmail, sites: 0, clicks: 0, impressions: 0 };
+        map.set(s.accountId, a);
+      }
+      a.sites++;
+      if (s.summary) { a.clicks += s.summary.clicks; a.impressions += s.summary.impressions; }
+    }
+    return [...map.values()].sort((x, y) => y.clicks - x.clicks);
+  });
+
+  function goToDays(raw: string | number) {
+    const n = Math.floor(Number(raw));
+    if (!Number.isFinite(n) || n < 1) return;
+    goto(`?days=${Math.min(n, 480)}&sort=${data.sort}&dir=${data.dir}`);
+  }
+
   function sortHref(field: string, currentSort: string, currentDir: 'asc' | 'desc', days: number) {
     const nextDir = currentSort === field && currentDir === 'desc' ? 'asc' : 'desc';
     return `?days=${days}&sort=${field}&dir=${nextDir}`;
@@ -83,43 +147,204 @@
   }
 
   // Queries table: client-side sort state
-  let qSort = $state<'query' | 'page' | 'country' | 'clicks' | 'impressions' | 'ctr' | 'position'>('impressions');
-  let qDir = $state<'asc' | 'desc'>('desc');
+  let qSort = $state<'query' | 'page' | 'country' | 'clicks' | 'impressions' | 'ctr' | 'position' | 'bingClicks' | 'bingImpr'>('position');
+  let qDir = $state<'asc' | 'desc'>('asc');
 
-  const aggregatedQueries = $derived.by(() => {
-    type Bucket = { query: string; page: string; country: string; clicks: number; impressions: number; posSum: number; posWeight: number };
+  // Junk-query filters (e.g. "site:") — stored server-side in SQLite, applied
+  // here as case-insensitive substring matches.
+  let queryFilters = $state<{ id: number; pattern: string }[]>(data.queryFilters ?? []);
+  let showFilteredQueries = $state(false);
+  let newQueryFilter = $state('');
+
+  // Facet filters for Top queries — empty set means "all" (no filtering).
+  // Option lists are populated only from values present in the data.
+  let selectedCountries = $state<Set<string>>(new Set());
+  let selectedDomains = $state<Set<string>>(new Set());
+  let countrySearch = $state('');
+  let domainSearch = $state('');
+  // Source facet: where the key comes from. 'all' | 'gsc' (GSC only) | 'bing' (Bing only) | 'both'.
+  // Default to GSC so the table opens on the familiar GSC keys, not the Bing-only flood.
+  let querySource = $state<'all' | 'gsc' | 'bing' | 'both'>('gsc');
+  // Avg-position range filter (inclusive). Empty 'to' = no upper bound. Default from 0.
+  let posMin = $state<number | null>(0);
+  let posMax = $state<number | null>(null);
+
+  function toggleCountry(c: string) {
+    const next = new Set(selectedCountries);
+    next.has(c) ? next.delete(c) : next.add(c);
+    selectedCountries = next;
+  }
+  function toggleDomain(d: string) {
+    const next = new Set(selectedDomains);
+    next.has(d) ? next.delete(d) : next.add(d);
+    selectedDomains = next;
+  }
+
+  function isQueryFiltered(q: string): boolean {
+    const lq = q.toLowerCase();
+    return queryFilters.some((f) => lq.includes(f.pattern.toLowerCase()));
+  }
+
+  async function addQueryFilter(pattern: string) {
+    const p = pattern.trim();
+    if (!p || queryFilters.some((f) => f.pattern.toLowerCase() === p.toLowerCase())) {
+      newQueryFilter = '';
+      return;
+    }
+    try {
+      const res = await fetch('/properties/query-filters', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pattern: p })
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const f = await res.json();
+      queryFilters = [...queryFilters, f].sort((a, b) => a.pattern.localeCompare(b.pattern));
+      newQueryFilter = '';
+    } catch (e) {
+      console.error('addQueryFilter failed', e);
+    }
+  }
+
+  async function removeQueryFilter(id: number) {
+    try {
+      const res = await fetch('/properties/query-filters', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+      });
+      if (!res.ok) throw new Error(await res.text());
+      queryFilters = queryFilters.filter((f) => f.id !== id);
+    } catch (e) {
+      console.error('removeQueryFilter failed', e);
+    }
+  }
+
+  const allQueries = $derived.by(() => {
+    // Bare-host domains of sites currently visible (not hidden). Bing data is merged
+    // only for these, so hidden sites don't leak back in via Bing.
+    const visibleDomains = new Set<string>();
+    for (const s of data.sites) if (!hidden.has(keyOf(s))) visibleDomains.add(siteDomain(s.siteUrl));
+    // Bing keys per visible domain, keyed by NORMALIZED query (lowercase + collapsed
+    // whitespace) so GSC↔Bing matching survives case/spacing diffs. Value keeps the
+    // original Bing query (for display of Bing-only rows).
+    const norm = (q: string) => q.toLowerCase().replace(/\s+/g, ' ').trim();
+    const bingByDomain = new Map<string, Map<string, { query: string; clicks: number; impressions: number; position: number }>>();
+    for (const b of data.bingQueries) {
+      if (!visibleDomains.has(b.host)) continue;
+      let m = bingByDomain.get(b.host);
+      if (!m) { m = new Map(); bingByDomain.set(b.host, m); }
+      m.set(norm(b.query), { query: b.query, clicks: b.clicks, impressions: b.impressions, position: b.position });
+    }
+
+    type Bucket = { query: string; page: string; country: string; domain: string; host: string; clicks: number; impressions: number; posSum: number; posWeight: number };
     const map = new Map<string, Bucket>();
+    const gscCovered = new Set<string>(); // `${host}\n${normQuery}` — which Bing keys are GSC-only
     for (const entry of data.queryEntries) {
       const k = `${entry.accountId}|${entry.siteUrl}`;
       if (hidden.has(k)) continue;
+      const domain = displaySite(entry.siteUrl);
+      const host = siteDomain(entry.siteUrl);
       for (const r of entry.rows) {
         if (!r.query) continue;
         const key = `${r.query}|${r.page}|${r.country}`;
-        const cur = map.get(key) ?? { query: r.query, page: r.page, country: r.country, clicks: 0, impressions: 0, posSum: 0, posWeight: 0 };
+        const cur = map.get(key) ?? { query: r.query, page: r.page, country: r.country, domain, host, clicks: 0, impressions: 0, posSum: 0, posWeight: 0 };
         cur.clicks += r.clicks;
         cur.impressions += r.impressions;
         cur.posSum += r.position * r.impressions;
         cur.posWeight += r.impressions;
         map.set(key, cur);
+        gscCovered.add(`${host}\n${norm(r.query)}`);
       }
     }
-    const arr = Array.from(map.values()).map((b) => ({
-      query: b.query,
-      page: b.page,
-      country: b.country,
-      clicks: b.clicks,
-      impressions: b.impressions,
-      ctr: b.impressions > 0 ? b.clicks / b.impressions : 0,
-      position: b.posWeight > 0 ? b.posSum / b.posWeight : 0
-    }));
+    type Row = {
+      query: string; page: string; country: string; domain: string;
+      gsc: { clicks: number; impressions: number; ctr: number; position: number } | null;
+      bing: { clicks: number; impressions: number; position: number } | null;
+    };
+    const arr: Row[] = [];
+    for (const b of map.values()) {
+      const bq = bingByDomain.get(b.host)?.get(norm(b.query));
+      arr.push({
+        query: b.query, page: b.page, country: b.country, domain: b.domain,
+        gsc: {
+          clicks: b.clicks,
+          impressions: b.impressions,
+          ctr: b.impressions > 0 ? b.clicks / b.impressions : 0,
+          position: b.posWeight > 0 ? b.posSum / b.posWeight : 0
+        },
+        bing: bq ? { clicks: bq.clicks, impressions: bq.impressions, position: bq.position } : null
+      });
+    }
+    // Bing-only keys (no GSC row for that domain) → rows showing the domain, no page URL.
+    for (const [host, m] of bingByDomain) {
+      for (const [nq, v] of m) {
+        if (gscCovered.has(`${host}\n${nq}`)) continue;
+        arr.push({
+          query: v.query, page: '', country: '', domain: host,
+          gsc: null,
+          bing: { clicks: v.clicks, impressions: v.impressions, position: v.position }
+        });
+      }
+    }
     const dirMul = qDir === 'desc' ? -1 : 1;
+    const val = (q: Row) => {
+      switch (qSort) {
+        case 'clicks': return q.gsc?.clicks ?? -1;
+        case 'impressions': return q.gsc?.impressions ?? -1;
+        case 'ctr': return q.gsc?.ctr ?? -1;
+        case 'position': return q.gsc?.position ?? q.bing?.position ?? 99999;
+        case 'bingClicks': return q.bing?.clicks ?? -1;
+        case 'bingImpr': return q.bing?.impressions ?? -1;
+        default: return 0;
+      }
+    };
     arr.sort((a, b) => {
       if (qSort === 'query') return dirMul * a.query.localeCompare(b.query);
       if (qSort === 'page') return dirMul * a.page.localeCompare(b.page);
       if (qSort === 'country') return dirMul * a.country.localeCompare(b.country);
-      return dirMul * (a[qSort] - b[qSort]);
+      return dirMul * (val(a) - val(b));
     });
-    return arr.slice(0, 200);
+    return arr;
+  });
+
+  const hiddenQueryCount = $derived(
+    showFilteredQueries ? 0 : allQueries.filter((q) => isQueryFiltered(q.query)).length
+  );
+
+  // Facet option lists — only countries/domains actually present in the data.
+  const availableCountries = $derived.by(() => {
+    const s = new Set<string>();
+    for (const q of allQueries) if (q.country) s.add(q.country);
+    return Array.from(s).sort();
+  });
+  const availableDomains = $derived.by(() => {
+    const s = new Set<string>();
+    for (const q of allQueries) if (q.domain) s.add(q.domain);
+    return Array.from(s).sort();
+  });
+
+  const aggregatedQueries = $derived.by(() => {
+    let base = showFilteredQueries ? allQueries : allQueries.filter((q) => !isQueryFiltered(q.query));
+    if (selectedCountries.size > 0) base = base.filter((q) => selectedCountries.has(q.country));
+    if (selectedDomains.size > 0) base = base.filter((q) => selectedDomains.has(q.domain));
+    if (querySource === 'gsc') base = base.filter((q) => q.gsc && !q.bing);
+    else if (querySource === 'bing') base = base.filter((q) => q.bing && !q.gsc);
+    else if (querySource === 'both') base = base.filter((q) => q.gsc && q.bing);
+    // Avg-position range (inclusive). Uses the row's effective position (GSC, else Bing).
+    // Default (from 0, no 'to') = no filtering.
+    const hasMin = posMin != null && posMin > 0;
+    const hasMax = posMax != null;
+    if (hasMin || hasMax) {
+      base = base.filter((q) => {
+        const p = q.gsc?.position ?? q.bing?.position ?? 0;
+        if (p <= 0) return false; // no real position
+        if (hasMin && p < (posMin as number)) return false;
+        if (hasMax && p > (posMax as number)) return false;
+        return true;
+      });
+    }
+    return base.slice(0, 200);
   });
 
   function toggleQSort(field: typeof qSort) {
@@ -417,11 +642,6 @@
     | { kind: 'error'; message: string };
 
   let submitStates = $state<Map<string, SubmitState>>(new Map());
-  let submitAllState = $state<
-    | { kind: 'idle' }
-    | { kind: 'loading'; done: number; total: number }
-    | { kind: 'done'; sites: number; sitemaps: number; failed: number }
-  >({ kind: 'idle' });
 
   function setSubmitState(key: string, st: SubmitState) {
     submitStates.set(key, st);
@@ -453,30 +673,151 @@
     }
   }
 
-  async function submitAllSitemaps() {
-    const sites = visibleSites;
-    if (sites.length === 0) return;
-    submitAllState = { kind: 'loading', done: 0, total: sites.length };
-    let sitemaps = 0;
-    let failed = 0;
-    let doneCount = 0;
-    const results = await Promise.all(
-      sites.map(async (s) => {
-        const r = await submitSitemapFor({ accountId: s.accountId, siteUrl: s.siteUrl });
-        doneCount++;
-        submitAllState = { kind: 'loading', done: doneCount, total: sites.length };
-        return r;
-      })
-    );
-    for (const r of results) {
-      if (r) {
-        sitemaps += r.submitted;
-        failed += r.failed;
-      } else {
-        failed += 1;
-      }
+  // --- Sitemaps popup ---
+  type GscSitemap = { path: string; isPending: boolean; errors?: string; warnings?: string; lastDownloaded?: string };
+  type SitemapModal = {
+    accountId: string;
+    site: string;
+    title: string;
+    load: 'loading' | 'loaded' | 'error';
+    loadError?: string;
+    current: GscSitemap[];
+    robots: string[];
+    robotsError?: string | null;
+    resync: { kind: 'idle' } | { kind: 'running' } | { kind: 'error'; message: string }
+      | { kind: 'done'; deleted: number; submitted: number; failed: { path: string; op: string; reason: string }[] };
+  };
+  let sitemapModal = $state<SitemapModal | null>(null);
+
+  async function openSitemapModal(s: { accountId: string; siteUrl: string }) {
+    sitemapModal = {
+      accountId: s.accountId, site: s.siteUrl, title: displaySite(s.siteUrl),
+      load: 'loading', current: [], robots: [], resync: { kind: 'idle' }
+    };
+    try {
+      const res = await fetch(
+        `/properties/sitemaps?account=${encodeURIComponent(s.accountId)}&site=${encodeURIComponent(s.siteUrl)}`
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+      const data = await res.json();
+      if (!sitemapModal || sitemapModal.site !== s.siteUrl) return;
+      sitemapModal = { ...sitemapModal, load: 'loaded', current: data.current, robots: data.robots, robotsError: data.robotsError };
+    } catch (e) {
+      if (!sitemapModal || sitemapModal.site !== s.siteUrl) return;
+      sitemapModal = { ...sitemapModal, load: 'error', loadError: (e as Error).message };
     }
-    submitAllState = { kind: 'done', sites: sites.length, sitemaps, failed };
+  }
+
+  function closeSitemapModal() {
+    sitemapModal = null;
+  }
+
+  // --- Bing sitemap submit + IndexNow: per-site row buttons ---
+  type RowState = { kind: 'loading' } | { kind: 'done'; msg: string } | { kind: 'error'; msg: string };
+
+  let bingStates = $state<Map<string, RowState>>(new Map());
+  let indexnowStates = $state<Map<string, RowState>>(new Map());
+
+  function setBingState(key: string, st: RowState) {
+    bingStates.set(key, st);
+    bingStates = new Map(bingStates);
+  }
+  function setIndexnowState(key: string, st: RowState) {
+    indexnowStates.set(key, st);
+    indexnowStates = new Map(indexnowStates);
+  }
+
+  async function submitBingFor(s: { accountId: string; siteUrl: string }): Promise<boolean> {
+    const key = `${s.accountId}|${s.siteUrl}`;
+    setBingState(key, { kind: 'loading' });
+    try {
+      const res = await fetch('/properties/bing-sitemap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ site: s.siteUrl })
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const j = await res.json();
+      if (j.ok === false) throw new Error(j.error || 'Bing error');
+      setBingState(key, { kind: 'done', msg: 'submitted' });
+      return true;
+    } catch (e) {
+      setBingState(key, { kind: 'error', msg: (e as Error).message });
+      return false;
+    }
+  }
+
+  async function indexNowFor(s: { accountId: string; siteUrl: string }): Promise<boolean> {
+    const key = `${s.accountId}|${s.siteUrl}`;
+    setIndexnowState(key, { kind: 'loading' });
+    try {
+      const res = await fetch('/properties/indexnow', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ site: s.siteUrl })
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const r = await res.json();
+      setIndexnowState(key, { kind: 'done', msg: `${r.submitted} URLs` });
+      return true;
+    } catch (e) {
+      setIndexnowState(key, { kind: 'error', msg: (e as Error).message });
+      return false;
+    }
+  }
+
+
+  // Native <details> facets don't close on outside click — close any open one
+  // when a pointerdown lands outside it (called from <svelte:window>).
+  function closeFacets(except?: Element | null) {
+    for (const d of document.querySelectorAll('details.facet[open]')) {
+      if (!except || !d.contains(except)) (d as HTMLDetailsElement).open = false;
+    }
+  }
+
+  // Copy every unique query of the current (filtered) view to the clipboard,
+  // one per line — for pasting the keyword list elsewhere.
+  let keysCopied = $state(false);
+  let keysCopiedTimer: ReturnType<typeof setTimeout> | undefined;
+  async function copyKeys() {
+    const seen = new Set<string>();
+    const lines: string[] = [];
+    for (const q of aggregatedQueries) {
+      if (!seen.has(q.query)) { seen.add(q.query); lines.push(q.query); }
+    }
+    await navigator.clipboard.writeText(lines.join('\n'));
+    keysCopied = true;
+    clearTimeout(keysCopiedTimer);
+    keysCopiedTimer = setTimeout(() => (keysCopied = false), 1500);
+  }
+
+  async function resyncSitemaps() {
+    const m = sitemapModal;
+    if (!m) return;
+    const n = m.current.length;
+    if (!confirm(`Delete all ${n} registered sitemap(s) and submit the ${m.robots.length} from robots.txt?`)) return;
+    sitemapModal = { ...m, resync: { kind: 'running' } };
+    try {
+      const res = await fetch('/properties/sitemaps', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account: m.accountId, site: m.site, robots: m.robots })
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+      const r = await res.json();
+      // Reload the current list so the popup reflects the new state.
+      const after = await fetch(
+        `/properties/sitemaps?account=${encodeURIComponent(m.accountId)}&site=${encodeURIComponent(m.site)}`
+      ).then((x) => x.json());
+      if (!sitemapModal || sitemapModal.site !== m.site) return;
+      sitemapModal = {
+        ...sitemapModal, current: after.current, robots: after.robots, robotsError: after.robotsError,
+        resync: { kind: 'done', deleted: r.deleted.length, submitted: r.submitted.length, failed: r.failed }
+      };
+    } catch (e) {
+      if (!sitemapModal || sitemapModal.site !== m.site) return;
+      sitemapModal = { ...sitemapModal, resync: { kind: 'error', message: (e as Error).message } };
+    }
   }
 
   function fmtCacheTime(ts: number): string {
@@ -582,6 +923,10 @@
 </script>
 
 <svelte:head><title>Sites — gsc-hub</title></svelte:head>
+<svelte:window
+  onkeydown={(e) => { if (e.key === 'Escape') { if (sitemapModal) closeSitemapModal(); closeFacets(); } }}
+  onpointerdown={(e) => closeFacets(e.target as Element)}
+/>
 
 <main class="w-full p-3 sm:p-6">
   <header class="app-toolbar">
@@ -592,24 +937,39 @@
         <span class="text-gray-800">Sites</span>
       </nav>
       <h1 class="app-pagetitle">All sites</h1>
+      <p class="hidden text-xs text-gray-500 print:block">Period: last {data.days === 1 ? '24 hours' : `${data.days} days`}</p>
     </div>
     <div class="app-toolbar-right">
       <a href="/dashboard?days={data.days}" class="app-pill app-pill-secondary">Dashboard</a>
+      <a href="/properties/striking?days={data.days}" class="app-pill app-pill-secondary" title="Portfolio analytics across all sites — striking distance, cannibalization, CTR, branded, decay">Portfolio</a>
       <span class="app-toolbar-divider" aria-hidden="true"></span>
       <div class="app-segmented">
         <span class="app-segmented-label">Period</span>
         {#each [1, 3, 7, 28, 60] as d}
           <a class:is-active={data.days === d} href="?days={d}&sort={data.sort}&dir={data.dir}">{d}d</a>
         {/each}
+        <input
+          type="number"
+          min="1"
+          max="480"
+          placeholder="days"
+          value={[1, 3, 7, 28, 60].includes(data.days) ? '' : data.days}
+          class="ml-0.5 w-16 rounded border border-gray-200 bg-white px-1.5 py-1 text-xs text-gray-700"
+          title="Custom day range, up to 480 (16 months)"
+          onkeydown={(e) => { if (e.key === 'Enter') goToDays(e.currentTarget.value); }}
+          onchange={(e) => goToDays(e.currentTarget.value)}
+        />
       </div>
       <button type="button" class="app-pill app-pill-secondary" onclick={() => invalidateAll()}>
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 7a4.5 4.5 0 0 1 7.96-2.86M11.5 7a4.5 4.5 0 0 1-7.96 2.86M11 2.5v2.5h-2.5M3 11.5v-2.5h2.5"/></svg>
         Refresh
       </button>
-      <button type="button" class="app-pill app-pill-secondary" onclick={submitAllSitemaps} disabled={submitAllState.kind === 'loading'}>
+      <button type="button" class="app-pill app-pill-secondary" onclick={() => window.open(`${aiBase}/properties/submit-all?op=sitemap`, '_blank')}>
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 1.5v7M4 5l3-3 3 3M2.5 9.5v2a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1v-2"/></svg>
-        {#if submitAllState.kind === 'loading'}Submitting {submitAllState.done}/{submitAllState.total}…{:else}Submit all sitemaps{/if}
+        Submit all sitemaps
       </button>
+      <button type="button" class="app-pill app-pill-secondary" onclick={() => window.open(`${aiBase}/properties/submit-all?op=bing`, '_blank')}>Submit all to Bing</button>
+      <button type="button" class="app-pill app-pill-secondary" onclick={() => window.open(`${aiBase}/properties/submit-all?op=indexnow`, '_blank')}>IndexNow all</button>
     </div>
   </header>
 
@@ -628,6 +988,21 @@
     </span>
   </div>
 
+  {#if perAccount.length > 1}
+    <div class="mb-4 flex flex-wrap gap-2">
+      {#each perAccount as a}
+        <div class="rounded-md border border-gray-200 px-3 py-1.5 text-sm">
+          <div class="pii font-medium text-gray-800">{a.label}</div>
+          <div class="pii flex gap-3 text-xs tabular-nums text-gray-500">
+            <span>{fmtNum(a.sites)} sites</span>
+            <span>{fmtNum(a.impressions)} impr</span>
+            <span>{fmtNum(a.clicks)} clicks</span>
+          </div>
+        </div>
+      {/each}
+    </div>
+  {/if}
+
   {#if data.errors.length > 0}
     <div class="app-errors">
       <div class="app-errors-title">
@@ -640,12 +1015,6 @@
         {/each}
       </ul>
     </div>
-  {/if}
-
-  {#if submitAllState.kind === 'done'}
-    <p class="mb-3 text-xs {submitAllState.failed > 0 ? 'text-amber-700' : 'text-green-700'}">
-      Submit all: {submitAllState.sitemaps} sitemap{submitAllState.sitemaps === 1 ? '' : 's'} submitted across {submitAllState.sites} site{submitAllState.sites === 1 ? '' : 's'}{#if submitAllState.failed > 0} · {submitAllState.failed} failed{/if}.
-    </p>
   {/if}
 
   {#if hidden.size > 0}
@@ -696,8 +1065,15 @@
               Avg Pos{sortIndicator('position', data.sort, data.dir)}
             </a>
           </th>
-          <th class="hidden md:table-cell">Export</th>
-          <th class="hidden md:table-cell">Visibility</th>
+          <th class="hidden lg:table-cell" title="Дата создания репозитория сайта (git.local)">
+            <a class="cursor-pointer hover:underline" href={sortHref('date', data.sort, data.dir, data.days)}>
+              Created{sortIndicator('date', data.sort, data.dir)}
+            </a>
+          </th>
+          <th class="hidden md:table-cell" title="Bing clicks · последние ~2 недели (не зависит от фильтра дней)">Bing Clk</th>
+          <th class="hidden md:table-cell" title="Bing impressions · последние ~2 недели (не зависит от фильтра дней)">Bing Impr</th>
+          <th class="hidden md:table-cell print:hidden">Export</th>
+          <th class="hidden md:table-cell print:hidden">Visibility</th>
         </tr>
       </thead>
       <tbody>
@@ -706,19 +1082,37 @@
           {@const expanded = expandedSite === sKey}
           {@const isHidden = hidden.has(keyOf(s))}
           {@const subSt = submitStates.get(sKey)}
-          <tr class="cursor-pointer hover:bg-gray-50 {isHidden ? 'is-hidden-row' : ''}" onclick={() => toggleSite(s)}>
+          {@const bSt = bingStates.get(sKey)}
+          {@const iSt = indexnowStates.get(sKey)}
+          <tr class="cursor-pointer {s.hasIndexNow ? 'hover:bg-gray-50' : 'bg-amber-50 hover:bg-amber-100'} {isHidden ? 'is-hidden-row' : ''}" onclick={() => toggleSite(s)} title={s.hasIndexNow ? undefined : 'Нет IndexNow-ключа ({key}.txt) — не настроен для Bing/IndexNow'}>
             <td class="pl-3 sm:pl-6">
-              <span class="mr-1 text-gray-400">{expanded ? '▾' : '▸'}</span>
-              <a class="text-blue-600 hover:underline" href={siteHref(s.siteUrl)} target="_blank" rel="noopener noreferrer" onclick={(e) => e.stopPropagation()}>{displaySite(s.siteUrl)}</a>
+              <span class="mr-1 text-gray-400 print:hidden">{expanded ? '▾' : '▸'}</span>
+              <a class="pii text-blue-600 hover:underline" href={siteHref(s.siteUrl)} target="_blank" rel="noopener noreferrer" onclick={(e) => e.stopPropagation()}>{displaySite(s.siteUrl)}</a>
               <a
-                class="app-gsearch"
+                class="ml-1.5 inline-flex h-4 align-middle text-gray-400 hover:text-blue-600 print:hidden"
+                href={detailHref(s)}
+                title="Site analytics — striking distance, cannibalization, decay, CTR, health"
+                aria-label="Site analytics"
+                onclick={(e) => e.stopPropagation()}
+              >📊</a>
+              <a
+                class="ml-1.5 inline-flex h-4 align-middle opacity-70 transition-opacity hover:opacity-100 print:hidden"
                 href={siteSearchHref(s.siteUrl)}
                 target="_blank"
                 rel="noopener noreferrer"
                 title="Google site:{displaySite(s.siteUrl)} — проверить индексацию"
                 aria-label="Google site search"
                 onclick={(e) => e.stopPropagation()}
-              >G</a>
+              ><img src={googleIcon} alt="Google" class="h-4 w-auto" /></a>
+              <a
+                class="ml-1.5 inline-flex h-4 align-middle opacity-70 transition-opacity hover:opacity-100 print:hidden"
+                href={bingWebmasterHref(s.siteUrl)}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Bing Webmaster — {displaySite(s.siteUrl)}"
+                aria-label="Open Bing Webmaster"
+                onclick={(e) => e.stopPropagation()}
+              ><img src={bingIcon} alt="Bing" class="h-4 w-auto" /></a>
               <button
                 type="button"
                 class="ml-1 rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-700 hover:bg-gray-200 disabled:opacity-50"
@@ -731,16 +1125,53 @@
               {:else if subSt?.kind === 'error'}
                 <span class="ml-1 text-[11px] text-red-600" title={subSt.message}>✗ failed</span>
               {/if}
+              <button
+                type="button"
+                class="ml-1 rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+                title="Submit sitemap to Bing"
+                disabled={bSt?.kind === 'loading'}
+                onclick={(e) => { e.stopPropagation(); submitBingFor({ accountId: s.accountId, siteUrl: s.siteUrl }); }}
+              >{bSt?.kind === 'loading' ? '…' : 'Bing'}</button>
+              {#if bSt?.kind === 'done'}
+                <span class="ml-0.5 text-[11px] text-green-700">✓</span>
+              {:else if bSt?.kind === 'error'}
+                <span class="ml-0.5 text-[11px] text-red-600" title={bSt.msg}>✗</span>
+              {/if}
+              <button
+                type="button"
+                class="ml-1 rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+                title="Push sitemap URLs to IndexNow (Bing)"
+                disabled={iSt?.kind === 'loading'}
+                onclick={(e) => { e.stopPropagation(); indexNowFor({ accountId: s.accountId, siteUrl: s.siteUrl }); }}
+              >{iSt?.kind === 'loading' ? '…' : 'IndexNow'}</button>
+              {#if iSt?.kind === 'done'}
+                <span class="ml-0.5 text-[11px] text-green-700" title={iSt.msg}>✓</span>
+              {:else if iSt?.kind === 'error'}
+                <span class="ml-0.5 text-[11px] text-red-600" title={iSt.msg}>✗</span>
+              {/if}
+              <button
+                type="button"
+                class="ml-1 rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-700 hover:bg-gray-200"
+                title="View and manage sitemaps"
+                onclick={(e) => { e.stopPropagation(); openSitemapModal({ accountId: s.accountId, siteUrl: s.siteUrl }); }}
+              >Sitemaps</button>
             </td>
-            <td class="hidden md:table-cell">
+            <td class="pii hidden md:table-cell">
               {s.accountLabel ?? s.accountEmail}
               {#if s.accountLabel}<span class="text-gray-400"> ({s.accountEmail})</span>{/if}
             </td>
             {#if s.summary !== null}
-              <td class="app-num">{fmtNum(s.summary.clicks)}</td>
-              <td class="app-num hidden sm:table-cell">{fmtNum(s.summary.impressions)}</td>
-              <td class="app-num hidden md:table-cell">{fmtCtr(s.summary.ctr)}</td>
-              <td class="app-num pr-3 sm:pr-0">{fmtPos(s.summary.position)}</td>
+              <td class="app-num">
+                <span class="pii">{fmtNum(s.summary.clicks)}</span>
+                {#if s.summary.series?.length}
+                  <svg viewBox="0 0 64 16" class="ml-1 inline-block h-3.5 w-14 align-middle text-blue-500 print:hidden" preserveAspectRatio="none" aria-hidden="true">
+                    <path d={sparkPath(s.summary.series)} fill="none" stroke="currentColor" stroke-width="1" />
+                  </svg>
+                {/if}
+              </td>
+              <td class="app-num pii hidden sm:table-cell">{fmtNum(s.summary.impressions)}</td>
+              <td class="app-num pii hidden md:table-cell">{fmtCtr(s.summary.ctr)}</td>
+              <td class="app-num pii pr-3 sm:pr-0">{fmtPos(s.summary.position)}</td>
             {:else}
               <td class="text-gray-400" title={s.summaryError ?? ''}>—</td>
               <td class="hidden text-gray-400 sm:table-cell" title={s.summaryError ?? ''}>—</td>
@@ -749,7 +1180,10 @@
                 — <span class="inline-block h-2 w-2 rounded-full bg-red-500" title={s.summaryError ?? 'error'}></span>
               </td>
             {/if}
-            <td class="hidden md:table-cell" onclick={(e) => e.stopPropagation()}>
+            <td class="app-num hidden lg:table-cell text-gray-600" title="git.local repo created_at">{fmtDate(s.createdAt)}</td>
+            <td class="app-num hidden md:table-cell" title="Bing · последние ~2 недели">{s.bing ? fmtNum(s.bing.clicks) : '—'}</td>
+            <td class="app-num hidden md:table-cell" title="Bing · последние ~2 недели">{s.bing ? fmtNum(s.bing.impressions) : '—'}</td>
+            <td class="hidden md:table-cell print:hidden" onclick={(e) => e.stopPropagation()}>
               <a
                 class="rounded bg-blue-100 px-2 py-1 text-xs text-blue-700 hover:bg-blue-200"
                 href="/properties/export?account={encodeURIComponent(s.accountId)}&site={encodeURIComponent(s.siteUrl)}&days={data.days}&dim=query"
@@ -759,7 +1193,7 @@
                 href="/properties/export?account={encodeURIComponent(s.accountId)}&site={encodeURIComponent(s.siteUrl)}&days={data.days}&dim=page"
               >page CSV</a>
             </td>
-            <td class="hidden md:table-cell" onclick={(e) => e.stopPropagation()}>
+            <td class="hidden md:table-cell print:hidden" onclick={(e) => e.stopPropagation()}>
               {#if !isHidden}
                 <button
                   type="button"
@@ -777,7 +1211,7 @@
           </tr>
           {#if expanded}
             <tr class="border-b bg-gray-50">
-              <td class="px-3 py-3" colspan="8">
+              <td class="px-3 py-3" colspan="11">
                 {#if inspectState.kind === 'loading'}
                   <div class="text-sm text-gray-500">Inspecting {inspectState.total} top URLs (URL Inspection API, ~3-5s)…</div>
                 {:else if inspectState.kind === 'error'}
@@ -861,7 +1295,93 @@
           <h2 class="app-section-title">Top queries</h2>
           <p class="app-section-sub font-mono text-[11px] tracking-tight text-gray-400">visible sites · query × page × country · rowLimit 1000 · click pos → SERP · click row → 16-mo history</p>
         </div>
-        <span class="text-xs text-gray-500">{aggregatedQueries.length} of {data.queryEntries.length > 0 ? data.queryEntries.reduce((a, e) => a + e.rows.length, 0) : 0}</span>
+        <div class="flex items-center gap-3 text-xs">
+          <button
+            type="button"
+            class="app-pill app-pill-secondary"
+            onclick={copyKeys}
+            title="Copy all unique queries of the current (filtered) view to the clipboard, one per line"
+          >{keysCopied ? 'Copied ✓' : 'Copy keys'}</button>
+          <a
+            class="app-pill app-pill-secondary"
+            href="/properties/queries-export?days={data.days}&hidden={encodeURIComponent([...hidden].join(','))}"
+            download
+            title="Download all queries (query · country · impressions · clicks), filters applied"
+          >Export all CSV</a>
+          <span class="text-gray-500">{aggregatedQueries.length} of {data.queryEntries.length > 0 ? data.queryEntries.reduce((a, e) => a + e.rows.length, 0) : 0}</span>
+        </div>
+      </div>
+      {#snippet facet(label: string, options: string[], selected: Set<string>, onToggle: (v: string) => void, onClear: () => void, search: string, onSearch: (v: string) => void)}
+        <details class="facet relative">
+          <summary class="app-pill app-pill-secondary cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+            {label}{selected.size > 0 ? ` · ${selected.size}` : ' · all'} ▾
+          </summary>
+          <div class="absolute z-20 mt-1 flex max-h-72 w-52 flex-col rounded border border-gray-200 bg-white p-1 shadow-lg">
+            {#if options.length === 0}
+              <div class="px-2 py-1 text-gray-400">—</div>
+            {:else}
+              {@const shown = search.trim() ? options.filter((o) => o.toLowerCase().includes(search.trim().toLowerCase())) : options}
+              <input
+                class="mb-1 w-full rounded border border-gray-300 px-2 py-1 text-[11px]"
+                placeholder="search…"
+                value={search}
+                oninput={(e) => onSearch(e.currentTarget.value)}
+              />
+              {#if selected.size > 0}
+                <button type="button" class="mb-1 w-full rounded px-2 py-1 text-left text-blue-600 hover:bg-gray-50 hover:underline" onclick={onClear}>Clear ({selected.size})</button>
+              {/if}
+              <div class="overflow-auto">
+                {#each shown as opt}
+                  <label class="flex cursor-pointer items-center gap-2 rounded px-2 py-1 hover:bg-gray-50">
+                    <input type="checkbox" checked={selected.has(opt)} onchange={() => onToggle(opt)} />
+                    <span class="break-all font-mono text-[11px]">{opt}</span>
+                  </label>
+                {/each}
+                {#if shown.length === 0}
+                  <div class="px-2 py-1 text-gray-400">no match</div>
+                {/if}
+              </div>
+            {/if}
+          </div>
+        </details>
+      {/snippet}
+      <div class="mb-2 flex flex-wrap items-center gap-2 text-xs print:hidden">
+        <span class="text-gray-500">Filter:</span>
+        {@render facet('Country', availableCountries, selectedCountries, toggleCountry, () => (selectedCountries = new Set()), countrySearch, (v) => (countrySearch = v))}
+        {@render facet('Domain', availableDomains, selectedDomains, toggleDomain, () => (selectedDomains = new Set()), domainSearch, (v) => (domainSearch = v))}
+        <select class="rounded border border-gray-300 px-2 py-1 text-xs" bind:value={querySource} title="Откуда ключ — GSC и/или Bing">
+          <option value="all">Источник · все</option>
+          <option value="gsc">только GSC</option>
+          <option value="bing">только Bing</option>
+          <option value="both">в обоих</option>
+        </select>
+        <span class="inline-flex items-center gap-1 text-gray-500">
+          Avg Pos
+          <input type="number" min="0" step="0.1" class="w-14 rounded border border-gray-300 px-1.5 py-1 text-xs" placeholder="от" bind:value={posMin} title="Avg Pos от (включительно)" />
+          <span>–</span>
+          <input type="number" min="0" step="0.1" class="w-14 rounded border border-gray-300 px-1.5 py-1 text-xs" placeholder="до" bind:value={posMax} title="Avg Pos до (включительно), пусто = без верхней границы" />
+        </span>
+        {#if selectedCountries.size > 0 || selectedDomains.size > 0 || querySource !== 'gsc' || (posMin ?? 0) > 0 || posMax != null}
+          <button type="button" class="text-blue-600 hover:underline" onclick={() => { selectedCountries = new Set(); selectedDomains = new Set(); querySource = 'gsc'; posMin = 0; posMax = null; }}>reset all</button>
+        {/if}
+      </div>
+      <div class="mb-2 flex flex-wrap items-center gap-1.5 text-xs print:hidden">
+        <span class="text-gray-500">Hide queries containing:</span>
+        {#each queryFilters as f}
+          <span class="inline-flex items-center gap-1 rounded bg-gray-100 px-2 py-0.5 font-mono text-gray-700">
+            {f.pattern}
+            <button type="button" class="text-gray-400 hover:text-red-600" title="Remove filter" onclick={() => removeQueryFilter(f.id)}>✕</button>
+          </span>
+        {/each}
+        <form class="inline-flex items-center" onsubmit={(e) => { e.preventDefault(); addQueryFilter(newQueryFilter); }}>
+          <input class="w-24 rounded border border-gray-300 px-1.5 py-0.5" placeholder="site:" bind:value={newQueryFilter} />
+          <button type="submit" class="ml-1 rounded bg-gray-100 px-2 py-0.5 text-gray-700 hover:bg-gray-200">Add</button>
+        </form>
+        {#if hiddenQueryCount > 0 || showFilteredQueries}
+          <button type="button" class="ml-auto text-blue-600 hover:underline" onclick={() => (showFilteredQueries = !showFilteredQueries)}>
+            {showFilteredQueries ? 'hide filtered' : `show ${hiddenQueryCount} filtered`}
+          </button>
+        {/if}
       </div>
       <div class="-mx-3 overflow-x-auto sm:-mx-6">
       <table class="app-table">
@@ -870,27 +1390,38 @@
             <th class="cursor-pointer pl-3 hover:underline sm:pl-6" onclick={() => toggleQSort('query')}>Query{qIndicator('query')}</th>
             <th class="hidden cursor-pointer hover:underline md:table-cell" onclick={() => toggleQSort('page')}>Page{qIndicator('page')}</th>
             <th class="cursor-pointer hover:underline" onclick={() => toggleQSort('country')}>Country{qIndicator('country')}</th>
-            <th class="cursor-pointer hover:underline" onclick={() => toggleQSort('clicks')}>Clicks{qIndicator('clicks')}</th>
-            <th class="hidden cursor-pointer hover:underline sm:table-cell" onclick={() => toggleQSort('impressions')}>Impressions{qIndicator('impressions')}</th>
+            <th class="cursor-pointer hover:underline" onclick={() => toggleQSort('clicks')}>GSC clk{qIndicator('clicks')}</th>
+            <th class="hidden cursor-pointer hover:underline sm:table-cell" onclick={() => toggleQSort('impressions')}>GSC imp{qIndicator('impressions')}</th>
             <th class="hidden cursor-pointer hover:underline md:table-cell" onclick={() => toggleQSort('ctr')}>CTR{qIndicator('ctr')}</th>
-            <th class="cursor-pointer pr-3 hover:underline sm:pr-0" onclick={() => toggleQSort('position')}>Avg Pos{qIndicator('position')}</th>
+            <th class="cursor-pointer hover:underline" onclick={() => toggleQSort('position')}>Avg Pos{qIndicator('position')}</th>
+            <th class="cursor-pointer hover:underline" onclick={() => toggleQSort('bingClicks')}>Bing clk{qIndicator('bingClicks')}</th>
+            <th class="hidden cursor-pointer pr-3 hover:underline sm:table-cell sm:pr-0" onclick={() => toggleQSort('bingImpr')}>Bing imp{qIndicator('bingImpr')}</th>
           </tr>
         </thead>
         <tbody>
           {#each aggregatedQueries as q}
             {@const qKey = `${q.query}|${q.page}|${q.country}`}
             {@const serpUrl = googleSerpUrl(q.query, q.country)}
-            {@const posClass = q.position > 0 && q.position <= 10 ? 'bg-green-50 hover:bg-green-100' : q.position > 0 && q.position <= 20 ? 'bg-yellow-50 hover:bg-yellow-100' : 'hover:bg-gray-50'}
+            {@const pos = q.gsc?.position ?? q.bing?.position ?? 0}
+            {@const posClass = pos > 0 && pos <= 10 ? 'bg-green-50 hover:bg-green-100' : pos > 0 && pos <= 20 ? 'bg-yellow-50 hover:bg-yellow-100' : 'hover:bg-gray-50'}
             <tr class="cursor-pointer {posClass}" onclick={() => toggleQuery(q.query, q.page, q.country)}>
               <td class="pl-3 sm:pl-6">
-                <span class="mr-1 text-gray-400">{expandedQuery === qKey ? '▾' : '▸'}</span>
+                <span class="mr-1 text-gray-400 print:hidden">{expandedQuery === qKey ? '▾' : '▸'}</span>
                 {q.query}
+                {#if q.gsc}<span class="ml-1 inline-flex items-center rounded-sm bg-green-100 px-1 py-0 align-middle text-[9px] font-medium text-green-700" title="Есть в Google Search Console">GSC</span>{/if}
+                {#if q.bing}<span class="ml-1 inline-flex items-center rounded-sm bg-blue-100 px-1 py-0 align-middle text-[9px] font-medium text-blue-700" title="Есть в Bing">Bing</span>{/if}
+                <button
+                  type="button"
+                  class="ml-1 text-gray-300 hover:text-red-600"
+                  title="Hide this query (adds it as a filter)"
+                  onclick={(e) => { e.stopPropagation(); addQueryFilter(q.query); }}
+                >✕</button>
               </td>
               <td class="hidden break-all md:table-cell">
                 {#if q.page}
                   <a class="text-blue-600 hover:underline" href={q.page} target="_blank" rel="noopener noreferrer" onclick={(e) => e.stopPropagation()}>{q.page}</a>
                 {:else}
-                  <span class="text-gray-400">—</span>
+                  <span class="font-mono text-[11px] text-gray-500" title="Только Bing — страница неизвестна, показан домен">{q.domain}</span>
                 {/if}
               </td>
               <td>
@@ -898,20 +1429,26 @@
                   <span class="inline-flex items-center rounded-sm bg-gray-100 px-1.5 py-0.5 font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-gray-600">{q.country}</span>
                 {/if}
               </td>
-              <td class="app-num">{fmtNum(q.clicks)}</td>
-              <td class="app-num hidden sm:table-cell">{fmtNum(q.impressions)}</td>
-              <td class="app-num hidden md:table-cell">{fmtCtr(q.ctr)}</td>
-              <td class="app-num pr-3 sm:pr-0">
-                {#if serpUrl}
-                  <a class="group inline-flex items-baseline gap-0.5 text-gray-800 transition-colors duration-150 hover:text-blue-600 hover:underline hover:decoration-blue-600 hover:underline-offset-2" href={serpUrl} target="_blank" rel="noopener noreferrer" onclick={(e) => e.stopPropagation()} title="Open Google SERP · {q.country.toUpperCase()}">{fmtPos(q.position)}<span class="text-[9px] text-gray-400 transition-colors duration-150 group-hover:text-blue-500">↗</span></a>
+              <td class="app-num">{q.gsc ? fmtNum(q.gsc.clicks) : '—'}</td>
+              <td class="app-num hidden sm:table-cell">{q.gsc ? fmtNum(q.gsc.impressions) : '—'}</td>
+              <td class="app-num hidden md:table-cell">{q.gsc ? fmtCtr(q.gsc.ctr) : '—'}</td>
+              <td class="app-num">
+                {#if q.gsc}
+                  {#if serpUrl}
+                    <a class="group inline-flex items-baseline gap-0.5 text-gray-800 transition-colors duration-150 hover:text-blue-600 hover:underline hover:decoration-blue-600 hover:underline-offset-2" href={serpUrl} target="_blank" rel="noopener noreferrer" onclick={(e) => e.stopPropagation()} title="Open Google SERP · {q.country.toUpperCase()}">{fmtPos(q.gsc.position)}<span class="text-[9px] text-gray-400 transition-colors duration-150 group-hover:text-blue-500">↗</span></a>
+                  {:else}
+                    {fmtPos(q.gsc.position)}
+                  {/if}
                 {:else}
-                  {fmtPos(q.position)}
+                  <span class="text-gray-400">—</span>
                 {/if}
               </td>
+              <td class="app-num">{q.bing ? fmtNum(q.bing.clicks) : '—'}</td>
+              <td class="app-num hidden pr-3 sm:table-cell sm:pr-0">{q.bing ? fmtNum(q.bing.impressions) : '—'}</td>
             </tr>
             {#if expandedQuery === qKey}
               <tr class="bg-gray-50">
-                <td class="px-2 py-3" colspan="7">
+                <td class="px-2 py-3" colspan="9">
                   {#if historyState.kind === 'loading'}
                     <div class="text-sm text-gray-500">Loading 16-month history…</div>
                   {:else if historyState.kind === 'error'}
@@ -995,5 +1532,77 @@
       </table>
       </div>
     </section>
+  {/if}
+
+  {#if sitemapModal}
+    <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onclick={closeSitemapModal} role="presentation">
+      <div class="max-h-[85vh] w-full max-w-lg overflow-auto rounded-lg bg-white p-5 shadow-xl" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
+        <div class="mb-3 flex items-center justify-between">
+          <h2 class="text-base font-semibold">Sitemaps — {sitemapModal.title}</h2>
+          <button class="text-gray-400 hover:text-gray-700" onclick={closeSitemapModal} aria-label="Close">✕</button>
+        </div>
+
+        {#if sitemapModal.load === 'loading'}
+          <div class="text-sm text-gray-500">Loading…</div>
+        {:else if sitemapModal.load === 'error'}
+          <div class="text-sm text-red-600">{sitemapModal.loadError}</div>
+        {:else}
+          <div class="mb-4">
+            <div class="mb-1 text-xs font-medium uppercase text-gray-500">Registered in Search Console ({sitemapModal.current.length})</div>
+            {#if sitemapModal.current.length === 0}
+              <div class="text-sm text-gray-400">None.</div>
+            {:else}
+              <ul class="space-y-1">
+                {#each sitemapModal.current as sm}
+                  <li class="break-all text-sm">
+                    <span class="text-gray-800">{sm.path}</span>
+                    {#if sm.errors && sm.errors !== '0'}<span class="ml-1 text-[11px] text-red-600">{sm.errors} errors</span>{/if}
+                    {#if sm.isPending}<span class="ml-1 text-[11px] text-amber-600">pending</span>{/if}
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </div>
+
+          <div class="mb-4">
+            <div class="mb-1 text-xs font-medium uppercase text-gray-500">Declared in robots.txt ({sitemapModal.robots.length})</div>
+            {#if sitemapModal.robotsError}
+              <div class="text-sm text-amber-700">robots.txt: {sitemapModal.robotsError}</div>
+            {:else if sitemapModal.robots.length === 0}
+              <div class="text-sm text-gray-400">None found.</div>
+            {:else}
+              <ul class="space-y-1">
+                {#each sitemapModal.robots as r}
+                  <li class="break-all text-sm text-gray-800">{r}</li>
+                {/each}
+              </ul>
+            {/if}
+          </div>
+
+          {#if sitemapModal.resync.kind === 'done'}
+            <div class="mb-3 rounded bg-green-50 px-3 py-2 text-sm text-green-800">
+              Deleted {sitemapModal.resync.deleted}, submitted {sitemapModal.resync.submitted}.
+              {#if sitemapModal.resync.failed.length > 0}
+                <div class="mt-1 text-red-700">{sitemapModal.resync.failed.length} failed:
+                  {#each sitemapModal.resync.failed as f}<div class="break-all text-xs">{f.op} {f.path}: {f.reason}</div>{/each}
+                </div>
+              {/if}
+            </div>
+          {:else if sitemapModal.resync.kind === 'error'}
+            <div class="mb-3 rounded bg-red-50 px-3 py-2 text-sm text-red-700">{sitemapModal.resync.message}</div>
+          {/if}
+
+          <div class="flex justify-end gap-2">
+            <button class="rounded bg-gray-100 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-200" onclick={closeSitemapModal}>Close</button>
+            <button
+              class="rounded bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+              disabled={sitemapModal.resync.kind === 'running' || sitemapModal.robots.length === 0}
+              title={sitemapModal.robots.length === 0 ? 'robots.txt declares no sitemaps' : 'Delete all registered sitemaps, then submit the ones from robots.txt'}
+              onclick={resyncSitemaps}
+            >{sitemapModal.resync.kind === 'running' ? 'Resyncing…' : 'Delete all + add from robots.txt'}</button>
+          </div>
+        {/if}
+      </div>
+    </div>
   {/if}
 </main>

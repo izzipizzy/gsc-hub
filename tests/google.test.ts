@@ -316,8 +316,8 @@ describe('google.listSitesWithSummary', () => {
     expect(result.sites).toHaveLength(2);
 
     const bySite = Object.fromEntries(result.sites.map((s) => [s.siteUrl, s]));
-    expect(bySite['https://a.com/'].summary).toEqual({ clicks: 10, impressions: 100, ctr: 0.1, position: 5.0 });
-    expect(bySite['https://b.com/'].summary).toEqual({ clicks: 3, impressions: 50, ctr: 0.06, position: 8.5 });
+    expect(bySite['https://a.com/'].summary).toEqual({ clicks: 10, impressions: 100, ctr: 0.1, position: 5.0, series: [10] });
+    expect(bySite['https://b.com/'].summary).toEqual({ clicks: 3, impressions: 50, ctr: 0.06, position: 8.5, series: [3] });
     expect(bySite['https://a.com/'].summaryError).toBeNull();
   });
 

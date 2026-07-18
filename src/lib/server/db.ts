@@ -15,7 +15,23 @@ CREATE TABLE IF NOT EXISTS google_accounts (
   scope         TEXT NOT NULL,
   status        TEXT NOT NULL DEFAULT 'active',
   last_error    TEXT,
-  added_at      INTEGER NOT NULL
+  added_at      INTEGER NOT NULL,
+  owner_id      TEXT
+);
+
+CREATE TABLE IF NOT EXISTS users (
+  id            TEXT PRIMARY KEY,
+  email         TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  role          TEXT NOT NULL,
+  created_at    INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT NOT NULL,
+  created_at  INTEGER NOT NULL,
+  expires_at  INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS url_inspection_cache (
@@ -26,6 +42,44 @@ CREATE TABLE IF NOT EXISTS url_inspection_cache (
   payload      TEXT NOT NULL,
   PRIMARY KEY (account_id, site_url, urls_hash)
 );
+
+CREATE TABLE IF NOT EXISTS query_filters (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  pattern   TEXT NOT NULL UNIQUE,
+  added_at  INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS indexnow_keys (
+  host      TEXT PRIMARY KEY,
+  key       TEXT NOT NULL,
+  added_at  INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS hidden_sites (
+  account_id TEXT NOT NULL,
+  site_url   TEXT NOT NULL,
+  added_at   INTEGER NOT NULL,
+  PRIMARY KEY (account_id, site_url)
+);
+
+CREATE TABLE IF NOT EXISTS site_dates (
+  host       TEXT PRIMARY KEY,
+  created_at INTEGER NOT NULL,
+  source     TEXT,
+  synced_at  INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS site_branded_keywords (
+  site_url   TEXT PRIMARY KEY,
+  terms      TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS site_health (
+  site_url   TEXT PRIMARY KEY,
+  data       TEXT NOT NULL,
+  checked_at INTEGER NOT NULL
+);
 `;
 
 export function openDb(path: string): Db {
@@ -33,7 +87,21 @@ export function openDb(path: string): Db {
   const db = new Database(path);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
+
+  // Seed the default 'site:' filter only when query_filters is first created, so
+  // a user who deletes it doesn't get it back on the next restart.
+  const filtersExisted = db
+    .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='query_filters'")
+    .get();
   db.exec(SCHEMA);
+  const cols = db.prepare("PRAGMA table_info('google_accounts')").all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === 'owner_id')) {
+    db.exec('ALTER TABLE google_accounts ADD COLUMN owner_id TEXT');
+  }
+  if (!filtersExisted) {
+    db.prepare('INSERT INTO query_filters (pattern, added_at) VALUES (?, ?)').run('site:', Date.now());
+  }
+
   return db;
 }
 

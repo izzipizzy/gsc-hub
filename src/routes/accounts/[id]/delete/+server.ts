@@ -3,8 +3,10 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { deleteAccount, getAccount } from '$lib/server/accounts';
 import { revokeToken } from '$lib/server/google';
+import { requireAdmin } from '$lib/server/guard';
 
-export const POST: RequestHandler = async ({ params }) => {
+export const POST: RequestHandler = async ({ params, locals }) => {
+  requireAdmin(locals);
   const acc = getAccount(db(), params.id!);
   if (acc) {
     try {

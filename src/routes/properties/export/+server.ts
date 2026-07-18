@@ -4,6 +4,7 @@ import { db } from '$lib/server/db';
 import { getAccount } from '$lib/server/accounts';
 import { searchAnalyticsQuery } from '$lib/server/google';
 import { rowsToCsv } from '$lib/server/csv';
+import { requireAdmin } from '$lib/server/guard';
 
 function dateNDaysAgo(n: number): string {
   return new Date(Date.now() - n * 86400_000).toISOString().slice(0, 10);
@@ -13,7 +14,8 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-export const GET: RequestHandler = async ({ url }) => {
+export const GET: RequestHandler = async ({ url, locals }) => {
+  requireAdmin(locals);
   const accountId = url.searchParams.get('account');
   const siteUrl = url.searchParams.get('site');
   const days = Number(url.searchParams.get('days') ?? '28');

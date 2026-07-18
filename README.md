@@ -4,13 +4,15 @@
 
 ## Screenshots
 
-| Sites table — multi-account aggregation | Dashboard — sparkline cards |
+![Portfolio analytics — striking distance, cannibalization, CTR, branded & decay across all sites](docs/screenshots/portfolio.png)
+
+| All sites — multi-account, sparklines, Bing/IndexNow | Dashboard — sparkline cards |
 |---|---|
 | ![Sites](docs/screenshots/sites.png) | ![Dashboard](docs/screenshots/dashboard.png) |
 
 ![Top queries](docs/screenshots/queries.png)
 
-Local self-hosted multi-account hub for **Google Search Console**. Connect several Google accounts via OAuth, view all Search Console sites in a single table, aggregate queries and pages across accounts, see per-site dashboards with sparklines and period-over-period deltas, drill into 16-month query history with one click. No external service, no GSC data leaves your machine, only OAuth tokens persist locally in SQLite.
+Local self-hosted multi-account hub for **Google Search Console**. Connect several Google accounts via OAuth, view all Search Console sites in a single table, aggregate queries and pages across accounts, see per-site dashboards with sparklines and period-over-period deltas, drill into 16-month query history with one click. Since 0.6.0 it also ships a full **SEO analytics suite** — per-site deep-dives (striking distance, cannibalization, CTR benchmark, content decay, branded split, site health) and a portfolio-wide view across all sites — plus Bing/IndexNow and optional multi-user login. No external service, no GSC data leaves your machine, only OAuth tokens (and a little per-site config) persist locally in SQLite. All analytics are live-fetched.
 
 Built as a personal alternative to seogets-style SaaS tools when you have multiple Google accounts (personal, work, clients) and don't want to log in to each Search Console separately.
 
@@ -47,6 +49,33 @@ Built as a personal alternative to seogets-style SaaS tools when you have multip
 ### Top pages (aggregated, sortable)
 - Same pattern as Top queries, but at page-URL granularity. Useful for finding the URL that pulled a sudden spike.
 
+### Per-site analytics (`/properties/[site]`)
+Click through to a single property for a full SEO deep-dive. Tabs:
+- **Striking Distance** — queries ranking at positions 4–20 with real impressions: the fastest wins to page 1.
+- **Keyword Cannibalization** — queries where several of your own URLs compete, with a clear winner/loser breakdown.
+- **CTR Benchmark** — your actual click-through rate by position vs an industry-reference curve, plus the pages that under-perform it.
+- **Content Decay** — pages losing clicks **or** impressions vs the previous period.
+- **Branded vs non-branded** — traffic split, with editable brand terms per site.
+- **Site Health** — SSL (expiry / issuer / grade), Google Safe Browsing, and Core Web Vitals (PageSpeed Insights, mobile). Run on demand, cached per site. Needs a Google API key (see [Configuration](#configuration)); the tab stays hidden without one.
+
+All tabs are computed live from Search Console; nothing is persisted beyond the editable brand terms and the health cache.
+
+### Portfolio analytics (`/properties/portfolio`)
+The same lenses across every non-hidden site at once, computed from a single query fan-out:
+- Tabbed **Striking / Cannibalization / CTR / Branded / Decay**, all **URL-addressable** via `?tab=`.
+- **Country (Geo) filter** and **copy-queries-to-clipboard**, both respecting the current filter.
+- Per-decaying-page **index status** via the URL Inspection API, with a direct link into the owning Google account's inspection panel.
+- Async streaming (the shell renders immediately) plus a short in-memory result cache, so re-opens and period switches are instant.
+
+### Bing Webmaster + IndexNow
+- Bing performance data alongside GSC, with merged GSC/Bing keyword rollups.
+- **Submit sitemap to Bing** and **push URLs to IndexNow**, plus an IndexNow-key indicator per site.
+- Requires `BING_API_KEY` (see [Configuration](#configuration)).
+
+### Optional login & roles
+- **Off by default** — the tool stays single-user and loopback-only. Set `ADMIN_EMAIL` / `ADMIN_PASSWORD` to turn on a login form, server sessions (argon2-hashed passwords), a user-management page, and roles (**admin** / **manager**) with per-owner account scoping.
+- Intended for when you expose the app beyond `127.0.0.1`; secure cookies switch on automatically once `ORIGIN` starts with `https://`.
+
 ### Dashboard (`/dashboard`)
 - Grid of per-site cards: account label, site, sparkline of daily clicks for the current period, four metrics with **deltas vs the previous period of the same length** (e.g., last 7 days vs the 7 days before that). Green/red, also dual-encoded with `+` / `−` so colour-blind users get the signal.
 - Configurable density: **2 / 4 / 6 columns** via URL `?cols=`. Same period filter as Sites.
@@ -56,6 +85,8 @@ Built as a personal alternative to seogets-style SaaS tools when you have multip
 - Queries or pages, last N days (matches the period filter), sanitized filename. Streams `text/csv; charset=utf-8` with `Content-Disposition: attachment`. Downloaded directly from `/properties/export?account=...&site=...&days=...&dim=query|page`.
 
 ### Operator-grade UX details
+- **Sparklines** of daily clicks on the site cards.
+- **Privacy Blur** — one click blurs PII (emails, domains, metrics) for screenshots and screen-sharing.
 - **Refresh** preserves all URL state (period, sort, dir, cols) via SvelteKit's `invalidateAll()`. No `<form method="POST">` redirect dance.
 - All numbers in tables are tabular-nums for vertical alignment.
 - Light hover affordance on rows. Sortable headers show ↑ / ↓.
@@ -105,6 +136,12 @@ The `webmasters` scope is a "sensitive scope" in Google's classification, but Go
 | `AUTH_SECRET` | yes | Random 32-byte base64 secret for Auth.js (`openssl rand -base64 32`) |
 | `AUTH_TRUST_HOST` | recommended | `true` for self-hosted/proxy setups |
 | `DB_PATH` | optional | Path to SQLite file. Defaults to `./data/gsc-hub.db` |
+| `PAGESPEED_KEY` | optional | Google API key for the Site Health tab (Core Web Vitals via PageSpeed Insights). Enable the **PageSpeed Insights API**. One Google API key can serve both Health checks. |
+| `GOOGLE_SAFE_BROWSING_KEY` | optional | Google API key for the Site Health tab's Safe Browsing check. Enable the **Safe Browsing API** — the same key as `PAGESPEED_KEY` works. Without these two, the Health tab stays hidden; nothing else needs them. |
+| `BING_API_KEY` | optional | Bing Webmaster API key — enables Bing data, "Submit to Bing", and IndexNow push. |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | optional | Set both to enable multi-user login/roles (seeds an admin on first start). Leave unset for the default single-user, loopback-only mode. |
+| `ORIGIN` | optional | Public origin (e.g. `https://your-domain.example`). Enables secure cookies when it starts with `https://`. |
+| `AUTH_URL` | optional | Public URL Auth.js uses to build the OAuth redirect; must match the GCP OAuth redirect base. |
 
 ## Architecture
 
@@ -115,7 +152,7 @@ The `webmasters` scope is a "sensitive scope" in Google's classification, but Go
                                                                        └──> ./data/gsc-hub.db  (only OAuth tokens)
 ```
 
-One Node process. One SQLite file. The DB schema has two tables:
+One Node process. One SQLite file. The DB schema is small — tokens plus a little per-site config and an external-check cache:
 
 ```sql
 CREATE TABLE google_accounts (
@@ -139,9 +176,23 @@ CREATE TABLE url_inspection_cache (
   payload      TEXT NOT NULL,
   PRIMARY KEY (account_id, site_url, urls_hash)
 );
+
+CREATE TABLE site_branded_keywords (
+  site_url    TEXT PRIMARY KEY,
+  terms       TEXT,
+  updated_at  INTEGER
+);
+
+CREATE TABLE site_health (
+  site_url    TEXT PRIMARY KEY,
+  data        TEXT,
+  checked_at  INTEGER
+);
 ```
 
-**No GSC analytics data is persisted.** Every request to `/properties`, `/dashboard`, the query-history endpoint or the CSV export does a fresh fan-out to Google. Hidden sites are kept in browser localStorage only.
+All four tables are created by the startup migration. When the optional login is enabled (`ADMIN_EMAIL`/`ADMIN_PASSWORD` set), two more tables — `users` and `sessions` — are seeded on first start.
+
+**No GSC analytics data is persisted.** Every request to `/properties`, the per-site and portfolio analytics, `/dashboard`, the query-history endpoint or the CSV export does a fresh fan-out to Google. The database holds only OAuth tokens plus small per-site config (brand terms in `site_branded_keywords`) and a cache of the external health checks (`site_health`). Hidden sites are kept in browser localStorage only.
 
 This keeps things simple, eliminates a "stale data" UX class, and means the database file you care about is tiny (a few KB per account). The trade-off is page-load latency proportional to the number of active sites: roughly 2N parallel API calls for the sites view, 3N for the dashboard, 1N for query history.
 
@@ -166,7 +217,6 @@ gsc-hub/
 ├── PRODUCT.md             — strategic context (users, principles, anti-references)
 ├── DESIGN.md              — visual system (colors, typography, components, rules)
 ├── DESIGN.json            — sidecar with HTML/CSS snippets per component
-├── CLAUDE.md              — instructions for AI assistants working in this repo
 ├── Dockerfile             — multi-stage production image (Node runtime)
 ├── compose.yaml           — Docker Compose: OrbStack domain + loopback port 5173
 ├── src/
@@ -179,6 +229,11 @@ gsc-hub/
 │   │   │   ├── accounts.ts         — CRUD over google_accounts (only file with SQL for that table)
 │   │   │   ├── inspection_cache.ts — 12h SQLite cache for URL Inspection responses
 │   │   │   ├── google.ts           — GSC client, refresh, fan-out, search analytics
+│   │   │   ├── analytics.ts        — pure SEO analytics (striking / cannibalization / CTR benchmark / branded split / decay)
+│   │   │   ├── health.ts           — Site Health (SSL / Safe Browsing / Core Web Vitals)
+│   │   │   ├── branded.ts          — per-site brand terms (site_branded_keywords)
+│   │   │   ├── bing.ts             — Bing Webmaster API client
+│   │   │   ├── indexnow.ts         — IndexNow submit + key handling
 │   │   │   └── csv.ts              — RFC 4180 CSV writer
 │   │   └── utils/
 │   │       ├── site.ts            — strip sc-domain: prefix, build proper href + Google site: search
@@ -189,6 +244,8 @@ gsc-hub/
 │       ├── accounts/[id]/         — delete, relabel
 │       └── properties/
 │           ├── +page.svelte       — Sites table + Top queries + Top pages
+│           ├── [site]/            — per-site analytics detail (analytics / decay / health / branded sub-endpoints)
+│           ├── striking/          — portfolio analytics + decay endpoint
 │           ├── export/+server.ts        — CSV stream
 │           ├── inspect/+server.ts       — URL Inspection (cached)
 │           ├── refresh/+server.ts       — force-refresh helpers
@@ -215,8 +272,9 @@ gsc-hub/
 
 ## Tests
 
-39 unit tests cover the server modules:
+62 unit tests cover the server modules:
 - SQLite migration and schema, including `url_inspection_cache` table (`tests/db.test.ts`)
+- SEO analytics pure functions: striking distance, cannibalization, CTR benchmark, branded split, content decay (`tests/analytics.test.ts`)
 - URL Inspection cache: hash determinism, miss, hit, TTL expiry, upsert, delete (`tests/inspection_cache.test.ts`)
 - Accounts CRUD including `markActive` / `markRevoked` / `markError` (`tests/accounts.test.ts`)
 - GSC client: token refresh skew window, 5xx → markError, 401/invalid_grant → markRevoked, fan-out aggregation, per-site queries / pages / daily breakdown / query-history (`tests/google.test.ts`)
@@ -233,6 +291,7 @@ Routes are not unit-tested; smoke-tested via `curl` against `pnpm dev`.
 - The SQLite file lives in `./data/` (gitignored). Delete it to wipe all connections.
 - Tokens are stored in plaintext. This is acceptable for a local single-user tool; encrypt at rest if you ever expose this beyond `127.0.0.1`.
 - The exception is the URL Inspection cache (`url_inspection_cache` table) which stores response payloads keyed by `(account_id, site_url, urls_hash)` for 12 hours, to avoid burning the daily 2000-call quota on repeat clicks. Delete `data/gsc-hub.db` to wipe it.
+- Two more small tables hold per-site config, not GSC analytics: `site_branded_keywords` (your editable brand terms) and `site_health` (a cache of external SSL / Safe Browsing / Core Web Vitals checks). Both are wiped with the same DB file.
 
 ## Deploying with Docker Compose + OrbStack
 
@@ -253,14 +312,16 @@ docker compose down            # stop (data in ./data persists)
 
 **Security note:** the app has no built-in authentication (single-user tool). The port is intentionally bound to `127.0.0.1` only — do not expose it on `0.0.0.0` or the network, since the DB holds Google OAuth tokens. To publish on a public hostname, front it with an identity-aware proxy (e.g. Cloudflare Access) limited to your email, and add the production callback URL to your Google OAuth client.
 
-## Roadmap (Phase B, not yet shipped)
+## Roadmap
+
+The SEO analytics suite (per-site + portfolio: striking distance, cannibalization, CTR benchmark, content decay, branded split, site health), Bing/IndexNow, and optional login/roles all shipped in 0.6.0. Still on the list:
 
 - Daily background pull of aggregates into Postgres for trends and period comparisons that span weeks/months without re-querying GSC each time.
 - Charts with hover tooltips on the dashboard cards.
-- URL Inspection bulk + sitemap monitoring.
+- Sitemap change monitoring.
 - Alerts on traffic drops.
 
-The MVP is intentionally cache-free; phase B will add a cache when usage shows it's needed. Until then, every load is fresh.
+Analytics stay intentionally live-fetched; a persistent cache will come only when usage shows it's needed. Until then, every load is fresh.
 
 ## License
 

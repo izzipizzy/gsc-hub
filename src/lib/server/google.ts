@@ -271,6 +271,25 @@ export async function submitSitemap(
   }
 }
 
+// DELETE a single sitemap feedpath — tells Google to drop it. 2xx/204 = ok.
+export async function deleteSitemap(
+  db: Db,
+  acc: AccountRow,
+  siteUrl: string,
+  feedpath: string
+): Promise<void> {
+  const res = await authorizedFetch(db, acc, SITEMAP_SUBMIT_URL(siteUrl, feedpath), {
+    method: 'DELETE'
+  });
+  if (res.status === 401) {
+    markRevoked(db, acc.id, 'sitemaps.delete 401');
+    throw new Error('sitemaps.delete 401');
+  }
+  if (!res.ok && res.status !== 204) {
+    throw new Error(`sitemaps.delete ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  }
+}
+
 function siteHomepage(siteUrl: string): string {
   if (siteUrl.startsWith('sc-domain:')) return `https://${siteUrl.slice('sc-domain:'.length)}/`;
   return siteUrl;
@@ -319,6 +338,49 @@ export async function resubmitSitemapsForSite(
   return { submitted, failed, source: submitted.length === 0 && source === 'guess' ? 'none' : source };
 }
 
+export interface SitemapResyncResult {
+  robots: string[];                                       // sitemaps declared in robots.txt
+  deleted: string[];                                      // previously-registered sitemaps removed
+  submitted: string[];                                    // robots sitemaps (re)submitted
+  failed: { path: string; op: 'delete' | 'submit'; reason: string }[];
+}
+
+// Drop every sitemap GSC currently knows for this site, then submit the given
+// robots.txt-declared ones. The caller supplies the robots list (the popup
+// already has it) so we don't re-fetch robots.txt here. Errors collected per path.
+export async function resyncSitemapsFromRobots(
+  db: Db,
+  acc: AccountRow,
+  siteUrl: string,
+  robots: string[]
+): Promise<SitemapResyncResult> {
+  const existing = await listSitemaps(db, acc, siteUrl);
+
+  const deleted: string[] = [];
+  const submitted: string[] = [];
+  const failed: SitemapResyncResult['failed'] = [];
+
+  for (const sm of existing) {
+    try {
+      await deleteSitemap(db, acc, siteUrl, sm.path);
+      deleted.push(sm.path);
+    } catch (e) {
+      failed.push({ path: sm.path, op: 'delete', reason: (e as Error).message.slice(0, 200) });
+    }
+  }
+
+  for (const p of robots) {
+    try {
+      await submitSitemap(db, acc, siteUrl, p);
+      submitted.push(p);
+    } catch (e) {
+      failed.push({ path: p, op: 'submit', reason: (e as Error).message.slice(0, 200) });
+    }
+  }
+
+  return { robots, deleted, submitted, failed };
+}
+
 // ---------------------------------------------------------------------------
 // URL Inspection API
 // ---------------------------------------------------------------------------
@@ -341,6 +403,7 @@ export interface InspectedUrl {
   inspectionUrl: string;
   status: 'ok' | 'error';
   index?: IndexStatusResult;
+  link?: string; // GSC "open in URL Inspection" deep-link, straight from the API (has the hash id)
   error?: string;
 }
 
@@ -350,7 +413,7 @@ export async function inspectUrl(
   siteUrl: string,
   inspectionUrl: string,
   languageCode: string = 'en-US'
-): Promise<IndexStatusResult> {
+): Promise<{ index: IndexStatusResult; link?: string }> {
   const res = await authorizedFetch(db, acc, URL_INSPECTION_URL, {
     method: 'POST',
     body: JSON.stringify({ inspectionUrl, siteUrl, languageCode })
@@ -368,9 +431,12 @@ export async function inspectUrl(
     );
   }
   const json = (await res.json()) as {
-    inspectionResult?: { indexStatusResult?: IndexStatusResult };
+    inspectionResult?: { indexStatusResult?: IndexStatusResult; inspectionResultLink?: string };
   };
-  return json.inspectionResult?.indexStatusResult ?? { verdict: 'VERDICT_UNSPECIFIED' };
+  return {
+    index: json.inspectionResult?.indexStatusResult ?? { verdict: 'VERDICT_UNSPECIFIED' },
+    link: json.inspectionResult?.inspectionResultLink
+  };
 }
 
 export async function bulkInspect(
@@ -384,10 +450,11 @@ export async function bulkInspect(
   );
   return urls.map((u, i) => {
     const r = settled[i];
-    if (r.status === 'fulfilled') return { inspectionUrl: u, status: 'ok', index: r.value };
+    if (r.status === 'fulfilled')
+      return { inspectionUrl: u, status: 'ok' as const, index: r.value.index, link: r.value.link };
     return {
       inspectionUrl: u,
-      status: 'error',
+      status: 'error' as const,
       error: (r.reason as Error).message.slice(0, 200)
     };
   });
@@ -709,6 +776,7 @@ export interface SiteSummary {
   impressions: number;
   ctr: number;
   position: number;
+  series: number[]; // daily clicks over the window, oldest → newest (for the sparkline)
 }
 
 export interface SiteWithSummary extends SiteRow {
@@ -747,15 +815,17 @@ export async function listSitesWithSummary(
     }
   });
 
-  // Step 2: parallel summaries — one call per site.
+  // Step 2: parallel summaries — one call per site, dims=['date'] so a single call yields both
+  // the aggregate totals (summed) and the daily series (for the sparkline). Same call count as
+  // a totals-only fetch — the sparkline is effectively free.
   const { startDate, endDate } = gscDateRange(days);
   const summaries = await Promise.allSettled(
     pairs.map(({ acc, site }) =>
       searchAnalyticsQuery(db, acc, site.siteUrl, {
         startDate,
         endDate,
-        dimensions: [],
-        rowLimit: 1
+        dimensions: ['date'],
+        rowLimit: 500
       })
     )
   );
@@ -764,12 +834,19 @@ export async function listSitesWithSummary(
   const sites: SiteWithSummary[] = pairs.map(({ site }, i) => {
     const r = summaries[i];
     if (r.status === 'fulfilled') {
-      const row = r.value[0];
+      const rows = [...r.value].sort((a, b) => (a.keys[0] ?? '').localeCompare(b.keys[0] ?? ''));
+      const clicks = rows.reduce((s, x) => s + x.clicks, 0);
+      const impressions = rows.reduce((s, x) => s + x.impressions, 0);
+      const posWeight = rows.reduce((s, x) => s + x.position * x.impressions, 0);
       return {
         ...site,
-        summary: row
-          ? { clicks: row.clicks, impressions: row.impressions, ctr: row.ctr, position: row.position }
-          : { clicks: 0, impressions: 0, ctr: 0, position: 0 },
+        summary: {
+          clicks,
+          impressions,
+          ctr: impressions > 0 ? clicks / impressions : 0,
+          position: impressions > 0 ? posWeight / impressions : 0,
+          series: rows.map((x) => x.clicks)
+        },
         summaryError: null
       };
     }
@@ -875,4 +952,142 @@ export async function fetchQueryHistory(
   });
 
   return { entries, errors };
+}
+
+// ─── Single-site fetches for the site detail page ─────────────────────────────
+
+// One GSC call: query+page rows for the last `days`. Powers Striking / Cannibalization /
+// CTR / Branded from a single response (the caller computes all four in analytics.ts).
+export async function fetchSiteQueryPages(
+  db: Db,
+  acc: AccountRow,
+  siteUrl: string,
+  days: number = 28,
+  rowLimit: number = 5000
+): Promise<SearchAnalyticsRow[]> {
+  const { startDate, endDate } = gscDateRange(days);
+  return searchAnalyticsQuery(db, acc, siteUrl, {
+    startDate,
+    endDate,
+    dimensions: ['query', 'page'],
+    rowLimit
+  });
+}
+
+// Two page-level windows for content decay: the recent `days` vs the same-length window
+// ending `offsetDays` ago. Default is the immediately preceding period (offsetDays = days),
+// e.g. last 28d vs the 28d before that — this catches recent declines, unlike a fixed
+// months-ago baseline which misses drops on sites that had little traffic back then.
+export async function fetchSiteDecayPages(
+  db: Db,
+  acc: AccountRow,
+  siteUrl: string,
+  days: number = 28,
+  offsetDays?: number,
+  rowLimit: number = 5000
+): Promise<{ recent: SearchAnalyticsRow[]; prior: SearchAnalyticsRow[] }> {
+  const gap = offsetDays ?? days;
+  const now = Date.now();
+  const recentRange = gscDateRange(days, now);
+  const priorStart = isoDateDaysAgo(gap + days, now);
+  const priorEnd = isoDateDaysAgo(gap, now);
+  const [recent, prior] = await Promise.all([
+    searchAnalyticsQuery(db, acc, siteUrl, {
+      startDate: recentRange.startDate,
+      endDate: recentRange.endDate,
+      dimensions: ['page'],
+      rowLimit
+    }),
+    searchAnalyticsQuery(db, acc, siteUrl, {
+      startDate: priorStart,
+      endDate: priorEnd,
+      dimensions: ['page'],
+      rowLimit
+    })
+  ]);
+  return { recent, prior };
+}
+
+export interface PortfolioDecayEntry {
+  accountId: string;
+  siteUrl: string;
+  recent: SearchAnalyticsRow[];
+  prior: SearchAnalyticsRow[];
+}
+
+export interface PortfolioDecayFanOut {
+  entries: PortfolioDecayEntry[];
+  errors: { accountId: string; accountEmail: string; reason: string }[];
+}
+
+// Portfolio-wide content decay: two page-level windows per site (recent vs ~3mo earlier).
+// Heavier than the query fan-out (2 calls/site) — call lazily.
+export async function fetchPortfolioDecayPages(
+  db: Db,
+  days: number = 28,
+  offsetDays?: number,
+  rowLimit: number = 5000
+): Promise<PortfolioDecayFanOut> {
+  const accounts = listAccounts(db).filter((a) => a.status === 'active');
+
+  const perAccount = await Promise.allSettled(
+    accounts.map((a) => listSitesForAccount(db, a).then((sites) => ({ acc: a, sites })))
+  );
+
+  const pairs: { acc: AccountRow; site: SiteRow }[] = [];
+  const errors: PortfolioDecayFanOut['errors'] = [];
+  perAccount.forEach((r, i) => {
+    const acc = accounts[i];
+    if (r.status === 'fulfilled') r.value.sites.forEach((s) => pairs.push({ acc, site: s }));
+    else errors.push({ accountId: acc.id, accountEmail: acc.email, reason: (r.reason as Error).message });
+  });
+
+  const settled = await Promise.allSettled(
+    pairs.map(({ acc, site }) => fetchSiteDecayPages(db, acc, site.siteUrl, days, offsetDays, rowLimit))
+  );
+
+  const entries: PortfolioDecayEntry[] = [];
+  settled.forEach((r, i) => {
+    if (r.status !== 'fulfilled') return;
+    const { acc, site } = pairs[i];
+    entries.push({ accountId: acc.id, siteUrl: site.siteUrl, recent: r.value.recent, prior: r.value.prior });
+  });
+
+  return { entries, errors };
+}
+
+export interface SiteDaily {
+  clicks: number;
+  impressions: number;
+  ctr: number;
+  position: number;
+  series: { date: string; clicks: number }[]; // oldest → newest
+}
+
+// One GSC call, dims=['date']: aggregate totals + daily series for a single site (sparkline +
+// Overview header on the detail page).
+export async function fetchSiteDaily(
+  db: Db,
+  acc: AccountRow,
+  siteUrl: string,
+  days: number = 28
+): Promise<SiteDaily> {
+  const { startDate, endDate } = gscDateRange(days);
+  const rows = await searchAnalyticsQuery(db, acc, siteUrl, {
+    startDate,
+    endDate,
+    dimensions: ['date'],
+    rowLimit: 500
+  });
+  const sorted = [...rows].sort((a, b) => (a.keys[0] ?? '').localeCompare(b.keys[0] ?? ''));
+  const clicks = sorted.reduce((s, x) => s + x.clicks, 0);
+  const impressions = sorted.reduce((s, x) => s + x.impressions, 0);
+  const posWeight = sorted.reduce((s, x) => s + x.position * x.impressions, 0);
+  return {
+    clicks,
+    impressions,
+    ctr: impressions > 0 ? clicks / impressions : 0,
+    position: impressions > 0 ? posWeight / impressions : 0,
+    series: sorted.map((x) => ({ date: x.keys[0] ?? '', clicks: x.clicks }))
+  };
 }

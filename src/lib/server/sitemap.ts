@@ -40,6 +40,23 @@ function concat(chunks: Uint8Array[]): Uint8Array {
   return out;
 }
 
+function siteHomepage(siteUrl: string): string {
+  if (siteUrl.startsWith('sc-domain:')) return `https://${siteUrl.slice('sc-domain:'.length)}/`;
+  return siteUrl;
+}
+
+/** Fetch the site's robots.txt and return the sitemap URLs it declares (deduped). */
+export async function fetchRobotsSitemaps(siteUrl: string): Promise<string[]> {
+  const robotsUrl = new URL('/robots.txt', siteHomepage(siteUrl)).toString();
+  const txt = await fetchTextCapped(robotsUrl);
+  const found: string[] = [];
+  for (const line of txt.split(/\r?\n/)) {
+    const m = line.match(/^\s*sitemap\s*:\s*(\S+)/i);
+    if (m) found.push(m[1].trim());
+  }
+  return [...new Set(found)];
+}
+
 export function extractLocs(xml: string): string[] {
   return [...xml.matchAll(/<loc>\s*([^<]+?)\s*<\/loc>/gi)].map((m) => m[1]);
 }

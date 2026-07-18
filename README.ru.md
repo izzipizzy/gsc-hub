@@ -4,13 +4,15 @@
 
 ## Скриншоты
 
-| Sites — мульти-аккаунт-сводка | Dashboard — карточки со sparkline |
+![Portfolio — striking distance, каннибализация, CTR, branded и decay по всем сайтам](docs/screenshots/portfolio.png)
+
+| Все сайты — мульти-аккаунт, sparkline, Bing/IndexNow | Dashboard — карточки со sparkline |
 |---|---|
 | ![Sites](docs/screenshots/sites.png) | ![Dashboard](docs/screenshots/dashboard.png) |
 
 ![Top queries](docs/screenshots/queries.png)
 
-Локальный self-hosted мульти-аккаунт хаб для **Google Search Console**. Подключаешь несколько Google-аккаунтов через OAuth, видишь все Search Console сайты в одной таблице, агрегируешь ключи и страницы поверх аккаунтов, дашборд карточек по сайтам с sparkline-графиками и дельтой к предыдущему периоду, по клику на ключ — 16-месячная история позиции. Никаких внешних сервисов, никакие данные GSC не уходят с твоей машины, локально хранятся только OAuth-токены в SQLite.
+Локальный self-hosted мульти-аккаунт хаб для **Google Search Console**. Подключаешь несколько Google-аккаунтов через OAuth, видишь все Search Console сайты в одной таблице, агрегируешь ключи и страницы поверх аккаунтов, дашборд карточек по сайтам с sparkline-графиками и дельтой к предыдущему периоду, по клику на ключ — 16-месячная история позиции. С версии 0.6.0 в коробке ещё и полноценный **набор SEO-аналитики** — деталка по каждому сайту (striking distance, каннибализация, CTR-бенчмарк, content decay, branded-разбивка, site health) и портфельный вид сразу по всем сайтам — плюс Bing/IndexNow и опциональный мульти-юзер-логин. Никаких внешних сервисов, никакие данные GSC не уходят с твоей машины, локально хранятся только OAuth-токены (и немного per-site конфига) в SQLite. Вся аналитика — live-fetch.
 
 Сделан как личная альтернатива seogets-style SaaS-инструментам, когда у тебя несколько Google-аккаунтов (личный, рабочий, клиентские) и не хочется логиниться в каждый Search Console отдельно.
 
@@ -47,6 +49,33 @@
 ### Top pages (агрегированные, сортируемые)
 - Тот же паттерн что и Top queries, но на уровне URL страниц. Полезно для поиска страницы, которая дала всплеск трафика.
 
+### Аналитика по сайту (`/properties/[site]`)
+Проваливаешься в отдельный property для полного SEO-разбора. Вкладки:
+- **Striking Distance** — ключи на позициях 4–20 с реальными impressions: самые быстрые выигрыши в топ-10.
+- **Keyword Cannibalization** — ключи, где конкурируют несколько твоих собственных URL, с чётким разбором winner/loser.
+- **CTR Benchmark** — твой фактический CTR по позициям vs industry-reference кривая, плюс страницы, которые её недобирают.
+- **Content Decay** — страницы, теряющие clicks **или** impressions относительно предыдущего периода.
+- **Branded vs non-branded** — разбивка трафика с редактируемыми brand-терминами на каждый сайт.
+- **Site Health** — SSL (срок / issuer / grade), Google Safe Browsing и Core Web Vitals (PageSpeed Insights, mobile). Запускается по требованию, кешируется на сайт. Нужен Google API-ключ (см. [Конфигурация](#конфигурация)); без него вкладка скрыта.
+
+Все вкладки считаются live из Search Console; ничего не сохраняется кроме редактируемых brand-терминов и кеша health.
+
+### Портфельная аналитика (`/properties/portfolio`)
+Те же срезы сразу по всем не скрытым сайтам, из одного query-fan-out:
+- Вкладки **Striking / Cannibalization / CTR / Branded / Decay**, все **адресуемые через URL** (`?tab=`).
+- **Фильтр по стране (Geo)** и **copy-queries-to-clipboard**, оба учитывают текущий фильтр.
+- Для каждой decaying-страницы — **статус индексации** через URL Inspection API, со прямой ссылкой в inspection-панель нужного Google-аккаунта.
+- Async-стриминг (оболочка рендерится сразу) плюс короткий in-memory кеш результата, поэтому повторные открытия и переключения периода мгновенны.
+
+### Bing Webmaster + IndexNow
+- Данные производительности Bing рядом с GSC, с объединённым GSC/Bing keyword-роллапом.
+- **Отправка sitemap в Bing** и **пуш URL'ов в IndexNow**, плюс индикатор наличия IndexNow-ключа на сайт.
+- Требует `BING_API_KEY` (см. [Конфигурация](#конфигурация)).
+
+### Опциональный логин и роли
+- **Выключено по умолчанию** — тул остаётся single-user и loopback-only. Задай `ADMIN_EMAIL` / `ADMIN_PASSWORD`, чтобы включить форму логина, серверные сессии (пароли захэшены argon2), страницу управления пользователями и роли (**admin** / **manager**) с per-owner скоупингом аккаунтов.
+- Нужно когда выставляешь приложение за пределы `127.0.0.1`; безопасные куки включаются автоматически, как только `ORIGIN` начинается с `https://`.
+
 ### Dashboard (`/dashboard`)
 - Сетка карточек по сайтам: account label, домен, sparkline дневных кликов за текущий период, четыре метрики с **дельтой к предыдущему периоду той же длины** (например, последние 7 дней vs предыдущие 7 дней). Зелёный/красный, плюс знак `+` / `−` чтобы colour-blind пользователи видели сигнал.
 - Конфигурируемая плотность: **2 / 4 / 6 колонок** через URL `?cols=`. Тот же period filter что и на Sites.
@@ -56,6 +85,8 @@
 - Queries или pages, последние N дней (соответствует period filter), безопасное имя файла. Стримит `text/csv; charset=utf-8` с `Content-Disposition: attachment`. Скачивается с `/properties/export?account=...&site=...&days=...&dim=query|page`.
 
 ### Operator-grade UX
+- **Sparklines** дневных кликов на карточках сайтов.
+- **Privacy Blur** — один клик размывает PII (email'ы, домены, метрики) для скриншотов и шэринга экрана.
 - **Refresh** сохраняет всё URL-состояние (period, sort, dir, cols) через SvelteKit `invalidateAll()`. Никаких `<form method="POST">` redirect-танцев.
 - Все числа в таблицах — tabular-nums для вертикального выравнивания.
 - Лёгкий hover на строках. Сортируемые заголовки показывают ↑ / ↓.
@@ -105,6 +136,12 @@ pnpm dev
 | `AUTH_SECRET` | да | Случайный 32-byte base64 secret для Auth.js (`openssl rand -base64 32`) |
 | `AUTH_TRUST_HOST` | рекомендуется | `true` для self-hosted/proxy |
 | `DB_PATH` | опционально | Путь к SQLite-файлу. По умолчанию `./data/gsc-hub.db` |
+| `PAGESPEED_KEY` | опционально | Google API-ключ для вкладки Site Health (Core Web Vitals через PageSpeed Insights). Включи **PageSpeed Insights API**. Один Google API-ключ может обслуживать обе health-проверки. |
+| `GOOGLE_SAFE_BROWSING_KEY` | опционально | Google API-ключ для проверки Safe Browsing в Site Health. Включи **Safe Browsing API** — работает тот же ключ, что и `PAGESPEED_KEY`. Без этих двух вкладка Health скрыта; больше их ничто не использует. |
+| `BING_API_KEY` | опционально | Bing Webmaster API-ключ — включает данные Bing, «Submit to Bing» и пуш в IndexNow. |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | опционально | Задай оба, чтобы включить мульти-юзер логин/роли (сидит админа при первом старте). Оставь пустыми для дефолтного single-user, loopback-only режима. |
+| `ORIGIN` | опционально | Публичный origin (например `https://your-domain.example`). Включает безопасные куки, когда начинается с `https://`. |
+| `AUTH_URL` | опционально | Публичный URL, по которому Auth.js строит OAuth-redirect; должен совпадать с базой redirect в GCP OAuth. |
 
 ## Архитектура
 
@@ -115,7 +152,7 @@ pnpm dev
                                                                        └──> ./data/gsc-hub.db  (только OAuth-токены)
 ```
 
-Один Node-процесс. Один SQLite-файл. Схема БД — две таблицы:
+Один Node-процесс. Один SQLite-файл. Схема БД небольшая — токены плюс немного per-site конфига и кеш внешних проверок:
 
 ```sql
 CREATE TABLE google_accounts (
@@ -139,9 +176,23 @@ CREATE TABLE url_inspection_cache (
   payload      TEXT NOT NULL,
   PRIMARY KEY (account_id, site_url, urls_hash)
 );
+
+CREATE TABLE site_branded_keywords (
+  site_url    TEXT PRIMARY KEY,
+  terms       TEXT,
+  updated_at  INTEGER
+);
+
+CREATE TABLE site_health (
+  site_url    TEXT PRIMARY KEY,
+  data        TEXT,
+  checked_at  INTEGER
+);
 ```
 
-**Никакие аналитические данные GSC не сохраняются.** Любой запрос на `/properties`, `/dashboard`, query-history endpoint или CSV-экспорт делает свежий fan-out в Google. Скрытые сайты живут только в localStorage браузера.
+Все четыре таблицы создаёт миграция при старте. Когда включён опциональный логин (заданы `ADMIN_EMAIL`/`ADMIN_PASSWORD`), при первом старте сидятся ещё две — `users` и `sessions`.
+
+**Никакие аналитические данные GSC не сохраняются.** Любой запрос на `/properties`, аналитику по сайту и портфельную аналитику, `/dashboard`, query-history endpoint или CSV-экспорт делает свежий fan-out в Google. В БД лежат только OAuth-токены плюс небольшой per-site конфиг (brand-термины в `site_branded_keywords`) и кеш внешних health-проверок (`site_health`). Скрытые сайты живут только в localStorage браузера.
 
 Это упрощает архитектуру, убирает класс багов «устаревший кеш», и делает БД-файл крошечным (несколько КБ на аккаунт). Цена — задержка page-load пропорциональна количеству активных сайтов: примерно 2N параллельных API-вызовов для Sites, 3N для Dashboard, 1N для query history.
 
@@ -166,7 +217,6 @@ gsc-hub/
 ├── PRODUCT.md             — стратегический контекст (юзеры, принципы, anti-references)
 ├── DESIGN.md              — визуальная система (цвета, типографика, компоненты, правила)
 ├── DESIGN.json            — sidecar с HTML/CSS-снипетами на компонент
-├── CLAUDE.md              — инструкции для AI-ассистентов работающих в этой репе
 ├── Dockerfile             — multi-stage production-образ (Node runtime)
 ├── compose.yaml           — Docker Compose: OrbStack-домен + loopback-порт 5173
 ├── src/
@@ -179,6 +229,11 @@ gsc-hub/
 │   │   │   ├── accounts.ts         — CRUD по google_accounts
 │   │   │   ├── inspection_cache.ts — 12h SQLite кеш для URL Inspection ответов
 │   │   │   ├── google.ts           — GSC client, refresh, fan-out, search analytics
+│   │   │   ├── analytics.ts        — чистая SEO-аналитика (striking / cannibalization / CTR benchmark / branded split / decay)
+│   │   │   ├── health.ts           — Site Health (SSL / Safe Browsing / Core Web Vitals)
+│   │   │   ├── branded.ts          — per-site brand-термины (site_branded_keywords)
+│   │   │   ├── bing.ts             — клиент Bing Webmaster API
+│   │   │   ├── indexnow.ts         — IndexNow submit + обработка ключей
 │   │   │   └── csv.ts              — RFC 4180 CSV writer
 │   │   └── utils/
 │   │       ├── site.ts            — обрезает sc-domain: префикс, строит href + Google site: поиск
@@ -189,6 +244,8 @@ gsc-hub/
 │       ├── accounts/[id]/         — delete, relabel
 │       └── properties/
 │           ├── +page.svelte       — Sites table + Top queries + Top pages
+│           ├── [site]/            — деталка аналитики по сайту (sub-endpoints analytics / decay / health / branded)
+│           ├── striking/          — портфельная аналитика + decay endpoint
 │           ├── export/+server.ts        — CSV stream
 │           ├── inspect/+server.ts       — URL Inspection (с кешем)
 │           ├── refresh/+server.ts       — force-refresh хелперы
@@ -215,8 +272,9 @@ gsc-hub/
 
 ## Тесты
 
-39 unit-тестов покрывают server-модули:
+62 unit-теста покрывают server-модули:
 - SQLite миграция и схема, включая таблицу `url_inspection_cache` (`tests/db.test.ts`)
+- Чистые функции SEO-аналитики: striking distance, каннибализация, CTR benchmark, branded split, content decay (`tests/analytics.test.ts`)
 - Кеш URL Inspection: детерминизм хэша, промах, попадание, TTL, upsert, удаление (`tests/inspection_cache.test.ts`)
 - Accounts CRUD включая `markActive` / `markRevoked` / `markError` (`tests/accounts.test.ts`)
 - GSC client: skew window для refresh-токена, 5xx → markError, 401/invalid_grant → markRevoked, fan-out агрегация, per-site queries / pages / daily breakdown / query-history (`tests/google.test.ts`)
@@ -233,6 +291,7 @@ gsc-hub/
 - SQLite-файл лежит в `./data/` (gitignored). Удали его — все подключения сбросятся.
 - Токены хранятся plaintext. Это приемлемо для локального single-user тула; зашифруй at rest если когда-нибудь будешь выставлять это за пределы `127.0.0.1`.
 - Исключение — кеш URL Inspection (таблица `url_inspection_cache`) хранит payload'ы ответов под ключом `(account_id, site_url, urls_hash)` на 12 часов, чтобы не жечь дневной лимит 2000 вызовов на повторных кликах. Удали `data/gsc-hub.db` чтобы сбросить.
+- Ещё две небольшие таблицы держат per-site конфиг, а не аналитику GSC: `site_branded_keywords` (твои редактируемые brand-термины) и `site_health` (кеш внешних проверок SSL / Safe Browsing / Core Web Vitals). Обе сбрасываются вместе с тем же DB-файлом.
 
 ## Деплой через Docker Compose + OrbStack
 
@@ -253,14 +312,16 @@ docker compose down            # снести (данные в ./data сохра
 
 **Про безопасность:** у приложения нет встроенной аутентификации (single-user тул). Порт намеренно привязан только к `127.0.0.1` — не открывай его на `0.0.0.0`/в сеть, т.к. в БД лежат OAuth-токены Google. Чтобы выставить на публичный хостнейм, поставь перед ним identity-aware proxy (например Cloudflare Access) с allowlist по своему email и добавь production callback URL в Google OAuth client.
 
-## Roadmap (Phase B, ещё не сделано)
+## Roadmap
+
+Набор SEO-аналитики (per-site + портфельная: striking distance, каннибализация, CTR benchmark, content decay, branded split, site health), Bing/IndexNow и опциональный логин/роли — всё это уехало в 0.6.0. Ещё в планах:
 
 - Daily background pull агрегатов в Postgres для трендов и сравнения периодов длиной в недели/месяцы без перезапросов GSC на каждый клик.
 - Графики с tooltip'ами на hover в карточках dashboard.
-- URL Inspection bulk + sitemap monitoring.
+- Мониторинг изменений sitemap.
 - Алерты на падения трафика.
 
-MVP намеренно cache-free; Phase B добавит кеш когда usage покажет что нужен. Пока — каждая загрузка свежая.
+Аналитика намеренно остаётся live-fetch; персистентный кеш появится только когда usage покажет что нужен. Пока — каждая загрузка свежая.
 
 ## Лицензия
 

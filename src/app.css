@@ -133,3 +133,57 @@
     @apply text-gray-500 transition-colors duration-150 hover:text-gray-800 hover:underline;
   }
 }
+
+/* Print / PDF: a clean report — drop interactive chrome, keep the data and the
+   position color-coding, fit wide tables to the page, repeat table headers. */
+@media print {
+  *, *::before, *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  body {
+    font-size: 11px;
+    background: #fff;
+  }
+  /* Controls don't belong on paper */
+  button,
+  input,
+  .app-pill,
+  .app-segmented,
+  .app-toolbar-divider,
+  .app-gsearch,
+  .app-footer {
+    display: none !important;
+  }
+  /* Links print as plain text */
+  a {
+    color: inherit !important;
+    text-decoration: none !important;
+  }
+  /* Let wide tables fit the page instead of horizontally scrolling */
+  .overflow-x-auto {
+    overflow: visible !important;
+  }
+  /* Repeat table headers across pages; never split a row */
+  thead {
+    display: table-header-group;
+  }
+  .app-table tbody tr {
+    break-inside: avoid;
+  }
+  .app-section {
+    margin-top: 1.5rem;
+  }
+  @page {
+    margin: 12mm;
+  }
+}
+
+/* Privacy Blur — obscures PII (emails, domains, metrics) when toggled in the header. */
+.privacy-blur .pii {
+  filter: blur(5px);
+  transition: filter 0.1s ease;
+}
+.privacy-blur .pii:hover {
+  filter: none;
+}

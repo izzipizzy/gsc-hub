@@ -8,9 +8,14 @@ services:
       HOST: 0.0.0.0
       PORT: 3000
       DB_PATH: /data/gsc-hub.db
+      # adapter-node assumes https when deriving the request origin, so Auth.js
+      # would build an https://localhost callback — but OAuth runs over plain http
+      # on localhost (Google rejects .local). Pin the auth base to http so the
+      # redirect_uri matches the one registered in the GCP OAuth client.
+      AUTH_URL: http://localhost:5173
     ports:
-      # Host port mirrors the dev port so OAuth via http://localhost:5173
-      # works (Google rejects the .local redirect). Container listens on 3000.
+      # Loopback only. Google rejects OAuth redirects to .local, so connect
+      # accounts over http://localhost:5173; use https://gsc.local day-to-day.
       - "127.0.0.1:5173:3000"
     volumes:
       - ./data:/data

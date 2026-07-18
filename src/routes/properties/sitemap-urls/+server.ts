@@ -4,6 +4,7 @@ import { db } from '$lib/server/db';
 import { getAccount } from '$lib/server/accounts';
 import { listSitemaps } from '$lib/server/google';
 import { fetchSitemapUrls } from '$lib/server/sitemap';
+import { requireAdmin } from '$lib/server/guard';
 
 function siteHomepage(siteUrl: string): string {
   if (siteUrl.startsWith('sc-domain:')) return `https://${siteUrl.slice('sc-domain:'.length)}/`;
@@ -14,7 +15,8 @@ function defaultSitemapGuess(siteUrl: string): string {
   return new URL('/sitemap.xml', siteHomepage(siteUrl)).toString();
 }
 
-export const GET: RequestHandler = async ({ url }) => {
+export const GET: RequestHandler = async ({ url, locals }) => {
+  requireAdmin(locals);
   const accountId = url.searchParams.get('account');
   const siteUrl = url.searchParams.get('site');
   const limit = Math.min(50, Math.max(1, Number(url.searchParams.get('limit') ?? '50')));

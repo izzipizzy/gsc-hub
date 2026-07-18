@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { PageData } from './$types';
   let { data }: { data: PageData } = $props();
+  const isAdmin = $derived(data.user?.role === 'admin');
 
   function fmtDate(unix: number) {
     return new Date(unix * 1000).toISOString().slice(0, 10);
@@ -20,8 +21,10 @@
       <h1 class="app-pagetitle">Connected Google accounts</h1>
     </div>
     <div class="app-toolbar-right">
-      <a href="/properties" class="app-pill app-pill-secondary">Sites</a>
-      <a href="/dashboard" class="app-pill app-pill-secondary">Dashboard</a>
+      {#if isAdmin}
+        <a href="/properties" class="app-pill app-pill-secondary">Sites</a>
+        <a href="/dashboard" class="app-pill app-pill-secondary">Dashboard</a>
+      {/if}
       <span class="app-toolbar-divider" aria-hidden="true"></span>
       <form method="POST" action="?/connect">
         <input type="hidden" name="providerId" value="google" />
@@ -44,16 +47,18 @@
       <thead>
         <tr>
           <th class="pl-3 sm:pl-6">Email</th>
-          <th class="hidden sm:table-cell">Label</th>
+          {#if isAdmin}<th class="hidden sm:table-cell">Label</th>{/if}
           <th>Status</th>
           <th class="hidden md:table-cell">Added</th>
-          <th class="w-px pr-3 text-right sm:pr-6">Actions</th>
+          {#if isAdmin}<th class="hidden lg:table-cell text-xs text-gray-500">Owner</th>{/if}
+          {#if isAdmin}<th class="w-px pr-3 text-right sm:pr-6">Actions</th>{/if}
         </tr>
       </thead>
       <tbody>
         {#each data.accounts as a (a.id)}
           <tr>
             <td class="break-all pl-3 font-medium text-gray-900 sm:pl-6">{a.email}</td>
+            {#if isAdmin}
             <td class="hidden sm:table-cell">
               <form method="POST" action="/accounts/{a.id}/relabel" class="flex items-center gap-1">
                 <input
@@ -65,6 +70,7 @@
                 <button type="submit" class="app-pill app-pill-secondary !px-2 !py-1">Save</button>
               </form>
             </td>
+            {/if}
             <td>
               <span class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium {a.status === 'active' ? 'bg-green-50 text-green-800' : a.status === 'revoked' ? 'bg-red-50 text-red-800' : 'bg-yellow-50 text-yellow-800'}" title={a.last_error ?? ''}>
                 <span class="app-status-dot {a.status === 'active' ? 'bg-green-500' : a.status === 'revoked' ? 'bg-red-500' : 'bg-yellow-500'}"></span>
@@ -72,6 +78,8 @@
               </span>
             </td>
             <td class="app-num hidden text-xs text-gray-500 md:table-cell">{fmtDate(a.added_at)}</td>
+            {#if isAdmin}
+            <td class="hidden lg:table-cell text-xs text-gray-500">{a.owner_id ?? '—'}</td>
             <td class="pr-3 text-right sm:pr-6">
               <form method="POST" action="/accounts/{a.id}/delete" class="inline-block">
                 <button
@@ -83,6 +91,7 @@
                 >Delete</button>
               </form>
             </td>
+            {/if}
           </tr>
         {/each}
       </tbody>
