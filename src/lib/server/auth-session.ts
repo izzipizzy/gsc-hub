@@ -60,6 +60,11 @@ export function countAdmins(db: Db): number {
   return r.n;
 }
 
+export function countUsers(db: Db): number {
+  const r = db.prepare('SELECT COUNT(*) AS n FROM users').get() as { n: number };
+  return r.n;
+}
+
 export async function verifyLogin(db: Db, email: string, password: string): Promise<User | null> {
   const u = getUserByEmail(db, email);
   if (!u) return null;

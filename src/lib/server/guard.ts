@@ -1,8 +1,10 @@
 import { error, redirect, type Handle } from '@sveltejs/kit';
 import { db } from './db';
-import { getSession, initAuth } from './auth-session';
+import type { Db } from './db';
+import { getSession, initAuth, countUsers } from './auth-session';
 import { als } from './request-context';
 import { env } from '$env/dynamic/private';
+import { getConfigValue } from './config';
 
 export function isPublicPath(path: string): boolean {
   return (
@@ -20,6 +22,13 @@ export function isManagerAllowed(path: string): boolean {
 
 export function requireAdmin(locals: App.Locals): void {
   if (locals.user?.role !== 'admin') throw error(403, 'forbidden');
+}
+
+export function loginEnabled(db: Db): boolean {
+  const envAdmin =
+    (process.env.ADMIN_EMAIL ?? '').trim() !== '' &&
+    (process.env.ADMIN_PASSWORD ?? '').trim() !== '';
+  return envAdmin || getConfigValue(db, 'LOGIN_ENABLED') === '1' || countUsers(db) > 0;
 }
 
 let initPromise: Promise<void> | null = null;
