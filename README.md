@@ -101,12 +101,10 @@ Requirements: **Node 22+**, **pnpm**.
 git clone https://github.com/izzipizzy/gsc-hub.git
 cd gsc-hub
 pnpm install
-cp .env.example .env
-# fill in GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, AUTH_SECRET
 pnpm dev
 ```
 
-Open <http://localhost:5173>, click **Connect Google account**, complete consent, repeat for each account you want to connect.
+Open <http://localhost:5173> — the **setup wizard** opens on first run and asks for your Google Client ID/Secret; `AUTH_SECRET` is generated automatically, no manual `.env` editing needed. (Copying `.env.example` to `.env` is optional, only needed for automated/CI setups — see [Configuration](#configuration).) Click **Connect Google account**, complete consent, repeat for each account you want to connect.
 
 For a long-running local deploy, use Docker Compose instead — see [Deploying with Docker Compose + OrbStack](#deploying-with-docker-compose--orbstack).
 
@@ -136,7 +134,7 @@ deploys (env vars take precedence over wizard values).
    - `https://your-domain.example/auth/callback/google` (only if you deploy)
 4. Enable the **Search Console API** in the same project: <https://console.cloud.google.com/apis/library/searchconsole.googleapis.com>.
 5. **OAuth consent screen** (now under **Google Auth Platform → Audience**): set User Type to **External**. Either **Publish** the app (any Google account can sign in) or keep it in **Testing** and add your Google emails as Test users.
-6. Copy the Client ID and Client Secret into `.env`. Generate `AUTH_SECRET` via `openssl rand -base64 32`.
+6. Copy the Client ID and Client Secret — paste them into the **setup wizard** when you first open the app. `AUTH_SECRET` needs no manual step; the wizard generates and stores it in SQLite.
 
 The `webmasters` scope is a "sensitive scope" in Google's classification, but Google does not require formal verification for personal-tier usage (the OAuth user cap allows up to 100 consenting users for unverified sensitive scopes). You'll see an "unverified app" warning on the consent screen; click **Advanced → Go to gsc-hub (unsafe)** to proceed. Only register `http://localhost:5173/auth/callback/google` as the redirect URI — Google will not accept a `.local` redirect.
 

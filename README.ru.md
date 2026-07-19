@@ -101,12 +101,10 @@
 git clone https://github.com/izzipizzy/gsc-hub.git
 cd gsc-hub
 pnpm install
-cp .env.example .env
-# заполни GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, AUTH_SECRET
 pnpm dev
 ```
 
-Открой <http://localhost:5173>, кликни **Connect Google account**, пройди consent, повтори для каждого аккаунта.
+Открой <http://localhost:5173> — при первом запуске откроется **setup-визард** и попросит Google Client ID/Secret; `AUTH_SECRET` генерится автоматически, руками `.env` править не нужно. (Копировать `.env.example` в `.env` не обязательно — это нужно только для автодеплоя/CI, см. [Конфигурация](#конфигурация).) Кликни **Connect Google account**, пройди consent, повтори для каждого аккаунта.
 
 Для постоянного локального деплоя используй Docker Compose — см. [Деплой через Docker Compose + OrbStack](#деплой-через-docker-compose--orbstack).
 
@@ -122,7 +120,7 @@ pnpm dev
    `.env` править не нужно — `AUTH_SECRET` генерится сам и хранится в SQLite.
 
 Подробный GCP-разбор ниже нужен только чтобы получить эти два значения. Всё в
-разделе «Configuration» — опционально / для автодеплоя (env перебивает значения
+разделе [Конфигурация](#конфигурация) — опционально / для автодеплоя (env перебивает значения
 из визарда).
 
 ![Setup-визард](docs/screenshots/setup.png)
@@ -136,7 +134,7 @@ pnpm dev
    - `https://your-domain.example/auth/callback/google` (только если будешь деплоить)
 4. Включи **Search Console API** в том же проекте: <https://console.cloud.google.com/apis/library/searchconsole.googleapis.com>.
 5. **OAuth consent screen** (теперь это **Google Auth Platform → Audience**): User Type — **External**. Дальше либо **Publish** (любой Google-аккаунт сможет залогиниться), либо оставь в **Testing** и добавь свои email-адреса в Test users.
-6. Скопируй Client ID и Client Secret в `.env`. Сгенерируй `AUTH_SECRET` через `openssl rand -base64 32`.
+6. Скопируй Client ID и Client Secret — вставь их в **setup-визард** при первом открытии приложения. `AUTH_SECRET` руками генерировать не нужно — визард создаёт и хранит его в SQLite.
 
 `webmasters` у Google — «sensitive scope», но для personal-tier использования формальная verification не требуется (OAuth user cap допускает до 100 пользователей для неподтверждённых sensitive-scope). На consent screen увидишь предупреждение «unverified app», кликни **Advanced → Go to gsc-hub (unsafe)** чтобы продолжить. В redirect URI указывай только `http://localhost:5173/auth/callback/google` — `.local`-redirect Google не примет.
 
