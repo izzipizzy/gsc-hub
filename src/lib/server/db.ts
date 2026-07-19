@@ -80,6 +80,12 @@ CREATE TABLE IF NOT EXISTS site_health (
   data       TEXT NOT NULL,
   checked_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS app_config (
+  key        TEXT PRIMARY KEY,
+  value      TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
 `;
 
 export function openDb(path: string): Db {
