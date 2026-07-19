@@ -5,7 +5,7 @@
 
 English version — [CHANGELOG.md](CHANGELOG.md).
 
-## [Unreleased]
+## [0.6.1] — 2026-07-19
 
 ### Добавлено
 - Браузерный **setup-визард** на `/setup`: настройка Google OAuth-ключей и
@@ -156,6 +156,7 @@ sitemap’ов, расширены аналитика запросов и моб
   единая таблица сайтов, агрегированные топ-запросы/страницы, per-site дашборд со
   спарклайнами и дельтами период-к-периоду, 16-месячная история запросов, CSV-экспорт.
 
+[0.6.1]: https://github.com/izzipizzy/gsc-hub/releases/tag/v0.6.1
 [0.6.0]: https://github.com/izzipizzy/gsc-hub/releases/tag/v0.6.0
 [0.3.1]: https://github.com/izzipizzy/gsc-hub/releases/tag/v0.3.1
 [0.3.0]: https://github.com/izzipizzy/gsc-hub/releases/tag/v0.3.0

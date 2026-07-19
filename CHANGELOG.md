@@ -5,7 +5,7 @@ All notable changes to this project are documented here. Format loosely follows
 
 Русская версия — [CHANGELOG.ru.md](CHANGELOG.ru.md).
 
-## [Unreleased]
+## [0.6.1] — 2026-07-19
 
 ### Added
 - Browser **setup wizard** at `/setup`: configure Google OAuth keys and access
@@ -157,6 +157,7 @@ added, and query analytics / mobile UI were expanded.
   unified sites table, aggregated top queries/pages, per-site dashboard with
   sparklines and period-over-period deltas, 16-month query history, CSV exports.
 
+[0.6.1]: https://github.com/izzipizzy/gsc-hub/releases/tag/v0.6.1
 [0.6.0]: https://github.com/izzipizzy/gsc-hub/releases/tag/v0.6.0
 [0.3.1]: https://github.com/izzipizzy/gsc-hub/releases/tag/v0.3.1
 [0.3.0]: https://github.com/izzipizzy/gsc-hub/releases/tag/v0.3.0
