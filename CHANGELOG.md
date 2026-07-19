@@ -5,6 +5,22 @@ All notable changes to this project are documented here. Format loosely follows
 
 Русская версия — [CHANGELOG.ru.md](CHANGELOG.ru.md).
 
+## [Unreleased]
+
+### Added
+- Browser **setup wizard** at `/setup`: configure Google OAuth keys and access
+  mode without editing `.env`. `AUTH_SECRET` is auto-generated and stored in SQLite.
+- Admin for exposed deployments is now created in the browser (argon2), not via
+  `ADMIN_PASSWORD` env — removes the env-quoting / one-shot-seed lockout traps.
+
+### Fixed
+- Single-user (loopback) mode no longer forces a login redirect; it runs as a
+  local admin. Login is enabled only when an admin exists or env creds are set.
+
+### Changed
+- Config precedence: environment variables override the wizard-stored values;
+  env-provided fields are shown read-only in the wizard.
+
 ## [0.6.0] — 2026-07-18
 
 Big release: a full SEO analytics suite on top of Search Console — per-site

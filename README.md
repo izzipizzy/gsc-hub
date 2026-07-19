@@ -112,6 +112,21 @@ For a long-running local deploy, use Docker Compose instead — see [Deploying w
 
 > **Connect accounts over `http://localhost:5173`, not `https://gsc.local`.** Google's OAuth policy rejects redirects to the `.local` TLD (`Error 400: invalid_request`). The Compose setup exposes a loopback port specifically so the consent flow can run on localhost; day-to-day you can still use `https://gsc.local`. The SQLite DB is shared, so a token obtained on localhost works on `gsc.local` too.
 
+### Quick start (setup wizard)
+
+1. `docker compose up -d --build`
+2. Open the app (`http://localhost:5173` for connecting Google accounts).
+3. The **setup wizard** opens automatically: paste your Google **Client ID** and
+   **Client Secret** (the page shows the exact redirect URI to register in GCP),
+   choose access mode (loopback-only or exposed-with-login), and save. No manual
+   `.env` editing — `AUTH_SECRET` is generated for you and stored in SQLite.
+
+The detailed GCP OAuth walkthrough below is only needed to obtain the two values
+the wizard asks for. Everything under "Configuration" is optional / for automated
+deploys (env vars take precedence over wizard values).
+
+![Setup wizard](docs/screenshots/setup.png)
+
 ## Google Cloud setup
 
 1. Open <https://console.cloud.google.com/apis/credentials>.

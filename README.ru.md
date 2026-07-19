@@ -112,6 +112,21 @@ pnpm dev
 
 > **Подключай аккаунты через `http://localhost:5173`, а не `https://gsc.local`.** OAuth-политика Google отклоняет redirect на `.local`-домен (`Error 400: invalid_request`). Compose-конфиг специально пробрасывает loopback-порт, чтобы consent-flow шёл через localhost; повседневно можно пользоваться `https://gsc.local`. БД общая, поэтому токен, полученный на localhost, работает и на `gsc.local`.
 
+### Быстрый старт (setup-визард)
+
+1. `docker compose up -d --build`
+2. Открой приложение (`http://localhost:5173` — для подключения Google-аккаунтов).
+3. Автоматически откроется **setup-визард**: вставь Google **Client ID** и
+   **Client Secret** (на странице показан точный redirect URI для GCP), выбери
+   режим доступа (только loopback или наружу с логином) и сохрани. Руками
+   `.env` править не нужно — `AUTH_SECRET` генерится сам и хранится в SQLite.
+
+Подробный GCP-разбор ниже нужен только чтобы получить эти два значения. Всё в
+разделе «Configuration» — опционально / для автодеплоя (env перебивает значения
+из визарда).
+
+![Setup-визард](docs/screenshots/setup.png)
+
 ## Google Cloud setup
 
 1. Открой <https://console.cloud.google.com/apis/credentials>.
