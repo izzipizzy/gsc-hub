@@ -2,9 +2,10 @@ import { error, redirect, type Handle } from '@sveltejs/kit';
 import { db } from './db';
 import type { Db } from './db';
 import { getSession, initAuth, countUsers } from './auth-session';
+import type { User } from './auth-session';
 import { als } from './request-context';
 import { env } from '$env/dynamic/private';
-import { getConfigValue } from './config';
+import { getConfigValue, isSetupComplete } from './config';
 
 export function isPublicPath(path: string): boolean {
   return (
@@ -43,17 +44,60 @@ function ensureInit(): Promise<void> {
   return initPromise;
 }
 
+export const LOCAL_ADMIN: User = {
+  id: 'local-admin', email: 'local@localhost', role: 'admin', created_at: 0
+};
+
+export type RouteDecision =
+  | { kind: 'pass'; asLocalAdmin: boolean }
+  | { kind: 'redirect'; to: string };
+
+export function decideRoute(ctx: {
+  setupComplete: boolean;
+  loginEnabled: boolean;
+  user: User | null;
+  path: string;
+}): RouteDecision {
+  const { setupComplete, loginEnabled, user, path } = ctx;
+
+  if (!setupComplete) {
+    if (path === '/setup' || isPublicPath(path)) return { kind: 'pass', asLocalAdmin: false };
+    return { kind: 'redirect', to: '/setup' };
+  }
+
+  if (!loginEnabled) {
+    if (isPublicPath(path)) return { kind: 'pass', asLocalAdmin: false };
+    return { kind: 'pass', asLocalAdmin: true };
+  }
+
+  if (isPublicPath(path)) return { kind: 'pass', asLocalAdmin: false };
+  if (!user) return { kind: 'redirect', to: '/login' };
+  if (user.role !== 'admin' && !isManagerAllowed(path)) return { kind: 'redirect', to: '/' };
+  return { kind: 'pass', asLocalAdmin: false };
+}
+
 export const authGuard: Handle = async ({ event, resolve }) => {
   await ensureInit();
-  const token = event.cookies.get('gsc_session');
-  const user = token ? getSession(db(), token) : null;
-  event.locals.user = user;
+  const database = db();
   const path = event.url.pathname;
 
-  return als.run({ userId: user?.id ?? null }, async () => {
-    if (isPublicPath(path)) return resolve(event);
-    if (!user) throw redirect(303, '/login');
-    if (user.role !== 'admin' && !isManagerAllowed(path)) throw redirect(303, '/');
-    return resolve(event);
+  const token = event.cookies.get('gsc_session');
+  const user = token ? getSession(database, token) : null;
+
+  const decision = decideRoute({
+    setupComplete: isSetupComplete(database),
+    loginEnabled: loginEnabled(database),
+    user,
+    path
   });
+
+  if (decision.kind === 'redirect') {
+    return als.run({ userId: user?.id ?? null }, async () => {
+      throw redirect(303, decision.to);
+    });
+  }
+
+  const effectiveUser = decision.asLocalAdmin ? LOCAL_ADMIN : user;
+  event.locals.user = effectiveUser;
+  return als.run({ userId: effectiveUser?.id ?? null }, async () => resolve(event));
 };
