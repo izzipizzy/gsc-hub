@@ -10,10 +10,15 @@ import { createUser, createSession, countAdmins, SESSION_TTL_MS } from '$lib/ser
 
 export const load: PageServerLoad = async ({ url }) => {
   const database = db();
+  // adapter-node derives https for its origin even on a plain-http loopback, but
+  // Google's OAuth redirect for localhost/127.0.0.1 MUST be http — showing https
+  // here would make the user register a URI Google rejects. Force http on loopback.
+  const loopback = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+  const origin = loopback ? `http://${url.host}` : url.origin;
   return {
     complete: isSetupComplete(database),
-    redirectUri: `${url.origin}/auth/callback/google`,
-    origin: url.origin,
+    redirectUri: `${origin}/auth/callback/google`,
+    origin,
     clientIdSet: !!getGoogleClientId(database),
     clientSecretSet: !!getGoogleClientSecret(database),
     clientIdSource: configSource(database, 'GOOGLE_CLIENT_ID'),
