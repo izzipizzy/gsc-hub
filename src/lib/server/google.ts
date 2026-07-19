@@ -1,5 +1,5 @@
-import { env as privateEnv } from '$env/dynamic/private';
 import type { Db } from './db';
+import { getGoogleClientId, getGoogleClientSecret } from './config';
 import {
   type AccountRow,
   listAccounts,
@@ -40,9 +40,9 @@ export interface SearchAnalyticsRow {
   position: number;
 }
 
-function clientCreds(): { id: string; secret: string } {
-  const id = privateEnv.GOOGLE_CLIENT_ID;
-  const secret = privateEnv.GOOGLE_CLIENT_SECRET;
+function clientCreds(db: Db): { id: string; secret: string } {
+  const id = getGoogleClientId(db);
+  const secret = getGoogleClientSecret(db);
   if (!id || !secret) throw new Error('GOOGLE_CLIENT_ID/SECRET not set');
   return { id, secret };
 }
@@ -51,7 +51,7 @@ export async function refreshIfNeeded(db: Db, acc: AccountRow): Promise<string> 
   const now = Math.floor(Date.now() / 1000);
   if (acc.expires_at > now + REFRESH_SKEW_SEC) return acc.access_token;
 
-  const { id, secret } = clientCreds();
+  const { id, secret } = clientCreds(db);
   const body = new URLSearchParams({
     client_id: id,
     client_secret: secret,

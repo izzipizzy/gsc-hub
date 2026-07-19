@@ -16,6 +16,9 @@ All notable changes to this project are documented here. Format loosely follows
 ### Fixed
 - Single-user (loopback) mode no longer forces a login redirect; it runs as a
   local admin. Login is enabled only when an admin exists or env creds are set.
+- Token refresh resolves the Google OAuth client credentials through the config
+  layer (env or wizard-stored), so a wizard-configured self-host keeps refreshing
+  access tokens instead of failing once the first one expires.
 
 ### Changed
 - Config precedence: environment variables override the wizard-stored values;

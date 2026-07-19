@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb, type Db } from '../src/lib/server/db';
 import { upsertAccount, getAccount } from '../src/lib/server/accounts';
+import { setConfigValue } from '../src/lib/server/config';
 import {
   refreshIfNeeded,
   listSitesForAllAccounts,
@@ -119,6 +120,28 @@ describe('google.refreshIfNeeded', () => {
     const row = getAccount(db, 'sub-1')!;
     expect(row.status).toBe('error');
     expect(row.last_error).toMatch(/refresh 503/);
+  });
+
+  it('refreshes using client creds from the config layer when env is unset (wizard mode)', async () => {
+    // Setup-wizard path: no env creds; Google keys live in app_config (DB).
+    vi.stubEnv('GOOGLE_CLIENT_ID', '');
+    vi.stubEnv('GOOGLE_CLIENT_SECRET', '');
+    setConfigValue(db, 'GOOGLE_CLIENT_ID', 'db-cid');
+    setConfigValue(db, 'GOOGLE_CLIENT_SECRET', 'db-csec');
+    upsertAccount(db, { ...baseAcc, expires_at: 0 });
+    let sentBody = '';
+    const fetchMock = vi.fn(async (_url: string, opts: { body?: unknown }) => {
+      sentBody = String(opts.body);
+      return new Response(JSON.stringify({ access_token: 'new', expires_in: 3600 }), { status: 200 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const acc = getAccount(db, 'sub-1')!;
+    const token = await refreshIfNeeded(db, acc);
+
+    expect(token).toBe('new');
+    expect(sentBody).toContain('client_id=db-cid');
+    expect(sentBody).toContain('client_secret=db-csec');
   });
 });
 
