@@ -21,6 +21,12 @@ All notable changes to this project are documented here. Format loosely follows
 - Config precedence: environment variables override the wizard-stored values;
   env-provided fields are shown read-only in the wizard.
 
+### Security
+- Before setup completes, `/setup` is reachable without authentication. On a
+  publicly-exposed instance with no `GOOGLE_*`/`ADMIN_*` env set, the first
+  visitor could complete the wizard and claim the admin account — set env
+  before exposing, or complete `/setup` yourself first.
+
 ## [0.6.0] — 2026-07-18
 
 Big release: a full SEO analytics suite on top of Search Console — per-site

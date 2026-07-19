@@ -65,10 +65,7 @@ export function decideRoute(ctx: {
     return { kind: 'redirect', to: '/setup' };
   }
 
-  if (!loginEnabled) {
-    if (isPublicPath(path)) return { kind: 'pass', asLocalAdmin: false };
-    return { kind: 'pass', asLocalAdmin: true };
-  }
+  if (!loginEnabled) return { kind: 'pass', asLocalAdmin: true };
 
   if (isPublicPath(path)) return { kind: 'pass', asLocalAdmin: false };
   if (!user) return { kind: 'redirect', to: '/login' };

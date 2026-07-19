@@ -20,6 +20,11 @@ describe('decideRoute', () => {
       .toEqual({ kind: 'pass', asLocalAdmin: true });
   });
 
+  it('single-user: passes as local admin on the OAuth callback so signIn resolves an ownerId', () => {
+    expect(decideRoute({ setupComplete: true, loginEnabled: false, user: null, path: '/auth/callback/google' }))
+      .toEqual({ kind: 'pass', asLocalAdmin: true });
+  });
+
   it('login mode: redirects anon to /login', () => {
     expect(decideRoute({ setupComplete: true, loginEnabled: true, user: null, path: '/properties' }))
       .toEqual({ kind: 'redirect', to: '/login' });

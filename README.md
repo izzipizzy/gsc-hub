@@ -119,6 +119,11 @@ For a long-running local deploy, use Docker Compose instead — see [Deploying w
    choose access mode (loopback-only or exposed-with-login), and save. No manual
    `.env` editing — `AUTH_SECRET` is generated for you and stored in SQLite.
 
+If you're exposing the app on a public URL, set `GOOGLE_*`/`ADMIN_*` in env before
+exposing it, or complete `/setup` yourself first — until setup completes, `/setup`
+is open with no authentication and the first visitor to reach it could claim the
+admin account.
+
 The detailed GCP OAuth walkthrough below is only needed to obtain the two values
 the wizard asks for. Everything under "Configuration" is optional / for automated
 deploys (env vars take precedence over wizard values).
