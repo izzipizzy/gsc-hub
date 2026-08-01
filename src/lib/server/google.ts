@@ -1,4 +1,5 @@
 import type { Db } from './db';
+import { allSettledLimit } from './concurrency';
 import { getGoogleClientId, getGoogleClientSecret } from './config';
 import {
   type AccountRow,
@@ -445,8 +446,8 @@ export async function bulkInspect(
   siteUrl: string,
   urls: string[]
 ): Promise<InspectedUrl[]> {
-  const settled = await Promise.allSettled(
-    urls.map((u) => inspectUrl(db, acc, siteUrl, u))
+  const settled = await allSettledLimit(
+    urls.map((u) => () => inspectUrl(db, acc, siteUrl, u))
   );
   return urls.map((u, i) => {
     const r = settled[i];
@@ -546,20 +547,22 @@ export async function fetchDailyBreakdown(
   const prevEndAdj = isoFrom(days + 1);
 
   // Per-pair: 2 parallel fetches (current + previous).
-  const fetches = await Promise.allSettled(
+  const fetches = await allSettledLimit(
     pairs.flatMap(({ acc, site }) => [
-      searchAnalyticsQuery(db, acc, site.siteUrl, {
-        startDate: currentStart,
-        endDate: currentEnd,
-        dimensions: ['date'],
-        rowLimit: 1000
-      }),
-      searchAnalyticsQuery(db, acc, site.siteUrl, {
-        startDate: prevStart,
-        endDate: prevEndAdj,
-        dimensions: ['date'],
-        rowLimit: 1000
-      })
+      () =>
+        searchAnalyticsQuery(db, acc, site.siteUrl, {
+          startDate: currentStart,
+          endDate: currentEnd,
+          dimensions: ['date'],
+          rowLimit: 1000
+        }),
+      () =>
+        searchAnalyticsQuery(db, acc, site.siteUrl, {
+          startDate: prevStart,
+          endDate: prevEndAdj,
+          dimensions: ['date'],
+          rowLimit: 1000
+        })
     ])
   );
 
@@ -662,14 +665,16 @@ export async function fetchPerSiteQueries(
 
   const { startDate, endDate } = gscDateRange(days);
 
-  const perSite = await Promise.allSettled(
-    pairs.map(({ acc, site }) =>
-      searchAnalyticsQuery(db, acc, site.siteUrl, {
-        startDate,
-        endDate,
-        dimensions: ['query', 'page', 'country'],
-        rowLimit: perSiteLimit
-      })
+  const perSite = await allSettledLimit(
+    pairs.map(
+      ({ acc, site }) =>
+        () =>
+          searchAnalyticsQuery(db, acc, site.siteUrl, {
+            startDate,
+            endDate,
+            dimensions: ['query', 'page', 'country'],
+            rowLimit: perSiteLimit
+          })
     )
   );
 
@@ -743,14 +748,16 @@ export async function fetchPerSitePages(
 
   const { startDate, endDate } = gscDateRange(days);
 
-  const perSite = await Promise.allSettled(
-    pairs.map(({ acc, site }) =>
-      searchAnalyticsQuery(db, acc, site.siteUrl, {
-        startDate,
-        endDate,
-        dimensions: ['page'],
-        rowLimit: perSiteLimit
-      })
+  const perSite = await allSettledLimit(
+    pairs.map(
+      ({ acc, site }) =>
+        () =>
+          searchAnalyticsQuery(db, acc, site.siteUrl, {
+            startDate,
+            endDate,
+            dimensions: ['page'],
+            rowLimit: perSiteLimit
+          })
     )
   );
 
@@ -819,14 +826,16 @@ export async function listSitesWithSummary(
   // the aggregate totals (summed) and the daily series (for the sparkline). Same call count as
   // a totals-only fetch — the sparkline is effectively free.
   const { startDate, endDate } = gscDateRange(days);
-  const summaries = await Promise.allSettled(
-    pairs.map(({ acc, site }) =>
-      searchAnalyticsQuery(db, acc, site.siteUrl, {
-        startDate,
-        endDate,
-        dimensions: ['date'],
-        rowLimit: 500
-      })
+  const summaries = await allSettledLimit(
+    pairs.map(
+      ({ acc, site }) =>
+        () =>
+          searchAnalyticsQuery(db, acc, site.siteUrl, {
+            startDate,
+            endDate,
+            dimensions: ['date'],
+            rowLimit: 500
+          })
     )
   );
 
@@ -913,17 +922,19 @@ export async function fetchQueryHistory(
 
   const { startDate, endDate } = gscDateRange(days);
 
-  const fetches = await Promise.allSettled(
-    pairs.map(({ acc, site }) =>
-      searchAnalyticsQuery(db, acc, site.siteUrl, {
-        startDate,
-        endDate,
-        dimensions: ['date'],
-        rowLimit: 25000,
-        dimensionFilterGroups: [
-          { filters: [{ dimension: 'query', operator: 'equals', expression: query }] }
-        ]
-      })
+  const fetches = await allSettledLimit(
+    pairs.map(
+      ({ acc, site }) =>
+        () =>
+          searchAnalyticsQuery(db, acc, site.siteUrl, {
+            startDate,
+            endDate,
+            dimensions: ['date'],
+            rowLimit: 25000,
+            dimensionFilterGroups: [
+              { filters: [{ dimension: 'query', operator: 'equals', expression: query }] }
+            ]
+          })
     )
   );
 
@@ -1042,8 +1053,12 @@ export async function fetchPortfolioDecayPages(
     else errors.push({ accountId: acc.id, accountEmail: acc.email, reason: (r.reason as Error).message });
   });
 
-  const settled = await Promise.allSettled(
-    pairs.map(({ acc, site }) => fetchSiteDecayPages(db, acc, site.siteUrl, days, offsetDays, rowLimit))
+  const settled = await allSettledLimit(
+    pairs.map(
+      ({ acc, site }) =>
+        () =>
+          fetchSiteDecayPages(db, acc, site.siteUrl, days, offsetDays, rowLimit)
+    )
   );
 
   const entries: PortfolioDecayEntry[] = [];
