@@ -1,5 +1,21 @@
-/** Concurrent Search Console calls. Google's per-user quota is far higher; this guards the socket pool. */
-export const DEFAULT_LIMIT = 8;
+/** Reads a positive-integer limit from an env var, falling back when unset or malformed. */
+export function parseLimit(raw: string | undefined, fallback: number): number {
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : fallback;
+}
+
+/**
+ * Concurrent Search Console calls. Google's per-user quota is far higher; this guards the
+ * socket pool. The bound is per fan-out, not process-wide — two pages loading at once open
+ * two pools, which is fine at this scale but is why the knob exists.
+ */
+export const DEFAULT_LIMIT = parseLimit(process.env.GSC_CONCURRENCY, 8);
+
+/**
+ * URL Inspection is bound by quota, not sockets: 2000/day and 600/min per property. At ~1
+ * call/sec each, 8 in flight sits on the per-minute ceiling, so inspections run narrower.
+ */
+export const INSPECT_LIMIT = parseLimit(process.env.GSC_INSPECT_CONCURRENCY, 4);
 
 /**
  * Bounded-concurrency variant of `Promise.allSettled(items.map(fn))`.

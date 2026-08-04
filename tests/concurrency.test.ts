@@ -1,7 +1,19 @@
 import { describe, it, expect } from 'vitest';
-import { mapSettledLimit } from '../src/lib/server/concurrency';
+import { mapSettledLimit, parseLimit } from '../src/lib/server/concurrency';
 
 const tick = (ms = 0) => new Promise((r) => setTimeout(r, ms));
+
+describe('parseLimit', () => {
+  it('takes a positive integer', () => {
+    expect(parseLimit('16', 8)).toBe(16);
+  });
+
+  it('falls back on unset, empty, non-numeric, zero, negative and fractional input', () => {
+    for (const raw of [undefined, '', '  ', 'eight', '0', '-4', '2.5', 'NaN']) {
+      expect(parseLimit(raw, 8)).toBe(8);
+    }
+  });
+});
 
 describe('mapSettledLimit', () => {
   it('keeps results positionally aligned with the input items', async () => {

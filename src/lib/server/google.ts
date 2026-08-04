@@ -1,5 +1,5 @@
 import type { Db } from './db';
-import { mapSettledLimit } from './concurrency';
+import { INSPECT_LIMIT, mapSettledLimit } from './concurrency';
 import { getGoogleClientId, getGoogleClientSecret } from './config';
 import {
   type AccountRow,
@@ -464,7 +464,11 @@ export async function bulkInspect(
   siteUrl: string,
   urls: string[]
 ): Promise<InspectedUrl[]> {
-  const settled = await mapSettledLimit(urls, (u) => inspectUrl(db, acc, siteUrl, u));
+  const settled = await mapSettledLimit(
+    urls,
+    (u) => inspectUrl(db, acc, siteUrl, u),
+    INSPECT_LIMIT
+  );
   return urls.map((u, i) => {
     const r = settled[i];
     if (r.status === 'fulfilled')

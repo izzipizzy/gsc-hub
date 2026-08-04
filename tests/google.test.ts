@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { openDb, type Db } from '../src/lib/server/db';
 import { upsertAccount, getAccount } from '../src/lib/server/accounts';
 import { setConfigValue } from '../src/lib/server/config';
+import { DEFAULT_LIMIT, INSPECT_LIMIT } from '../src/lib/server/concurrency';
 import {
   refreshIfNeeded,
   listSitesForAllAccounts,
@@ -788,5 +789,34 @@ describe('google.bulkInspect', () => {
     expect(result[0].index?.verdict).toBe('PASS');
     expect(result[1].status).toBe('error');
     expect(result[1].error).toMatch(/500/);
+  });
+
+  it('keeps inspections narrower than the search-analytics fan-out', async () => {
+    // URL Inspection is capped at 600/min per property, so it runs below DEFAULT_LIMIT.
+    const future = Math.floor(Date.now() / 1000) + 3600;
+    upsertAccount(db, {
+      id: 'a1', email: 'a1@x', access_token: 't1', refresh_token: 'r', expires_at: future, scope: 's'
+    });
+
+    let inFlight = 0;
+    let peak = 0;
+    const fetchMock = vi.fn(async () => {
+      inFlight++;
+      peak = Math.max(peak, inFlight);
+      await new Promise((r) => setTimeout(r, 2));
+      inFlight--;
+      return new Response(
+        JSON.stringify({ inspectionResult: { indexStatusResult: { verdict: 'PASS' } } }),
+        { status: 200 }
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const urls = Array.from({ length: 40 }, (_, i) => `https://a.com/p${i}`);
+    const result = await bulkInspect(db, getAccount(db, 'a1')!, 'https://a.com/', urls);
+
+    expect(result).toHaveLength(40);
+    expect(peak).toBeLessThanOrEqual(INSPECT_LIMIT);
+    expect(INSPECT_LIMIT).toBeLessThan(DEFAULT_LIMIT);
   });
 });

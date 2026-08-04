@@ -30,6 +30,9 @@ All notable changes to this project are documented here. Format loosely follows
   access tokens instead of failing once the first one expires.
 
 ### Changed
+- Fan-out concurrency is tunable via `GSC_CONCURRENCY` (default 8). URL Inspection
+  runs narrower under `GSC_INSPECT_CONCURRENCY` (default 4) — it is capped by quota
+  (2000/day, 600/min per property), not by the socket pool.
 - Config precedence: environment variables override the wizard-stored values;
   env-provided fields are shown read-only in the wizard.
 
