@@ -81,6 +81,59 @@ describe('google.refreshIfNeeded', () => {
     );
   });
 
+  it('refreshes once when a fan-out shares one account row concurrently', async () => {
+    // A 200-site fan-out passes the same AccountRow to every call. Without in-flight
+    // dedup each one POSTs to the token endpoint, and Google answers a refresh storm
+    // with 400s that markRevoked would read as a dead account.
+    upsertAccount(db, { ...baseAcc, expires_at: 0 });
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ access_token: 'new', expires_in: 3600 }), { status: 200 })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const acc = getAccount(db, 'sub-1')!;
+    const tokens = await Promise.all(
+      Array.from({ length: 20 }, () => refreshIfNeeded(db, acc))
+    );
+
+    expect(tokens.every((t) => t === 'new')).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('updates the shared row in place so later calls skip the refresh', async () => {
+    upsertAccount(db, { ...baseAcc, expires_at: 0 });
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ access_token: 'new', expires_in: 3600 }), { status: 200 })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const acc = getAccount(db, 'sub-1')!;
+    await refreshIfNeeded(db, acc);
+    const second = await refreshIfNeeded(db, acc);
+
+    expect(second).toBe('new');
+    expect(acc.access_token).toBe('new');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets a later call retry after a failed refresh', async () => {
+    upsertAccount(db, { ...baseAcc, expires_at: 0 });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('upstream broken', { status: 503 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ access_token: 'new', expires_in: 3600 }), { status: 200 })
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const acc = getAccount(db, 'sub-1')!;
+    await expect(refreshIfNeeded(db, acc)).rejects.toThrow();
+    await expect(refreshIfNeeded(db, acc)).resolves.toBe('new');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it('marks revoked when refresh returns 400/401 invalid_grant', async () => {
     upsertAccount(db, { ...baseAcc, expires_at: 0 });
     const fetchMock = vi.fn(

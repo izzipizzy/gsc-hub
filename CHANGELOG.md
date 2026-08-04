@@ -14,6 +14,15 @@ All notable changes to this project are documented here. Format loosely follows
   `ADMIN_PASSWORD` env — removes the env-quoting / one-shot-seed lockout traps.
 
 ### Fixed
+- Per-site fan-outs are bounded to 8 concurrent Search Console calls instead of
+  one connection per property. On a ~200-site account the unbounded fan-out
+  saturated the socket pool and the whole batch died with `UND_ERR_CONNECT_TIMEOUT`,
+  so the Sites table rendered dashes. (thanks @KuznetsovRA)
+- An expired access token is now refreshed once per account per fan-out. The
+  shared account row is updated in place and concurrent refreshes are deduped, so
+  a 200-site page load no longer sends 200 token-endpoint requests — a burst
+  Google can answer with 400s that were being read as `invalid_grant` and marked
+  the account revoked.
 - Single-user (loopback) mode no longer forces a login redirect; it runs as a
   local admin. Login is enabled only when an admin exists or env creds are set.
 - Token refresh resolves the Google OAuth client credentials through the config

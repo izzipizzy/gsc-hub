@@ -1,5 +1,5 @@
 import type { Db } from './db';
-import { allSettledLimit } from './concurrency';
+import { mapSettledLimit } from './concurrency';
 import { getGoogleClientId, getGoogleClientSecret } from './config';
 import {
   type AccountRow,
@@ -48,10 +48,25 @@ function clientCreds(db: Db): { id: string; secret: string } {
   return { id, secret };
 }
 
-export async function refreshIfNeeded(db: Db, acc: AccountRow): Promise<string> {
-  const now = Math.floor(Date.now() / 1000);
-  if (acc.expires_at > now + REFRESH_SKEW_SEC) return acc.access_token;
+/** In-flight refreshes, keyed by account id. See refreshIfNeeded. */
+const refreshing = new Map<string, Promise<string>>();
 
+export function refreshIfNeeded(db: Db, acc: AccountRow): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  if (acc.expires_at > now + REFRESH_SKEW_SEC) return Promise.resolve(acc.access_token);
+
+  // A fan-out hands the same AccountRow to every per-site call, so an expired token would
+  // otherwise trigger one token-endpoint POST per site. Google answers a refresh storm with
+  // 400s, which the handler below reads as invalid_grant and marks the account revoked.
+  const pending = refreshing.get(acc.id);
+  if (pending) return pending;
+
+  const p = doRefresh(db, acc).finally(() => refreshing.delete(acc.id));
+  refreshing.set(acc.id, p);
+  return p;
+}
+
+async function doRefresh(db: Db, acc: AccountRow): Promise<string> {
   const { id, secret } = clientCreds(db);
   const body = new URLSearchParams({
     client_id: id,
@@ -78,6 +93,9 @@ export async function refreshIfNeeded(db: Db, acc: AccountRow): Promise<string> 
   const json = (await res.json()) as { access_token: string; expires_in: number };
   const newExp = Math.floor(Date.now() / 1000) + json.expires_in;
   updateTokens(db, acc.id, { access_token: json.access_token, expires_at: newExp });
+  // Keep the shared row in sync — the rest of the fan-out reads it, not the DB.
+  acc.access_token = json.access_token;
+  acc.expires_at = newExp;
   return json.access_token;
 }
 
@@ -446,9 +464,7 @@ export async function bulkInspect(
   siteUrl: string,
   urls: string[]
 ): Promise<InspectedUrl[]> {
-  const settled = await allSettledLimit(
-    urls.map((u) => () => inspectUrl(db, acc, siteUrl, u))
-  );
+  const settled = await mapSettledLimit(urls, (u) => inspectUrl(db, acc, siteUrl, u));
   return urls.map((u, i) => {
     const r = settled[i];
     if (r.status === 'fulfilled')
@@ -546,24 +562,18 @@ export async function fetchDailyBreakdown(
   // Shift previous end back by 1 day to avoid overlap with currentStart.
   const prevEndAdj = isoFrom(days + 1);
 
-  // Per-pair: 2 parallel fetches (current + previous).
-  const fetches = await allSettledLimit(
-    pairs.flatMap(({ acc, site }) => [
-      () =>
-        searchAnalyticsQuery(db, acc, site.siteUrl, {
-          startDate: currentStart,
-          endDate: currentEnd,
-          dimensions: ['date'],
-          rowLimit: 1000
-        }),
-      () =>
-        searchAnalyticsQuery(db, acc, site.siteUrl, {
-          startDate: prevStart,
-          endDate: prevEndAdj,
-          dimensions: ['date'],
-          rowLimit: 1000
-        })
-    ])
+  // Per-pair: 2 fetches (current + previous), flattened into one bounded pool.
+  const windows = pairs.flatMap(({ acc, site }) => [
+    { acc, site, startDate: currentStart, endDate: currentEnd },
+    { acc, site, startDate: prevStart, endDate: prevEndAdj }
+  ]);
+  const fetches = await mapSettledLimit(windows, ({ acc, site, startDate, endDate }) =>
+    searchAnalyticsQuery(db, acc, site.siteUrl, {
+      startDate,
+      endDate,
+      dimensions: ['date'],
+      rowLimit: 1000
+    })
   );
 
   const entries: SiteDailyBreakdown[] = pairs.map(({ acc, site }, i) => {
@@ -665,17 +675,13 @@ export async function fetchPerSiteQueries(
 
   const { startDate, endDate } = gscDateRange(days);
 
-  const perSite = await allSettledLimit(
-    pairs.map(
-      ({ acc, site }) =>
-        () =>
-          searchAnalyticsQuery(db, acc, site.siteUrl, {
-            startDate,
-            endDate,
-            dimensions: ['query', 'page', 'country'],
-            rowLimit: perSiteLimit
-          })
-    )
+  const perSite = await mapSettledLimit(pairs, ({ acc, site }) =>
+    searchAnalyticsQuery(db, acc, site.siteUrl, {
+      startDate,
+      endDate,
+      dimensions: ['query', 'page', 'country'],
+      rowLimit: perSiteLimit
+    })
   );
 
   const entries: PerSiteQueries[] = [];
@@ -748,17 +754,13 @@ export async function fetchPerSitePages(
 
   const { startDate, endDate } = gscDateRange(days);
 
-  const perSite = await allSettledLimit(
-    pairs.map(
-      ({ acc, site }) =>
-        () =>
-          searchAnalyticsQuery(db, acc, site.siteUrl, {
-            startDate,
-            endDate,
-            dimensions: ['page'],
-            rowLimit: perSiteLimit
-          })
-    )
+  const perSite = await mapSettledLimit(pairs, ({ acc, site }) =>
+    searchAnalyticsQuery(db, acc, site.siteUrl, {
+      startDate,
+      endDate,
+      dimensions: ['page'],
+      rowLimit: perSiteLimit
+    })
   );
 
   const entries: PerSitePages[] = [];
@@ -826,17 +828,13 @@ export async function listSitesWithSummary(
   // the aggregate totals (summed) and the daily series (for the sparkline). Same call count as
   // a totals-only fetch — the sparkline is effectively free.
   const { startDate, endDate } = gscDateRange(days);
-  const summaries = await allSettledLimit(
-    pairs.map(
-      ({ acc, site }) =>
-        () =>
-          searchAnalyticsQuery(db, acc, site.siteUrl, {
-            startDate,
-            endDate,
-            dimensions: ['date'],
-            rowLimit: 500
-          })
-    )
+  const summaries = await mapSettledLimit(pairs, ({ acc, site }) =>
+    searchAnalyticsQuery(db, acc, site.siteUrl, {
+      startDate,
+      endDate,
+      dimensions: ['date'],
+      rowLimit: 500
+    })
   );
 
   // Step 3: zip pairs + summaries into SiteWithSummary[].
@@ -922,20 +920,16 @@ export async function fetchQueryHistory(
 
   const { startDate, endDate } = gscDateRange(days);
 
-  const fetches = await allSettledLimit(
-    pairs.map(
-      ({ acc, site }) =>
-        () =>
-          searchAnalyticsQuery(db, acc, site.siteUrl, {
-            startDate,
-            endDate,
-            dimensions: ['date'],
-            rowLimit: 25000,
-            dimensionFilterGroups: [
-              { filters: [{ dimension: 'query', operator: 'equals', expression: query }] }
-            ]
-          })
-    )
+  const fetches = await mapSettledLimit(pairs, ({ acc, site }) =>
+    searchAnalyticsQuery(db, acc, site.siteUrl, {
+      startDate,
+      endDate,
+      dimensions: ['date'],
+      rowLimit: 25000,
+      dimensionFilterGroups: [
+        { filters: [{ dimension: 'query', operator: 'equals', expression: query }] }
+      ]
+    })
   );
 
   const entries: QueryHistoryEntry[] = [];
@@ -1053,12 +1047,8 @@ export async function fetchPortfolioDecayPages(
     else errors.push({ accountId: acc.id, accountEmail: acc.email, reason: (r.reason as Error).message });
   });
 
-  const settled = await allSettledLimit(
-    pairs.map(
-      ({ acc, site }) =>
-        () =>
-          fetchSiteDecayPages(db, acc, site.siteUrl, days, offsetDays, rowLimit)
-    )
+  const settled = await mapSettledLimit(pairs, ({ acc, site }) =>
+    fetchSiteDecayPages(db, acc, site.siteUrl, days, offsetDays, rowLimit)
   );
 
   const entries: PortfolioDecayEntry[] = [];

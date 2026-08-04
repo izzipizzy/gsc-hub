@@ -2,37 +2,37 @@
 export const DEFAULT_LIMIT = 8;
 
 /**
- * Bounded-concurrency variant of Promise.allSettled.
+ * Bounded-concurrency variant of `Promise.allSettled(items.map(fn))`.
  *
  * A plain `Promise.allSettled(sites.map(fetchOne))` opens one connection per site at
  * once. On a portfolio of ~200 properties that saturates the local socket pool (in
- * Docker Desktop the whole batch dies with UND_ERR_CONNECT_TIMEOUT), and because
- * allSettled swallows rejections the UI silently renders zeros. Running the same
+ * Docker Desktop the whole batch dies with UND_ERR_CONNECT_TIMEOUT). Running the same
  * fetches a few at a time completes them all.
  *
- * Results stay positionally aligned with `tasks`, and the settled shape matches
+ * Results stay positionally aligned with `items`, and the settled shape matches
  * Promise.allSettled so callers can keep their existing status checks.
  */
-export async function allSettledLimit<T>(
-  tasks: Array<() => Promise<T>>,
+export async function mapSettledLimit<I, T>(
+  items: I[],
+  fn: (item: I, index: number) => Promise<T>,
   limit = DEFAULT_LIMIT
 ): Promise<PromiseSettledResult<T>[]> {
-  const results = new Array<PromiseSettledResult<T>>(tasks.length);
+  const results = new Array<PromiseSettledResult<T>>(items.length);
   let next = 0;
 
   const worker = async (): Promise<void> => {
     for (;;) {
       const i = next++;
-      if (i >= tasks.length) return;
+      if (i >= items.length) return;
       try {
-        results[i] = { status: 'fulfilled', value: await tasks[i]() };
+        results[i] = { status: 'fulfilled', value: await fn(items[i], i) };
       } catch (reason) {
         results[i] = { status: 'rejected', reason };
       }
     }
   };
 
-  const width = Math.max(1, Math.min(limit, tasks.length));
+  const width = Math.max(1, Math.min(limit, items.length));
   await Promise.all(Array.from({ length: width }, worker));
 
   return results;
