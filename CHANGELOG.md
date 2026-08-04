@@ -5,6 +5,27 @@ All notable changes to this project are documented here. Format loosely follows
 
 Русская версия — [CHANGELOG.ru.md](CHANGELOG.ru.md).
 
+## [0.6.2] — 2026-08-04
+
+Reliability release for large portfolios: the per-site fan-out no longer melts
+the socket pool, and an expired token is refreshed once instead of once per site.
+
+### Fixed
+- Per-site fan-outs are bounded to 8 concurrent Search Console calls instead of
+  one connection per property. On a ~200-site account the unbounded fan-out
+  saturated the socket pool and the whole batch died with `UND_ERR_CONNECT_TIMEOUT`,
+  so the Sites table rendered dashes. (thanks @KuznetsovRA — [#1](https://github.com/izzipizzy/gsc-hub/pull/1))
+- An expired access token is now refreshed once per account per fan-out. The
+  shared account row is updated in place and concurrent refreshes are deduped, so
+  a 200-site page load no longer sends 200 token-endpoint requests — a burst
+  Google can answer with 400s that were being read as `invalid_grant` and marked
+  the account revoked.
+
+### Changed
+- Fan-out concurrency is tunable via `GSC_CONCURRENCY` (default 8). URL Inspection
+  runs narrower under `GSC_INSPECT_CONCURRENCY` (default 4) — it is capped by quota
+  (2000/day, 600/min per property), not by the socket pool.
+
 ## [0.6.1] — 2026-07-19
 
 ### Added
@@ -14,15 +35,6 @@ All notable changes to this project are documented here. Format loosely follows
   `ADMIN_PASSWORD` env — removes the env-quoting / one-shot-seed lockout traps.
 
 ### Fixed
-- Per-site fan-outs are bounded to 8 concurrent Search Console calls instead of
-  one connection per property. On a ~200-site account the unbounded fan-out
-  saturated the socket pool and the whole batch died with `UND_ERR_CONNECT_TIMEOUT`,
-  so the Sites table rendered dashes. (thanks @KuznetsovRA)
-- An expired access token is now refreshed once per account per fan-out. The
-  shared account row is updated in place and concurrent refreshes are deduped, so
-  a 200-site page load no longer sends 200 token-endpoint requests — a burst
-  Google can answer with 400s that were being read as `invalid_grant` and marked
-  the account revoked.
 - Single-user (loopback) mode no longer forces a login redirect; it runs as a
   local admin. Login is enabled only when an admin exists or env creds are set.
 - Token refresh resolves the Google OAuth client credentials through the config
@@ -30,9 +42,6 @@ All notable changes to this project are documented here. Format loosely follows
   access tokens instead of failing once the first one expires.
 
 ### Changed
-- Fan-out concurrency is tunable via `GSC_CONCURRENCY` (default 8). URL Inspection
-  runs narrower under `GSC_INSPECT_CONCURRENCY` (default 4) — it is capped by quota
-  (2000/day, 600/min per property), not by the socket pool.
 - Config precedence: environment variables override the wizard-stored values;
   env-provided fields are shown read-only in the wizard.
 
@@ -169,6 +178,7 @@ added, and query analytics / mobile UI were expanded.
   unified sites table, aggregated top queries/pages, per-site dashboard with
   sparklines and period-over-period deltas, 16-month query history, CSV exports.
 
+[0.6.2]: https://github.com/izzipizzy/gsc-hub/releases/tag/v0.6.2
 [0.6.1]: https://github.com/izzipizzy/gsc-hub/releases/tag/v0.6.1
 [0.6.0]: https://github.com/izzipizzy/gsc-hub/releases/tag/v0.6.0
 [0.3.1]: https://github.com/izzipizzy/gsc-hub/releases/tag/v0.3.1
