@@ -157,6 +157,8 @@ pnpm dev
 | `PAGESPEED_KEY` | опционально | Google API-ключ для вкладки Site Health (Core Web Vitals через PageSpeed Insights). Включи **PageSpeed Insights API**. Один Google API-ключ может обслуживать обе health-проверки. |
 | `GOOGLE_SAFE_BROWSING_KEY` | опционально | Google API-ключ для проверки Safe Browsing в Site Health. Включи **Safe Browsing API** — работает тот же ключ, что и `PAGESPEED_KEY`. Без этих двух вкладка Health скрыта; больше их ничто не использует. |
 | `BING_API_KEY` | опционально | Bing Webmaster API-ключ — включает данные Bing, «Submit to Bing» и пуш в IndexNow. |
+| `GSC_CONCURRENCY` | опционально | Сколько вызовов Search Console идёт параллельно в одном fan-out'е. По умолчанию `8`. Защищает локальный пул сокетов — без ограничения аккаунт на ~200 сайтов роняет всю пачку по таймауту. Уменьши, если connect-таймауты всё равно есть. |
+| `GSC_INSPECT_CONCURRENCY` | опционально | Сколько вызовов URL Inspection идёт параллельно. По умолчанию `4` — намеренно меньше: там ограничение по квоте (2000/день и 600/мин на сайт), а не по сокетам. |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | опционально | Задай оба, чтобы включить мульти-юзер логин/роли (сидит админа при первом старте). Оставь пустыми для дефолтного single-user, loopback-only режима. |
 | `ORIGIN` | опционально | Публичный origin (например `https://your-domain.example`). Включает безопасные куки, когда начинается с `https://`. |
 | `AUTH_URL` | опционально | Публичный URL, по которому Auth.js строит OAuth-redirect; должен совпадать с базой redirect в GCP OAuth. |
