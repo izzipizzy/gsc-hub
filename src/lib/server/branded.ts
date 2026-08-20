@@ -3,10 +3,13 @@
 
 import type { Db } from './db';
 import { siteToHost } from './bing';
+import { getDomainWithoutSuffix } from 'tldts';
 
 // "https://www.example.com/" | "sc-domain:example.co.uk" → "example"
 export function defaultBrandFromDomain(siteUrl: string): string {
   const host = siteToHost(siteUrl).replace(/^www\./, '');
+  const registrableLabel = getDomainWithoutSuffix(host);
+  if (registrableLabel) return registrableLabel;
   const parts = host.split('.').filter(Boolean);
   if (parts.length >= 2) return parts[parts.length - 2];
   return parts[0] ?? host;

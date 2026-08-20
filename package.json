@@ -31,6 +31,7 @@
 		"@auth/core": "0.41.2",
 		"@auth/sveltekit": "^1.11.2",
 		"@node-rs/argon2": "^2.0.2",
-		"better-sqlite3": "^12.9.0"
+		"better-sqlite3": "^12.9.0",
+		"tldts": "7.4.10"
 	}
 }
