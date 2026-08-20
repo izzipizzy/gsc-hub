@@ -10,6 +10,7 @@ import {
   refreshIfNeeded,
   listSitesForAllAccounts,
   searchAnalyticsQuery,
+  searchAnalyticsQueryAll,
   listSitesWithSummary,
   fetchPerSiteQueries,
   fetchPerSitePages,
@@ -341,6 +342,34 @@ describe('google.searchAnalyticsQuery', () => {
       })
     ).rejects.toThrow(/401/);
     expect(getAccount(db, 'a1')!.status).toBe('revoked');
+  });
+
+  it('pages past 25,000 rows for an export', async () => {
+    const future = Math.floor(Date.now() / 1000) + 3600;
+    upsertAccount(db, {
+      id: 'a1', email: 'a1@x', access_token: 't1', refresh_token: 'r', expires_at: future, scope: 's'
+    });
+    const firstPage = Array.from({ length: 25_000 }, (_, index) => ({
+      keys: [`query-${index}`], clicks: 1, impressions: 1, ctr: 1, position: 1
+    }));
+    const fetchMock = vi.fn(async (_input: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { startRow: number; rowLimit: number };
+      if (body.startRow === 0) return new Response(JSON.stringify({ rows: firstPage }));
+      if (body.startRow === 25_000) {
+        return new Response(JSON.stringify({ rows: [{ keys: ['query-25000'], clicks: 1, impressions: 1, ctr: 1, position: 1 }] }));
+      }
+      throw new Error(`Unexpected startRow: ${body.startRow}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const acc = getAccount(db, 'a1')!;
+    const rows = await searchAnalyticsQueryAll(db, acc, 'https://a.com/', {
+      startDate: '2026-04-01', endDate: '2026-04-28', dimensions: ['query']
+    });
+
+    expect(rows).toHaveLength(25_001);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toMatchObject({ startRow: 25_000, rowLimit: 25_000 });
   });
 });
 

@@ -186,6 +186,8 @@ export interface SearchAnalyticsBody {
   dataState?: 'all' | 'final';
 }
 
+const SEARCH_ANALYTICS_PAGE_SIZE = 25_000;
+
 function isoDateDaysAgo(daysAgo: number, now: number = Date.now()): string {
   return new Date(now - daysAgo * 86400_000).toISOString().slice(0, 10);
 }
@@ -224,6 +226,26 @@ export async function searchAnalyticsQuery(
   }
   const json = (await res.json()) as { rows?: SearchAnalyticsRow[] };
   return json.rows ?? [];
+}
+
+// Search Console limits one response to 25,000 rows. Fetch every available page
+// for exports; the API can still omit low-volume rows under its own data limits.
+export async function searchAnalyticsQueryAll(
+  db: Db,
+  acc: AccountRow,
+  siteUrl: string,
+  body: Omit<SearchAnalyticsBody, 'rowLimit' | 'startRow'>
+): Promise<SearchAnalyticsRow[]> {
+  const rows: SearchAnalyticsRow[] = [];
+  for (let startRow = 0; ; startRow += SEARCH_ANALYTICS_PAGE_SIZE) {
+    const page = await searchAnalyticsQuery(db, acc, siteUrl, {
+      ...body,
+      rowLimit: SEARCH_ANALYTICS_PAGE_SIZE,
+      startRow
+    });
+    rows.push(...page);
+    if (page.length < SEARCH_ANALYTICS_PAGE_SIZE) return rows;
+  }
 }
 
 export async function revokeToken(token: string): Promise<void> {

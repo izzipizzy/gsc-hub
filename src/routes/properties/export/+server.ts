@@ -2,7 +2,7 @@ import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { getAccount } from '$lib/server/accounts';
-import { searchAnalyticsQuery } from '$lib/server/google';
+import { searchAnalyticsQueryAll } from '$lib/server/google';
 import { rowsToCsv } from '$lib/server/csv';
 import { requireAdmin } from '$lib/server/guard';
 
@@ -32,11 +32,10 @@ export const GET: RequestHandler = async ({ url, locals }) => {
   const startDate = dateNDaysAgo(days);
   const endDate = todayIso();
 
-  const rows = await searchAnalyticsQuery(db(), acc, siteUrl, {
+  const rows = await searchAnalyticsQueryAll(db(), acc, siteUrl, {
     startDate,
     endDate,
-    dimensions: [dim],
-    rowLimit: 25000
+    dimensions: [dim]
   });
 
   const csv = rowsToCsv(
