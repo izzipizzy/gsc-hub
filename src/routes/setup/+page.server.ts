@@ -52,9 +52,6 @@ export const actions: Actions = {
       values.GOOGLE_CLIENT_SECRET = clientSecret;
     }
 
-    ensureAuthSecret(database);
-    setConfigValues(database, values);
-
     if (mode === 'exposed') {
       const email = String(form.get('admin_email') ?? '').trim();
       const password = String(form.get('admin_password') ?? '');
@@ -75,6 +72,9 @@ export const actions: Actions = {
         });
       }
     }
+
+    ensureAuthSecret(database);
+    setConfigValues(database, values);
 
     throw redirect(303, '/');
   }
