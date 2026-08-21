@@ -15,8 +15,15 @@ import {
   fetchPerSitePages,
   fetchDailyBreakdown,
   fetchQueryHistory,
-  bulkInspect
+  fetchSiteDecayPages,
+  bulkInspect,
+  type SearchAnalyticsBody
 } from '../src/lib/server/google';
+
+// Inclusive number of calendar dates between two YYYY-MM-DD strings.
+function dateCount(startDate: string, endDate: string): number {
+  return (Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) / 86400_000 + 1;
+}
 
 const REFRESH_URL = 'https://oauth2.googleapis.com/token';
 const SITES_URL = 'https://searchconsole.googleapis.com/webmasters/v3/sites';
@@ -624,6 +631,7 @@ describe('google.fetchDailyBreakdown', () => {
   afterEach(() => {
     db.close();
     rmSync(dir, { recursive: true, force: true });
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
   });
@@ -676,6 +684,34 @@ describe('google.fetchDailyBreakdown', () => {
     expect(e.currentTotals.impressions).toBe(120);
     expect(e.previousTotals.clicks).toBe(5);
     expect(e.error).toBeNull();
+  });
+
+  it('requests adjacent inclusive comparison windows with the same number of days', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-20T12:00:00Z'));
+    const future = Math.floor(Date.now() / 1000) + 3600;
+    upsertAccount(db, {
+      id: 'a1', email: 'a1@x', access_token: 't1', refresh_token: 'r', expires_at: future, scope: 's'
+    });
+    const windows: Pick<SearchAnalyticsBody, 'startDate' | 'endDate'>[] = [];
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/sites')) {
+        return new Response(JSON.stringify({
+          siteEntry: [{ siteUrl: 'https://a.com/', permissionLevel: 'siteOwner' }]
+        }), { status: 200 });
+      }
+      const body = JSON.parse(String(init?.body)) as SearchAnalyticsBody;
+      windows.push({ startDate: body.startDate, endDate: body.endDate });
+      return new Response(JSON.stringify({ rows: [] }), { status: 200 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchDailyBreakdown(db, 7);
+
+    expect(windows).toEqual([
+      { startDate: '2026-08-14', endDate: '2026-08-20' },
+      { startDate: '2026-08-07', endDate: '2026-08-13' }
+    ]);
   });
 });
 
@@ -818,5 +854,51 @@ describe('google.bulkInspect', () => {
     expect(result).toHaveLength(40);
     expect(peak).toBeLessThanOrEqual(INSPECT_LIMIT);
     expect(INSPECT_LIMIT).toBeLessThan(DEFAULT_LIMIT);
+  });
+});
+
+describe('google.fetchSiteDecayPages', () => {
+  let dir: string;
+  let db: Db;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'gsc-hub-'));
+    db = openDb(join(dir, 'test.db'));
+    vi.stubEnv('GOOGLE_CLIENT_ID', 'cid');
+    vi.stubEnv('GOOGLE_CLIENT_SECRET', 'csec');
+  });
+
+  afterEach(() => {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+    vi.useRealTimers();
+  });
+
+  it('compares two equal-length windows that do not share a date', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-20T12:00:00Z'));
+    const future = Math.floor(Date.now() / 1000) + 3600;
+    upsertAccount(db, {
+      id: 'a1', email: 'a1@x', access_token: 't1', refresh_token: 'r', expires_at: future, scope: 's'
+    });
+
+    const windows: Pick<SearchAnalyticsBody, 'startDate' | 'endDate'>[] = [];
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as SearchAnalyticsBody;
+      windows.push({ startDate: body.startDate, endDate: body.endDate });
+      return new Response(JSON.stringify({ rows: [] }), { status: 200 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchSiteDecayPages(db, getAccount(db, 'a1')!, 'https://a.com/', 28);
+
+    const [recent, prior] = windows;
+    // A longer baseline window collects extra traffic and exaggerates the decay.
+    expect(dateCount(recent.startDate, recent.endDate)).toBe(28);
+    expect(dateCount(prior.startDate, prior.endDate)).toBe(28);
+    // Sharing a date would count one day's traffic in both halves of the comparison.
+    expect(prior.endDate < recent.startDate).toBe(true);
   });
 });
