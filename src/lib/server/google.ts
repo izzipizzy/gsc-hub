@@ -190,12 +190,12 @@ function isoDateDaysAgo(daysAgo: number, now: number = Date.now()): string {
   return new Date(now - daysAgo * 86400_000).toISOString().slice(0, 10);
 }
 
-// Trailing window of `days` calendar days ending today (inclusive).
+// Trailing window of exactly `days` calendar days ending today (inclusive).
 // Pair with dataState: 'all' so days=1 returns the last ~24h, including
 // partial fresh data — same behavior as GSC UI's 24h view.
 function gscDateRange(days: number, now: number = Date.now()): { startDate: string; endDate: string } {
   return {
-    startDate: isoDateDaysAgo(days, now),
+    startDate: isoDateDaysAgo(days - 1, now),
     endDate: isoDateDaysAgo(0, now)
   };
 }
@@ -557,19 +557,16 @@ export async function fetchDailyBreakdown(
 
   if (pairs.length === 0) return { entries: [], errors };
 
-  // Date math: current period = [now-days, now], previous = [now-2*days, now-days-1].
+  // Date math: both inclusive windows contain exactly `days` dates.
   const now = Date.now();
-  const isoFrom = (offsetDays: number) => isoDateDaysAgo(offsetDays, now);
-  const currentEnd = isoFrom(0);
-  const currentStart = isoFrom(days);
-  const prevStart = isoFrom(days * 2);
-  // Shift previous end back by 1 day to avoid overlap with currentStart.
-  const prevEndAdj = isoFrom(days + 1);
+  const { startDate: currentStart, endDate: currentEnd } = gscDateRange(days, now);
+  const prevStart = isoDateDaysAgo(days * 2 - 1, now);
+  const prevEnd = isoDateDaysAgo(days, now);
 
   // Per-pair: 2 fetches (current + previous), flattened into one bounded pool.
   const windows = pairs.flatMap(({ acc, site }) => [
     { acc, site, startDate: currentStart, endDate: currentEnd },
-    { acc, site, startDate: prevStart, endDate: prevEndAdj }
+    { acc, site, startDate: prevStart, endDate: prevEnd }
   ]);
   const fetches = await mapSettledLimit(windows, ({ acc, site, startDate, endDate }) =>
     searchAnalyticsQuery(db, acc, site.siteUrl, {
@@ -998,8 +995,9 @@ export async function fetchSiteDecayPages(
   const gap = offsetDays ?? days;
   const now = Date.now();
   const recentRange = gscDateRange(days, now);
-  const priorStart = isoDateDaysAgo(gap + days, now);
+  // Both windows hold exactly `days` dates; `gap` is the distance between their ends.
   const priorEnd = isoDateDaysAgo(gap, now);
+  const priorStart = isoDateDaysAgo(gap + days - 1, now);
   const [recent, prior] = await Promise.all([
     searchAnalyticsQuery(db, acc, siteUrl, {
       startDate: recentRange.startDate,
