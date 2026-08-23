@@ -1,6 +1,7 @@
 // Pure GSC analytics — no network, no SQL. Operates on rows already fetched by google.ts.
 // Every function here is deterministic and unit-tested (tests/analytics.test.ts).
 
+import { SHORT_TERM_MAX, normalizeForMatch } from '$lib/utils/branded';
 import type { SearchAnalyticsRow } from './google';
 
 // A GSC row from dims ['query','page'].
@@ -190,11 +191,8 @@ export interface BrandedSplit {
   brandedPct: number; // share of clicks 0..1 (0 when no clicks)
 }
 
-// Terms of three characters or fewer need boundaries: "co" sits inside
-// discount and coffee, "app" inside happy and apple, "one" inside money and
-// phone. From four up a term is distinctive enough that a glued occurrence is a
-// real branded query — "ikealogin" and "myikea" are searches for the brand.
-const SUBSTRING_SAFE_LENGTH = 4;
+// See SHORT_TERM_MAX for why the line sits here.
+const SUBSTRING_SAFE_LENGTH = SHORT_TERM_MAX + 1;
 
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -215,12 +213,12 @@ export function splitBranded(
   queryRows: { query: string; clicks: number; impressions: number }[],
   terms: string[]
 ): BrandedSplit {
-  const lc = terms.map((t) => t.toLowerCase().trim()).filter(Boolean);
+  const lc = terms.map((t) => normalizeForMatch(t.trim())).filter(Boolean);
   const matchers = lc.map(termMatcher);
   const branded = { clicks: 0, impressions: 0 };
   const nonBranded = { clicks: 0, impressions: 0 };
   for (const r of queryRows) {
-    const q = r.query.toLowerCase();
+    const q = normalizeForMatch(r.query);
     const isBrand = matchers.some((m) => m(q));
     const bucket = isBrand ? branded : nonBranded;
     bucket.clicks += r.clicks;

@@ -5,6 +5,36 @@ All notable changes to this project are documented here. Format loosely follows
 
 Русская версия — [CHANGELOG.ru.md](CHANGELOG.ru.md).
 
+## [0.6.8] — 2026-08-23
+
+International domains, and the last of the branded-split work.
+
+### Fixed
+- **A site registered as `https://пример.рф/` gets a usable brand term.**
+  `new URL()` normalises an international hostname to its ASCII form, so that
+  property arrived as `xn--e1afmkfd.xn--p1ai` and produced a brand term no
+  Russian query will ever contain — while the same site registered as
+  `sc-domain:пример.рф` kept its Unicode spelling. One site, two different
+  splits, depending on how it happened to be added. Hostnames are decoded before
+  the term is derived.
+- **Brand terms and queries are compared in one Unicode normal form.** A term
+  containing `é` written as `e` + combining acute did not match the same word
+  typed precomposed, in either direction.
+- The site detail page now says which of the entered terms are short enough to
+  be matched as whole words only. The rule existed since 0.6.6 but was invisible:
+  someone typing `co` had no way to know it behaves differently from `example`,
+  or why the split looked wrong.
+
+### Security
+- The punycode decoder is bounded and its arithmetic is checked. Written without
+  the overflow guards RFC 3492 requires, a label of a few hundred continuation
+  digits drove the working exponent to `Infinity`, after which the bias loop
+  divided `Infinity` by 35 forever — synchronously, on the process's only
+  thread. A hostname reaches this code from a Search Console response and from
+  stored account rows, so a single malformed one could hang the server. Labels
+  are now refused past the DNS limits, every multiply and add is checked, and a
+  decoded code point outside the Unicode scalar range is rejected.
+
 ## [0.6.7] — 2026-08-23
 
 Every date this app asks Search Console for was wrong, in three different ways

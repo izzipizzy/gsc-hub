@@ -3,6 +3,7 @@
 
 import type { Db } from './db';
 import { siteToHost } from './bing';
+import { hostToUnicode } from './idn';
 import { getDomainWithoutSuffix, parse as parseHost } from 'tldts';
 
 // "https://www.example.com/" | "sc-domain:example.co.uk" → "example"
@@ -11,7 +12,9 @@ import { getDomainWithoutSuffix, parse as parseHost } from 'tldts';
 // wrong answer is not cosmetic: "co", taken from example.co.uk, marks "discount
 // code" as branded and "example login" as not. Hence the Public Suffix List.
 export function defaultBrandFromDomain(siteUrl: string): string {
-  const host = siteToHost(siteUrl).replace(/^www\./, '');
+  // Unicode first: new URL() hands back the ASCII form of an international
+  // hostname, and a term of "xn--e1afmkfd" matches nothing anyone types.
+  const host = hostToUnicode(siteToHost(siteUrl)).replace(/^www\./, '');
 
   // An address has no brand, and the fallback below would happily return an
   // octet — "168" matches a lot of queries.

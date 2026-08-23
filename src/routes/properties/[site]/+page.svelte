@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { PageData } from './$types';
+  import { SHORT_TERM_MAX } from '$lib/utils/branded';
 
   let { data }: { data: PageData } = $props();
 
@@ -117,6 +118,13 @@
 
   // ── branded terms editor ──
   let brandInput = $state((data.brandedTerms ?? []).join(', '));
+
+  const shortTerms = $derived(
+    brandInput
+      .split(',')
+      .map((t) => t.trim())
+      .filter((t) => t.length > 0 && t.length <= SHORT_TERM_MAX)
+  );
   let brandSaving = $state(false);
   async function saveBrand() {
     brandSaving = true;
@@ -213,6 +221,13 @@
         </button>
       </div>
       <p class="mt-1 text-xs text-gray-400">Empty reverts to the domain default.</p>
+      {#if shortTerms.length > 0}
+        <p class="mt-1 text-xs text-amber-700">
+          {shortTerms.map((t) => `“${t}”`).join(', ')}
+          {shortTerms.length === 1 ? 'is' : 'are'} matched as whole words only —
+          a term this short would otherwise appear inside ordinary ones.
+        </p>
+      {/if}
     </div>
 
   {:else if tab === 'health'}
