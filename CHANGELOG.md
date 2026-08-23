@@ -5,6 +5,65 @@ All notable changes to this project are documented here. Format loosely follows
 
 Русская версия — [CHANGELOG.ru.md](CHANGELOG.ru.md).
 
+## [0.6.5] — 2026-08-23
+
+Security release, and a correction to v0.6.3.
+
+**v0.6.3 promised more than it delivered.** It said the app would stop falling
+back to anonymous local admin on anything other than loopback. In fact it
+treated private IP ranges (`10.x`, `192.168.x`, `172.16–31.x`) and `.local`
+names as local, so an instance on a LAN, a VPN or a Docker network still served
+full admin to anyone who could reach it. If you deployed 0.6.3 or 0.6.4 anywhere
+other than `localhost`, this release is the one that does what that one said.
+
+### Breaking
+- An app reached over a LAN address or a `.local` name now returns 503 unless a
+  login is configured, where 0.6.3 and 0.6.4 served it. If that network is one
+  you trust and you want the single-user mode back, set `EXPOSED_MODE=0`
+  explicitly. If it is not, set `ADMIN_EMAIL` and `ADMIN_PASSWORD`.
+
+### Security
+- Only real loopback counts as local: `localhost`, `*.localhost`, the whole
+  `127.0.0.0/8` block, `::1` and IPv4-mapped loopback. "Not routable from the
+  internet" is not the same as "only this machine can reach it" — a neighbour on
+  the same Wi-Fi, VPN or Docker network reaches `192.168.1.20` and `gsc.local`
+  perfectly well.
+- An unconfigured origin is treated as exposed rather than as loopback. A tunnel
+  publishes the container without the backend ever learning a new URL, so the
+  absence of `ORIGIN` says nothing about who can reach the app.
+- A blank `ORIGIN` no longer shadows `AUTH_URL`. Compose passes an unset
+  variable through as an empty string, so `ORIGIN: ${ORIGIN}` with nothing set
+  discarded a valid `AUTH_URL` and pushed the app into the case above.
+- The guard now also treats a request arriving on a non-loopback host as
+  exposed. The configured origin cannot see a publisher the app was never told
+  about — a tunnel, an OrbStack label, a bind on `0.0.0.0` — so either signal
+  saying "exposed" is enough. `EXPOSED_MODE=0` silences both.
+- The exposed check requires an actual admin, not merely any user. `manager` is
+  a user but cannot reach `/setup` or `/admin/users`, so an instance whose only
+  account was a manager ran with nobody able to administer it.
+- The first-admin check is retaken inside the transaction, so two concurrent
+  setup submissions can no longer both create an admin.
+- Exported CSV neutralises leading `=`, `+`, `-` and `@` in text fields,
+  including where whitespace, a tab or a carriage return hides the prefix.
+  Search queries reach the export verbatim and anyone can run a search that
+  starts with `=`. Numbers are untouched, so clicks, CTR and position are
+  unchanged.
+- Changing a password now revokes that user's sessions. They are random tokens
+  carrying nothing derived from the password, so every existing session stayed
+  valid for the rest of its 30 days — including whoever the change was meant to
+  lock out.
+
+### Fixed
+- The address-wide login throttle no longer uses the per-account limit. Behind a
+  reverse proxy that address is the proxy, so five failures from anywhere locked
+  out every user, the owner included, for fifteen minutes. It has its own, far
+  looser limit, and the throttle map is now swept instead of growing for the
+  life of the process.
+
+### Changed
+- `EXPOSED_MODE` is declared in both compose files, so a value set in the
+  deployment environment actually reaches the process.
+
 ## [0.6.4] — 2026-08-23
 
 ### Fixed

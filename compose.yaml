@@ -13,6 +13,11 @@ services:
       # on localhost (Google rejects .local). Pin the auth base to http so the
       # redirect_uri matches the one registered in the GCP OAuth client.
       AUTH_URL: http://localhost:5173
+      # OrbStack publishes gsc.local to the whole network, so requests arrive on
+      # a non-loopback host and the app would otherwise refuse to serve them
+      # without a login. This says: that network is trusted, keep single-user
+      # mode. Set ADMIN_EMAIL/ADMIN_PASSWORD and drop this if it is not.
+      EXPOSED_MODE: "0"
     ports:
       # Loopback only. Google rejects OAuth redirects to .local, so connect
       # accounts over http://localhost:5173; use https://gsc.local day-to-day.

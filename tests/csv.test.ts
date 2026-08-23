@@ -23,3 +23,42 @@ describe('csv.rowsToCsv', () => {
     expect(out).toBe('a,b\n"x,y","z""w"\n"line1\nline2",plain\n');
   });
 });
+
+// Search queries are attacker-influenced: anyone can run a Google search that
+// starts with "=", and it reaches this file through the property's export.
+describe('csv.rowsToCsv formula injection', () => {
+  const csvOf = (field: string) =>
+    rowsToCsv(['q'], [{ q: field }], (r) => [r.q]).split('\n')[1];
+
+  it.each(['=1+1', '-1+1', '@SUM(A1)', '=cmd|\' /c calc\'!A1'])(
+    'neutralises the formula prefix in %s',
+    (field) => {
+      expect(csvOf(field).replace(/^"|"$/g, '')).toMatch(/^'/);
+    }
+  );
+
+  it.each(['\t=1+1', ' =1+1', '\r=1+1'])(
+    'neutralises %j, where whitespace hides the prefix',
+    (field) => {
+      expect(csvOf(field).replace(/^"|"$/g, '')).toMatch(/^'/);
+    }
+  );
+
+  // A signed number is still a number: Excel evaluates "+1" to 1, and clicks
+  // and position go through this same path. Only non-numeric payloads matter.
+  it.each(['-5', '5', '0.0741', '-0.5', '+1'])('leaves the number %s alone', (field) => {
+    expect(csvOf(field)).toBe(field);
+  });
+
+  it('leaves ordinary text alone', () => {
+    expect(csvOf('best coffee beans')).toBe('best coffee beans');
+  });
+
+  it('still quotes a neutralised field that also needs escaping', () => {
+    expect(csvOf('=1,2')).toBe('"\'=1,2"');
+  });
+
+  it('keeps the original text recoverable', () => {
+    expect(csvOf('=1+1')).toBe("'=1+1");
+  });
+});

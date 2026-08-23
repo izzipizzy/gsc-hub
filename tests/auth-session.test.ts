@@ -50,4 +50,20 @@ describe('auth-session', () => {
     expect(getSession(db, token)).toBeNull();
     expect(getSession(db, 'nope')).toBeNull();
   });
+
+  it('revokes existing sessions when the password changes', async () => {
+    // Changing a password is how an account is taken back after it is
+    // compromised. A session that keeps working for its full 30 days makes that
+    // action useless against whoever is already logged in.
+    const u = await createUser(db, { email: 'a@ex.com', password: 'pw12345678', role: 'admin' });
+    const other = await createUser(db, { email: 'b@ex.com', password: 'pw12345678', role: 'admin' });
+    const token = createSession(db, u.id);
+    const otherToken = createSession(db, other.id);
+    expect(getSession(db, token)?.id).toBe(u.id);
+
+    await setPassword(db, u.id, 'a completely different one');
+
+    expect(getSession(db, token)).toBeNull();
+    expect(getSession(db, otherToken)?.id).toBe(other.id);
+  });
 });

@@ -49,6 +49,7 @@ describe('decideRoute on an exposed deployment', () => {
         exposed: true,
         setupComplete: true,
         loginEnabled: true,
+        hasAdmin: true,
         user: null,
         path: '/properties'
       })
@@ -61,6 +62,7 @@ describe('decideRoute on an exposed deployment', () => {
         exposed: true,
         setupComplete: true,
         loginEnabled: true,
+        hasAdmin: true,
         user: admin,
         path: '/properties'
       })
@@ -77,5 +79,21 @@ describe('decideRoute on an exposed deployment', () => {
         path: '/properties'
       })
     ).toEqual({ kind: 'pass', asLocalAdmin: true });
+  });
+
+  it('refuses when the only account left is a manager', () => {
+    // loginEnabled() is true as soon as any user exists, but a manager cannot
+    // reach /setup or /admin/users — so "login is on" would be served by an
+    // instance nobody can administer.
+    expect(
+      decideRoute({
+        exposed: true,
+        setupComplete: true,
+        loginEnabled: true,
+        hasAdmin: false,
+        user: null,
+        path: '/properties'
+      })
+    ).toEqual({ kind: 'error', status: 503, message: expect.any(String) });
   });
 });

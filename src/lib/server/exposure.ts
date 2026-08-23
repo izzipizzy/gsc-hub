@@ -1,14 +1,16 @@
-// Is this instance reachable from outside the machine it runs on?
+// Can anything other than this machine reach the app?
 //
-// A loopback deployment gets two conveniences that are only safe there: the
-// setup wizard is served anonymously until setup completes, and every request
-// passes as local admin while login is off. On a public origin either one is an
-// open door, so the guard needs to know which kind of deployment this is.
+// Two shortcuts depend on the answer: the setup wizard is served anonymously
+// until setup completes, and every request passes as local admin while login is
+// off. Both hand over full admin to whoever can open a socket, so the bar is
+// loopback — not "not routable from the internet". A LAN address, a VPN, a
+// Docker network and an mDNS name are all reachable by other machines, so they
+// count as exposed, and so does an origin we cannot read.
 //
-// Derived from the configured origin, because that is what the operator already
-// sets when putting the app behind a proxy. EXPOSED_MODE overrides it either
-// way for deployments the heuristic cannot see (a tunnel, or a LAN the operator
-// does not trust).
+// EXPOSED_MODE overrides the answer in both directions. Set it to 0 to accept
+// the risk on a network you trust — a home LAN, an OrbStack host — and to 1
+// where the app is published by something the origin does not mention, such as
+// a tunnel.
 
 export interface ExposureEnv {
   ORIGIN?: string;
@@ -16,21 +18,17 @@ export interface ExposureEnv {
   EXPOSED_MODE?: string;
 }
 
-function isLocalHostname(hostname: string): boolean {
-  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
-  if (host === 'localhost' || host === '::1') return true;
-  // mDNS names resolve on the link only — OrbStack's gsc.local, gsc.orb.local.
-  if (host === 'local' || host.endsWith('.local')) return true;
+export function isLoopbackHostname(hostname: string): boolean {
+  // URL.hostname keeps IPv6 brackets and may keep a fully-qualified trailing dot.
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
+  if (host === 'localhost' || host.endsWith('.localhost')) return true;
+  if (host === '::1') return true;
 
-  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
-  if (!v4) return false;
-  const a = Number(v4[1]);
-  const b = Number(v4[2]);
-  if (a === 127) return true;
-  if (a === 10) return true;
-  if (a === 192 && b === 168) return true;
-  if (a === 172 && b >= 16 && b <= 31) return true;
-  return false;
+  // ::ffff:127.0.0.1 and friends.
+  const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/.exec(host);
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(mapped ? mapped[1] : host);
+  // The whole 127.0.0.0/8 block, not just 127.0.0.1.
+  return !!v4 && Number(v4[1]) === 127;
 }
 
 export function isExposedDeployment(env: ExposureEnv): boolean {
@@ -38,17 +36,20 @@ export function isExposedDeployment(env: ExposureEnv): boolean {
   if (flag === '1' || flag === 'true') return true;
   if (flag === '0' || flag === 'false') return false;
 
-  const origin = (env.ORIGIN ?? env.AUTH_URL ?? '').trim();
-  // No origin configured at all is the loopback default this app ships with.
-  if (!origin) return false;
+  // An unset compose variable arrives as an empty string, not as undefined, so
+  // ?? would let a blank ORIGIN shadow a perfectly good AUTH_URL.
+  const origin = [env.ORIGIN, env.AUTH_URL].map((v) => (v ?? '').trim()).find((v) => v !== '') ?? '';
+  // Nothing configured says nothing about reachability: a tunnel publishes the
+  // container without the backend ever learning a new URL. Fail closed and make
+  // the operator say which it is.
+  if (!origin) return true;
 
   let hostname: string;
   try {
     hostname = new URL(origin).hostname;
   } catch {
-    // An origin we cannot parse is an origin we cannot vouch for.
     return true;
   }
   if (!hostname) return true;
-  return !isLocalHostname(hostname);
+  return !isLoopbackHostname(hostname);
 }

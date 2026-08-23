@@ -115,4 +115,17 @@ describe('setup exposed mode', () => {
 
     expect(getConfigValue(database, 'GOOGLE_CLIENT_ID')).toBe('new-id');
   });
+
+  it('creates only one admin when two submissions race', async () => {
+    // Both requests read countAdmins() === 0 before either transaction opens,
+    // and both then hash a password. The decision has to be retaken under the
+    // transaction, or the loser silently gets an admin account too.
+    const results = await Promise.allSettled([
+      submit({ ...VALID_EXPOSED, admin_email: 'first@example.test' }),
+      submit({ ...VALID_EXPOSED, admin_email: 'second@example.test' })
+    ]);
+
+    expect(results.every((r) => r.status === 'rejected')).toBe(true);
+    expect(countAdmins(database)).toBe(1);
+  });
 });

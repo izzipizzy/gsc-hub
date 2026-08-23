@@ -1,12 +1,12 @@
 import { error, redirect, type Handle } from '@sveltejs/kit';
 import { db } from './db';
 import type { Db } from './db';
-import { getSession, initAuth, countUsers } from './auth-session';
+import { getSession, initAuth, countUsers, countAdmins } from './auth-session';
 import type { User } from './auth-session';
 import { als } from './request-context';
 import { env } from '$env/dynamic/private';
 import { getConfigValue, isSetupComplete } from './config';
-import { isExposedDeployment } from './exposure';
+import { isExposedDeployment, isLoopbackHostname } from './exposure';
 
 export function isPublicPath(path: string): boolean {
   return (
@@ -60,14 +60,18 @@ export function decideRoute(ctx: {
   user: User | null;
   path: string;
   exposed?: boolean;
+  hasAdmin?: boolean;
 }): RouteDecision {
-  const { setupComplete, loginEnabled, user, path, exposed = false } = ctx;
+  const { setupComplete, loginEnabled, user, path, exposed = false, hasAdmin = true } = ctx;
 
   // Two shortcuts below are safe only on loopback: the anonymous setup wizard,
   // and passing every request as local admin when login is off. On an instance
   // reachable from the internet either one hands over full admin, so refuse to
   // serve anything at all until it is configured with a login.
-  if (exposed && (!setupComplete || !loginEnabled)) {
+  // hasAdmin, not loginEnabled: the latter is true as soon as any user exists,
+  // and a manager cannot reach /setup or /admin/users — an instance in that
+  // state is running with nobody able to administer it.
+  if (exposed && (!setupComplete || !loginEnabled || !hasAdmin)) {
     return {
       kind: 'error',
       status: 503,
@@ -103,7 +107,13 @@ export const authGuard: Handle = async ({ event, resolve }) => {
     loginEnabled: loginEnabled(database),
     user,
     path,
-    exposed: isExposedDeployment(process.env)
+    // Two signals, because neither is complete on its own. The configured
+    // origin cannot see a publisher the app was never told about — a tunnel, an
+    // OrbStack label, a bind on 0.0.0.0 — while the request host is only as
+    // trustworthy as the Host header. Either saying "exposed" is enough;
+    // EXPOSED_MODE=0 silences both for a network the operator trusts.
+    exposed: isExposedDeployment(process.env) || !isLoopbackHostname(event.url.hostname),
+    hasAdmin: countAdmins(database) > 0
   });
 
   if (decision.kind === 'error') {

@@ -86,7 +86,9 @@ export const actions: Actions = {
       // Unconditional: an exposed instance that skips this because an admin
       // already exists is an exposed instance with login switched off.
       setConfigValue(database, 'LOGIN_ENABLED', '1');
-      if (!passwordHash) return null;
+      // Re-checked under the transaction: two submissions can both read zero
+      // admins before either of them opens one.
+      if (!passwordHash || countAdmins(database) > 0) return null;
       return createUserWithHash(database, {
         email: admin.email, password_hash: passwordHash, role: 'admin'
       });

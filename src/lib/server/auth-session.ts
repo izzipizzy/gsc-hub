@@ -62,7 +62,13 @@ export function deleteUser(db: Db, id: string): void {
 }
 export async function setPassword(db: Db, id: string, password: string): Promise<void> {
   const password_hash = await hashPassword(password);
-  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(password_hash, id);
+  // Sessions do not carry the password, so without this a change of password
+  // leaves whoever is already signed in with up to 30 more days of access —
+  // which is exactly what the change was meant to end.
+  db.transaction(() => {
+    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(password_hash, id);
+    db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
+  })();
 }
 export function setRole(db: Db, id: string, role: Role): void {
   db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, id);

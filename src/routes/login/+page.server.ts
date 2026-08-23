@@ -4,7 +4,9 @@ import { db } from '$lib/server/db';
 import {
   verifyLogin, createSession, normalizeEmail, SESSION_TTL_MS
 } from '$lib/server/auth-session';
-import { recordFailure, clearFailures, isBlocked } from '$lib/server/login-throttle';
+import {
+  recordFailure, clearFailures, isBlocked, MAX_FAILURES_PER_ADDRESS
+} from '$lib/server/login-throttle';
 import { env } from '$env/dynamic/private';
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -21,9 +23,14 @@ export const actions: Actions = {
     // Normalised the same way verifyLogin looks the user up — otherwise every
     // extra space is a fresh bucket and the limit means nothing. The second key
     // caps one address spraying many accounts.
-    const keys = [`${normalizeEmail(email)}|${address}`, `addr|${address}`];
+    const accountKey = `${normalizeEmail(email)}|${address}`;
+    const addressKey = `addr|${address}`;
+    const keys = [accountKey, addressKey];
 
-    if (keys.some((k) => isBlocked(k))) {
+    if (
+      isBlocked(accountKey) ||
+      isBlocked(addressKey, Date.now(), MAX_FAILURES_PER_ADDRESS)
+    ) {
       return fail(429, { error: 'Слишком много попыток. Подождите 15 минут.' });
     }
 

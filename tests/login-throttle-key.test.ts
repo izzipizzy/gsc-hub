@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb, type Db } from '$lib/server/db';
 import { createUser } from '$lib/server/auth-session';
-import { MAX_FAILURES } from '$lib/server/login-throttle';
+import { MAX_FAILURES, MAX_FAILURES_PER_ADDRESS, resetThrottle } from '$lib/server/login-throttle';
 
 let database: Db;
 
@@ -33,6 +33,7 @@ describe('login throttle keying', () => {
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'gsc-throttle-'));
+    resetThrottle();
     database = openDb(join(dir, 'test.db'));
     await createUser(database, {
       email: 'admin@example.test', password: 'correct horse battery', role: 'admin'
@@ -40,6 +41,7 @@ describe('login throttle keying', () => {
   });
 
   afterEach(() => {
+    resetThrottle();
     database.close();
     rmSync(dir, { recursive: true, force: true });
   });
@@ -58,14 +60,28 @@ describe('login throttle keying', () => {
     expect(blocked).toMatchObject({ status: 429 });
   });
 
-  it('does not let one address exhaust attempts against many accounts', async () => {
+  // The address bucket exists to slow a spray across many accounts, but it must
+  // not be as tight as the per-account one: behind a reverse proxy or a NAT,
+  // getClientAddress() is shared, so five failures would lock out everyone —
+  // including the owner — for the whole window.
+  it('does not lock out an address after a per-account number of failures', async () => {
     const address = '198.51.100.7';
     for (let i = 0; i < MAX_FAILURES; i++) {
       await attempt(`victim${i}@example.test`, address);
     }
 
-    const blocked = await attempt('another@example.test', address);
-    expect(blocked).toMatchObject({ status: 429 });
+    const result = await attempt('another@example.test', address);
+    expect(result).toMatchObject({ status: 401 });
+  });
+
+  it('still stops a sustained spray from one address', async () => {
+    const address = '198.51.100.8';
+    for (let i = 0; i < MAX_FAILURES_PER_ADDRESS; i++) {
+      await attempt(`target${i}@example.test`, address);
+    }
+
+    const result = await attempt('yet-another@example.test', address);
+    expect(result).toMatchObject({ status: 429 });
   });
 
   it('leaves a different address unaffected', async () => {
