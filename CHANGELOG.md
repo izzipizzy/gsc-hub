@@ -5,6 +5,29 @@ All notable changes to this project are documented here. Format loosely follows
 
 Русская версия — [CHANGELOG.ru.md](CHANGELOG.ru.md).
 
+## [0.6.4] — 2026-08-23
+
+### Fixed
+- The default brand term is now the registrable label, not the second-to-last
+  one. For every multi-label public suffix the old rule returned a fragment of
+  the suffix — `co` for `example.co.uk`, `com` for `store.example.com.au`. That
+  term is matched case-insensitively as a *substring*, so the branded split did
+  not merely get noisy, it inverted: `discount code` and `cost of delivery`
+  counted as branded while `example login` did not. Derived from the Public
+  Suffix List. (thanks @klimenkoalex — [#5](https://github.com/izzipizzy/gsc-hub/pull/5))
+- Private suffixes are consulted, so `user.github.io` yields `user` rather than
+  `github`, and `name.blogspot.com` yields `name` rather than `blogspot`.
+- An IP host is kept whole instead of falling through to the old rule, which
+  returned an octet — `168` as a brand term matches a great many queries.
+
+Per-site overrides in `site_branded_keywords` are untouched and still win over
+the default. Sites already storing one see no change.
+
+Known limitation, tracked in [#8](https://github.com/izzipizzy/gsc-hub/issues/8):
+the split still matches terms as substrings, so a short *manual* override (`go`,
+`it`, `ai`) produces the same false positives this release removes from the
+defaults.
+
 ## [0.6.3] — 2026-08-23
 
 Security release. **Upgrade if you run this app on anything other than
