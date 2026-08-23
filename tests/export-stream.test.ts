@@ -30,6 +30,14 @@ function stubEndlessPages(): void {
   }));
 }
 
+function callWithDays(days: number) {
+  return GET({
+    url: new URL(`http://localhost/properties/export?account=a1&site=https://a.com/&dim=query&days=${days}`),
+    locals: { user: LOCAL_ADMIN },
+    request: new Request('http://localhost/properties/export')
+  } as unknown as Parameters<typeof GET>[0]) as Promise<Response>;
+}
+
 function call() {
   return GET({
     url: new URL('http://localhost/properties/export?account=a1&site=https://a.com/&dim=query&days=7'),
@@ -56,6 +64,7 @@ describe('export streaming', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     database.close();
     rmSync(dir, { recursive: true, force: true });
     vi.unstubAllGlobals();
@@ -120,5 +129,23 @@ describe('export streaming', () => {
     await reader.read();
     // A clean close here would hand over a short file that looks complete.
     await expect(reader.read()).rejects.toThrow();
+  });
+
+  it('asks for the same completed-day window the dashboard uses', async () => {
+    // A CSV that disagrees with the screen for the same "days" is the bug this
+    // whole change set is about, left in the other half of the product.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-23T06:00:00Z'));
+    const windows: { startDate: string; endDate: string }[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (_u: string, init?: RequestInit) => {
+      const b = JSON.parse(String(init?.body)) as { startDate: string; endDate: string };
+      windows.push({ startDate: b.startDate, endDate: b.endDate });
+      return new Response(JSON.stringify({ rows: [] }));
+    }));
+
+    const res = await callWithDays(7);
+    await new Response(res.body).text();
+
+    expect(windows[0]).toEqual({ startDate: '2026-08-15', endDate: '2026-08-21' });
   });
 });

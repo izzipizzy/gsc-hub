@@ -35,7 +35,7 @@ export const load: PageServerLoad = async ({ url, locals }) => {
   const cols = parseCols(url.searchParams.get('cols'));
   const sort = parseSort(url.searchParams.get('sort'));
   const dir = parseDir(url.searchParams.get('dir'));
-  const { entries, errors } = await fetchDailyBreakdown(db(), days);
+  const { entries, errors, comparable } = await fetchDailyBreakdown(db(), days);
   const other = sort === 'clicks' ? 'impressions' : 'clicks';
   const sorted = [...entries].sort((a, b) => {
     const primary = a.currentTotals[sort] - b.currentTotals[sort];
@@ -45,7 +45,7 @@ export const load: PageServerLoad = async ({ url, locals }) => {
     if (od !== 0) return od;
     return a.siteUrl.localeCompare(b.siteUrl);
   });
-  return { entries: sorted, errors, days, cols, sort, dir };
+  return { entries: sorted, errors, days, cols, sort, dir, comparable };
 };
 
 export const prerender = false;

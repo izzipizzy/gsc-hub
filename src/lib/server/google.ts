@@ -1,4 +1,5 @@
 import type { Db } from './db';
+import { addCalendarDays, gscToday, completedDayRange } from './gsc-calendar';
 import { INSPECT_LIMIT, mapSettledLimit } from './concurrency';
 import { getGoogleClientId, getGoogleClientSecret } from './config';
 import {
@@ -186,19 +187,9 @@ export interface SearchAnalyticsBody {
   dataState?: 'all' | 'final';
 }
 
-function isoDateDaysAgo(daysAgo: number, now: number = Date.now()): string {
-  return new Date(now - daysAgo * 86400_000).toISOString().slice(0, 10);
-}
-
-// Trailing window of `days` calendar days ending today (inclusive).
-// Pair with dataState: 'all' so days=1 returns the last ~24h, including
-// partial fresh data — same behavior as GSC UI's 24h view.
-function gscDateRange(days: number, now: number = Date.now()): { startDate: string; endDate: string } {
-  return {
-    startDate: isoDateDaysAgo(days, now),
-    endDate: isoDateDaysAgo(0, now)
-  };
-}
+// One definition of "last N days", shared with the export route and anything
+// else that needs a window.
+const gscDateRange = completedDayRange;
 
 export async function searchAnalyticsQuery(
   db: Db,
@@ -611,6 +602,79 @@ export interface SiteDailyBreakdown {
 export interface DailyBreakdownFanOut {
   entries: SiteDailyBreakdown[];
   errors: { accountId: string; accountEmail: string; reason: string }[];
+  /** False when the previous period falls outside the history the API keeps. */
+  comparable: boolean;
+}
+
+// Search Console keeps roughly 16 months. Past half of that, the previous
+// period lands where there is no data, and a comparison against nothing reads
+// as a confident -100% rather than as "unknown".
+export const GSC_HISTORY_DAYS = 480;
+
+export function canCompare(days: number): boolean {
+  return days * 2 <= GSC_HISTORY_DAYS;
+}
+
+export interface TodayTotals {
+  /** The date these totals are for, in Search Console's timezone. */
+  date: string;
+  totals: PeriodTotals;
+  errors: DailyBreakdownFanOut['errors'];
+  /** True when at least one property could not be read, so the sum is short. */
+  partial: boolean;
+}
+
+// Today on its own, deliberately uncompared: the day is still accumulating, so
+// the only honest thing to do with the number is show it.
+export async function fetchTodayTotals(db: Db): Promise<TodayTotals> {
+  const date = gscToday();
+  const accounts = listAccounts(db).filter((a) => a.status === 'active');
+  const errors: DailyBreakdownFanOut['errors'] = [];
+  const pairs: { acc: AccountRow; site: SiteRow }[] = [];
+
+  const perAccount = await Promise.allSettled(
+    accounts.map((a) => listSitesForAccount(db, a).then((sites) => ({ acc: a, sites })))
+  );
+  perAccount.forEach((r, i) => {
+    const acc = accounts[i];
+    if (r.status === 'fulfilled') r.value.sites.forEach((s) => pairs.push({ acc, site: s }));
+    else errors.push({ accountId: acc.id, accountEmail: acc.email, reason: (r.reason as Error).message });
+  });
+
+  const rows = await mapSettledLimit(pairs, ({ acc, site }) =>
+    searchAnalyticsQuery(db, acc, site.siteUrl, {
+      startDate: date, endDate: date, dimensions: ['date'], dataState: 'all'
+    })
+  );
+
+  const daily: DailyRow[] = [];
+  rows.forEach((r, i) => {
+    if (r.status !== 'fulfilled') {
+      // Dropping these silently turns a partial sum into a confident total, and
+      // an outage into a very bad day.
+      const { acc, site } = pairs[i];
+      errors.push({
+        accountId: acc.id,
+        accountEmail: acc.email,
+        reason: `${site.siteUrl}: ${(r.reason as Error).message.slice(0, 100)}`
+      });
+      return;
+    }
+    r.value.forEach((row) =>
+      daily.push({
+        date: row.keys[0] ?? date,
+        clicks: row.clicks,
+        impressions: row.impressions,
+        ctr: row.ctr,
+        position: row.position
+      })
+    );
+  });
+
+  // Any error at all means the sum is short: a failed account discovery
+  // contributes zero properties, which counting only site-level failures read
+  // as "nothing went wrong".
+  return { date, totals: totalsOf(daily), errors, partial: errors.length > 0 };
 }
 
 function totalsOf(rows: DailyRow[]): PeriodTotals {
@@ -655,21 +719,21 @@ export async function fetchDailyBreakdown(
     }
   });
 
-  if (pairs.length === 0) return { entries: [], errors };
+  if (pairs.length === 0) return { entries: [], errors, comparable: canCompare(days) };
 
-  // Date math: current period = [now-days, now], previous = [now-2*days, now-days-1].
+  // Both windows hold exactly `days` completed dates and sit next to each other,
+  // so the comparison is between like and like.
   const now = Date.now();
-  const isoFrom = (offsetDays: number) => isoDateDaysAgo(offsetDays, now);
-  const currentEnd = isoFrom(0);
-  const currentStart = isoFrom(days);
-  const prevStart = isoFrom(days * 2);
-  // Shift previous end back by 1 day to avoid overlap with currentStart.
-  const prevEndAdj = isoFrom(days + 1);
+  const { startDate: currentStart, endDate: currentEnd } = gscDateRange(days, now);
+  const prevEndAdj = addCalendarDays(currentStart, -1);
+  const prevStart = addCalendarDays(prevEndAdj, -(days - 1));
 
-  // Per-pair: 2 fetches (current + previous), flattened into one bounded pool.
+  // Per-pair: current, plus previous only when the history reaches it —
+  // otherwise that is a second fan-out spent producing a fake -100%.
+  const comparable = canCompare(days);
   const windows = pairs.flatMap(({ acc, site }) => [
     { acc, site, startDate: currentStart, endDate: currentEnd },
-    { acc, site, startDate: prevStart, endDate: prevEndAdj }
+    ...(comparable ? [{ acc, site, startDate: prevStart, endDate: prevEndAdj }] : [])
   ]);
   const fetches = await mapSettledLimit(windows, ({ acc, site, startDate, endDate }) =>
     searchAnalyticsQuery(db, acc, site.siteUrl, {
@@ -680,9 +744,12 @@ export async function fetchDailyBreakdown(
     })
   );
 
+  // One window per pair when the previous period was skipped, two when it was
+  // fetched — the stride has to follow.
+  const stride = comparable ? 2 : 1;
   const entries: SiteDailyBreakdown[] = pairs.map(({ acc, site }, i) => {
-    const cur = fetches[i * 2];
-    const prev = fetches[i * 2 + 1];
+    const cur = fetches[i * stride];
+    const prev = comparable ? fetches[i * stride + 1] : undefined;
 
     const toDailyRows = (rows: SearchAnalyticsRow[]): DailyRow[] =>
       rows
@@ -704,7 +771,10 @@ export async function fetchDailyBreakdown(
     } else {
       errorParts.push(`current: ${(cur.reason as Error).message.slice(0, 100)}`);
     }
-    if (prev.status === 'fulfilled') {
+    if (prev === undefined) {
+      // Not fetched: the previous period is outside the available history.
+      previous = [];
+    } else if (prev.status === 'fulfilled') {
       previous = toDailyRows(prev.value);
     } else {
       errorParts.push(`previous: ${(prev.reason as Error).message.slice(0, 100)}`);
@@ -723,7 +793,7 @@ export async function fetchDailyBreakdown(
     };
   });
 
-  return { entries, errors };
+  return { entries, errors, comparable };
 }
 
 export interface AggregatedQuery {
@@ -1098,8 +1168,10 @@ export async function fetchSiteDecayPages(
   const gap = offsetDays ?? days;
   const now = Date.now();
   const recentRange = gscDateRange(days, now);
-  const priorStart = isoDateDaysAgo(gap + days, now);
-  const priorEnd = isoDateDaysAgo(gap, now);
+  // `gap` is the distance between the two windows' end dates; both hold exactly
+  // `days` dates, so the default gap of `days` makes them adjacent.
+  const priorEnd = addCalendarDays(recentRange.endDate, -gap);
+  const priorStart = addCalendarDays(priorEnd, -(days - 1));
   const [recent, prior] = await Promise.all([
     searchAnalyticsQuery(db, acc, siteUrl, {
       startDate: recentRange.startDate,

@@ -5,6 +5,51 @@ All notable changes to this project are documented here. Format loosely follows
 
 Русская версия — [CHANGELOG.ru.md](CHANGELOG.ru.md).
 
+## [0.6.7] — 2026-08-23
+
+Every date this app asks Search Console for was wrong, in three different ways
+at once. **Expect the numbers to move after upgrading** — they were not right
+before.
+
+### Fixed
+- **Dates are computed in Search Console's timezone.** Its daily rows are keyed
+  to `America/Los_Angeles`, but every window came from
+  `toISOString().slice(0, 10)`, which is UTC. For roughly a third of each day in
+  Europe the app asked for a date the data does not have yet, and quietly got
+  less back than it thought.
+- **A window of N days now holds N days.** `gscDateRange(days)` built an
+  inclusive range from `now-days` to `now`, which spans `days + 1` dates. The
+  dashboard compared 8 current days against 7 previous ones, so every
+  "vs previous period" delta was inflated by about a seventh at the 7-day
+  setting, ~3.6% at 28 days.
+  (thanks @klimenkoalex — [#3](https://github.com/izzipizzy/gsc-hub/pull/3))
+- **Periods end at the last completed day.** Today is still accumulating, so
+  including it compared a partial day against whole ones — the delta was heavily
+  negative in the morning and recovered by evening, entirely as an artifact of
+  when you looked.
+- **The CSV export used the same window as the screen.** It had its own date
+  helpers, so the same `days` produced different numbers in the interface and in
+  the file.
+- Day arithmetic no longer subtracts 86,400,000 milliseconds, which drifts
+  across a daylight-saving transition in the target zone. Dates are handled as
+  `YYYY-MM-DD` strings, and the test suite runs identically under `TZ=UTC`,
+  `Europe/Moscow` and `America/Los_Angeles`.
+- The decay comparison's two windows are equal in length and no longer share a
+  boundary date, so one day's traffic is not counted in both halves.
+
+### Added
+- **Today is its own line on the dashboard**, labelled with the Search Console
+  date it belongs to and marked as still filling. It carries no delta — a
+  partial day has nothing it can honestly be compared against — and says so when
+  some properties could not be read, rather than presenting a short sum as a
+  total. It loads after the page renders, since it costs one request per
+  property.
+- **Comparison disappears when there is nothing to compare against.** Search
+  Console keeps roughly 16 months, so past half of that the previous period
+  lands where there is no data and every site showed a confident −100%. The
+  deltas are hidden now, and the second fan-out is skipped — halving the request
+  count on long ranges.
+
 ## [0.6.6] — 2026-08-23
 
 Corrections to v0.6.5, plus the bounded CSV export.

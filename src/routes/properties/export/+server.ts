@@ -4,15 +4,8 @@ import { db } from '$lib/server/db';
 import { getAccount } from '$lib/server/accounts';
 import { searchAnalyticsPages } from '$lib/server/google';
 import { csvHeader, csvLine } from '$lib/server/csv';
+import { completedDayRange } from '$lib/server/gsc-calendar';
 import { requireAdmin } from '$lib/server/guard';
-
-function dateNDaysAgo(n: number): string {
-  return new Date(Date.now() - n * 86400_000).toISOString().slice(0, 10);
-}
-
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 export const GET: RequestHandler = async ({ url, locals, request }) => {
   requireAdmin(locals);
@@ -29,8 +22,9 @@ export const GET: RequestHandler = async ({ url, locals, request }) => {
   if (!acc) throw error(404, 'account not found');
   if (acc.status !== 'active') throw error(409, `account is ${acc.status}; reconnect`);
 
-  const startDate = dateNDaysAgo(days);
-  const endDate = todayIso();
+  // The same window the dashboard shows. Computing dates here separately is how
+  // a CSV and a screen end up disagreeing about what "28 days" means.
+  const { startDate, endDate } = completedDayRange(days);
 
   const pages = searchAnalyticsPages(
     db(),

@@ -9,6 +9,25 @@
   // Hidden sites — server-side store, shared with /properties (keyed accountId|siteUrl).
   let hidden = $state<Set<string>>(new Set());
 
+  // Today is deliberately outside the day ranges: it is still accumulating, so
+  // it cannot be compared against whole days without lying about the delta.
+  // Fetched after render because it costs one request per property.
+  type Today = {
+    date: string;
+    totals: { clicks: number; impressions: number };
+    partial: boolean;
+    errors: { accountEmail: string; reason: string }[];
+  };
+  let today = $state<Today | null>(null);
+  let todayFailed = $state(false);
+
+  onMount(() => {
+    fetch('/dashboard/today')
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((t: Today) => { today = t; })
+      .catch(() => { todayFailed = true; });
+  });
+
   onMount(async () => {
     try {
       const res = await fetch('/properties/hidden-sites');
@@ -152,6 +171,37 @@
     </div>
   </header>
 
+  <section class="mb-4 rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm">
+    <div class="flex flex-wrap items-baseline gap-x-6 gap-y-1">
+      <div class="text-[11px] uppercase tracking-wide text-gray-400">
+        Today{today ? ` · ${today.date}` : ''}
+      </div>
+      {#if today}
+        <div class="text-sm text-gray-900">
+          <span class="app-num font-medium">{fmtNum(today.totals.clicks)}</span>
+          <span class="text-gray-500"> clicks</span>
+        </div>
+        <div class="text-sm text-gray-900">
+          <span class="app-num font-medium">{fmtNum(today.totals.impressions)}</span>
+          <span class="text-gray-500"> impressions</span>
+        </div>
+        <div class="text-[11px] text-gray-400">still filling — no comparison</div>
+        {#if today.partial}
+          <div
+            class="text-[11px] text-amber-700"
+            title={today.errors.slice(0, 10).map((e) => e.reason).join('\n')}
+          >
+            partial — {today.errors.length} read {today.errors.length === 1 ? 'error' : 'errors'}
+          </div>
+        {/if}
+      {:else if todayFailed}
+        <div class="text-[11px] text-gray-400">unavailable</div>
+      {:else}
+        <div class="text-[11px] text-gray-400">loading…</div>
+      {/if}
+    </div>
+  </section>
+
   {#if data.errors.length > 0}
     <div class="app-errors">
       <div class="app-errors-title">
@@ -197,28 +247,28 @@
               <div>
                 <div class="flex items-baseline justify-between">
                   <dt class="text-[11px] uppercase tracking-wide text-gray-500">Clicks</dt>
-                  <dd class="text-[11px] {deltaColor(dClicks)} app-num">{fmtDelta(dClicks)}</dd>
+                  {#if data.comparable}<dd class="text-[11px] {deltaColor(dClicks)} app-num">{fmtDelta(dClicks)}</dd>{/if}
                 </div>
                 <dd class="app-num text-base font-semibold text-gray-900">{fmtNum(e.currentTotals.clicks)}</dd>
               </div>
               <div>
                 <div class="flex items-baseline justify-between">
                   <dt class="text-[11px] uppercase tracking-wide text-gray-500">Impressions</dt>
-                  <dd class="text-[11px] {deltaColor(dImpressions)} app-num">{fmtDelta(dImpressions)}</dd>
+                  {#if data.comparable}<dd class="text-[11px] {deltaColor(dImpressions)} app-num">{fmtDelta(dImpressions)}</dd>{/if}
                 </div>
                 <dd class="app-num text-base font-semibold text-gray-900">{fmtNum(e.currentTotals.impressions)}</dd>
               </div>
               <div>
                 <div class="flex items-baseline justify-between">
                   <dt class="text-[11px] uppercase tracking-wide text-gray-500">CTR</dt>
-                  <dd class="text-[11px] {deltaColor(dCtr)} app-num">{fmtDelta(dCtr)}</dd>
+                  {#if data.comparable}<dd class="text-[11px] {deltaColor(dCtr)} app-num">{fmtDelta(dCtr)}</dd>{/if}
                 </div>
                 <dd class="app-num text-base font-semibold text-gray-900">{fmtCtr(e.currentTotals.ctr)}</dd>
               </div>
               <div>
                 <div class="flex items-baseline justify-between">
                   <dt class="text-[11px] uppercase tracking-wide text-gray-500">Avg Pos</dt>
-                  <dd class="text-[11px] {deltaColor(dPos, true)} app-num">{fmtDelta(dPos)}</dd>
+                  {#if data.comparable}<dd class="text-[11px] {deltaColor(dPos, true)} app-num">{fmtDelta(dPos)}</dd>{/if}
                 </div>
                 <dd class="app-num text-base font-semibold text-gray-900">{fmtPos(e.currentTotals.position)}</dd>
               </div>

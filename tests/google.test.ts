@@ -16,6 +16,8 @@ import {
   fetchPerSitePages,
   fetchDailyBreakdown,
   fetchQueryHistory,
+  fetchSiteDecayPages,
+  fetchTodayTotals,
   bulkInspect,
   type SearchAnalyticsRow
 } from '../src/lib/server/google';
@@ -979,5 +981,144 @@ describe('google.searchAnalyticsPages', () => {
     // Losing four rows we already hold, to find out whether a fifth exists,
     // is a bad trade.
     expect(rows).toHaveLength(4);
+  });
+});
+
+// Inclusive number of calendar dates between two YYYY-MM-DD strings.
+function dateCount(startDate: string, endDate: string): number {
+  return (Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) / 86400_000 + 1;
+}
+
+describe('google date windows', () => {
+  let dir: string;
+  let db: Db;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'gsc-hub-'));
+    db = openDb(join(dir, 'test.db'));
+    vi.stubEnv('GOOGLE_CLIENT_ID', 'cid');
+    vi.stubEnv('GOOGLE_CLIENT_SECRET', 'csec');
+    vi.useFakeTimers();
+    // 06:00 UTC is still the previous day in Los Angeles, which is where the
+    // old UTC-derived dates went wrong.
+    vi.setSystemTime(new Date('2026-08-23T06:00:00Z'));
+    upsertAccount(db, {
+      id: 'a1', email: 'a1@x', access_token: 't1', refresh_token: 'r',
+      expires_at: Math.floor(Date.now() / 1000) + 3600, scope: 's'
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  function captureWindows() {
+    const windows: { startDate: string; endDate: string }[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/sites')) {
+        return new Response(JSON.stringify({
+          siteEntry: [{ siteUrl: 'https://a.com/', permissionLevel: 'siteOwner' }]
+        }));
+      }
+      const body = JSON.parse(String(init?.body)) as { startDate: string; endDate: string };
+      windows.push({ startDate: body.startDate, endDate: body.endDate });
+      return new Response(JSON.stringify({ rows: [] }));
+    }));
+    return windows;
+  }
+
+  it('asks for completed Pacific days, not a UTC window ending today', async () => {
+    const windows = captureWindows();
+    await listSitesWithSummary(db, 7);
+    // Pacific is still 2026-08-22, so the last finished day is the 21st.
+    expect(windows[0]).toEqual({ startDate: '2026-08-15', endDate: '2026-08-21' });
+    expect(dateCount(windows[0].startDate, windows[0].endDate)).toBe(7);
+  });
+
+  it('compares two equal, adjacent windows that share no date', async () => {
+    const windows = captureWindows();
+    await fetchDailyBreakdown(db, 7);
+    const [current, previous] = windows;
+    expect(current).toEqual({ startDate: '2026-08-15', endDate: '2026-08-21' });
+    expect(previous).toEqual({ startDate: '2026-08-08', endDate: '2026-08-14' });
+    expect(dateCount(current.startDate, current.endDate)).toBe(7);
+    expect(dateCount(previous.startDate, previous.endDate)).toBe(7);
+    expect(previous.endDate < current.startDate).toBe(true);
+  });
+
+  it('gives the decay comparison equal windows with no shared date', async () => {
+    const windows = captureWindows();
+    await fetchSiteDecayPages(db, getAccount(db, 'a1')!, 'https://a.com/', 28);
+    const [recent, prior] = windows;
+    expect(dateCount(recent.startDate, recent.endDate)).toBe(28);
+    expect(dateCount(prior.startDate, prior.endDate)).toBe(28);
+    expect(prior.endDate < recent.startDate).toBe(true);
+  });
+
+  it('skips the previous period when history cannot reach it', async () => {
+    const windows = captureWindows();
+    // Search Console keeps about 16 months. At 300 days the previous period
+    // would start ~600 days back, where there is nothing to compare against.
+    const result = await fetchDailyBreakdown(db, 300);
+    expect(result.comparable).toBe(false);
+    // One window per site instead of two: comparing against an empty period
+    // produces a confident -100%, and costs a second fan-out to do it.
+    expect(windows).toHaveLength(1);
+  });
+
+  it('still compares when the history covers both periods', async () => {
+    const windows = captureWindows();
+    const result = await fetchDailyBreakdown(db, 28);
+    expect(result.comparable).toBe(true);
+    expect(windows).toHaveLength(2);
+  });
+
+  it('reports todays partial totals separately from any comparison', async () => {
+    const windows = captureWindows();
+    const today = await fetchTodayTotals(db);
+    // Today only, and today is still filling — so there is nothing to compare
+    // it against and the window is a single date.
+    expect(windows[0]).toEqual({ startDate: '2026-08-22', endDate: '2026-08-22' });
+    expect(today.date).toBe('2026-08-22');
+    expect(today.totals.clicks).toBe(0);
+  });
+
+  it('reports the sites it could not read instead of quietly under-counting', async () => {
+    upsertAccount(db, {
+      id: 'a2', email: 'a2@x', access_token: 't2', refresh_token: 'r',
+      expires_at: Math.floor(Date.now() / 1000) + 3600, scope: 's'
+    });
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.endsWith('/sites')) {
+        return new Response(JSON.stringify({
+          siteEntry: [{ siteUrl: 'https://a.com/', permissionLevel: 'siteOwner' }]
+        }));
+      }
+      return new Response('nope', { status: 500 });
+    }));
+
+    const today = await fetchTodayTotals(db);
+
+    // A total assembled from nothing is not a total.
+    expect(today.errors.length).toBeGreaterThan(0);
+    expect(today.partial).toBe(true);
+  });
+
+  it('is partial when a whole account\'s site list cannot be read', async () => {
+    // The per-site fetches all succeed — there just are not any, because
+    // discovery failed. Counting only site-level failures called that complete.
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.endsWith('/sites')) return new Response('nope', { status: 500 });
+      return new Response(JSON.stringify({ rows: [] }));
+    }));
+
+    const today = await fetchTodayTotals(db);
+
+    expect(today.errors.length).toBeGreaterThan(0);
+    expect(today.partial).toBe(true);
   });
 });
