@@ -6,7 +6,10 @@ import {
   configSource, setConfigValue, setConfigValues, ensureAuthSecret,
   getGoogleClientId, getGoogleClientSecret, isSetupComplete
 } from '$lib/server/config';
-import { createUser, createSession, countAdmins, SESSION_TTL_MS } from '$lib/server/auth-session';
+import {
+  createUserWithHash, createSession, countAdmins, hashPassword, SESSION_TTL_MS
+} from '$lib/server/auth-session';
+import { requireAdmin } from '$lib/server/guard';
 
 export const load: PageServerLoad = async ({ url }) => {
   const database = db();
@@ -32,8 +35,14 @@ function badWrap(s: string): boolean {
 }
 
 export const actions: Actions = {
-  default: async ({ request, cookies }) => {
+  default: async ({ request, cookies, locals }) => {
     const database = db();
+
+    // Bootstrap is anonymous by design, but only while there is nothing to
+    // protect. Once setup is complete, changing the Google credentials or the
+    // access mode is an admin operation like any other.
+    if (isSetupComplete(database)) requireAdmin(locals);
+
     const form = await request.formData();
     const clientId = String(form.get('client_id') ?? '').trim();
     const clientSecret = String(form.get('client_secret') ?? '').trim();
@@ -52,9 +61,7 @@ export const actions: Actions = {
       values.GOOGLE_CLIENT_SECRET = clientSecret;
     }
 
-    ensureAuthSecret(database);
-    setConfigValues(database, values);
-
+    let admin: { email: string; password: string } | null = null;
     if (mode === 'exposed') {
       const email = String(form.get('admin_email') ?? '').trim();
       const password = String(form.get('admin_password') ?? '');
@@ -63,17 +70,35 @@ export const actions: Actions = {
       if (password.length < 8) return fail(400, { error: 'Пароль минимум 8 символов' });
       if (badWrap(password)) return fail(400, { error: 'Убери кавычки/пробелы вокруг пароля' });
       if (password !== confirm) return fail(400, { error: 'Пароли не совпадают' });
+      admin = { email, password };
+    }
 
-      if (countAdmins(database) === 0) {
-        const user = await createUser(database, { email, password, role: 'admin' });
-        setConfigValue(database, 'LOGIN_ENABLED', '1');
-        const token = createSession(database, user.id);
-        cookies.set('gsc_session', token, {
-          path: '/', httpOnly: true, sameSite: 'lax',
-          secure: (env.ORIGIN ?? '').startsWith('https://'),
-          maxAge: Math.floor(SESSION_TTL_MS / 1000)
-        });
-      }
+    // Everything above only reads. Writing the Google credentials is what makes
+    // isSetupComplete() true, so doing it before the admin is validated left a
+    // rejected form with a configured app and no login at all.
+    const passwordHash =
+      admin && countAdmins(database) === 0 ? await hashPassword(admin.password) : null;
+
+    const user = database.transaction(() => {
+      ensureAuthSecret(database);
+      setConfigValues(database, values);
+      if (!admin) return null;
+      // Unconditional: an exposed instance that skips this because an admin
+      // already exists is an exposed instance with login switched off.
+      setConfigValue(database, 'LOGIN_ENABLED', '1');
+      if (!passwordHash) return null;
+      return createUserWithHash(database, {
+        email: admin.email, password_hash: passwordHash, role: 'admin'
+      });
+    })();
+
+    if (user) {
+      const token = createSession(database, user.id);
+      cookies.set('gsc_session', token, {
+        path: '/', httpOnly: true, sameSite: 'lax',
+        secure: (env.ORIGIN ?? '').startsWith('https://'),
+        maxAge: Math.floor(SESSION_TTL_MS / 1000)
+      });
     }
 
     throw redirect(303, '/');

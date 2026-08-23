@@ -6,6 +6,7 @@ import type { User } from './auth-session';
 import { als } from './request-context';
 import { env } from '$env/dynamic/private';
 import { getConfigValue, isSetupComplete } from './config';
+import { isExposedDeployment } from './exposure';
 
 export function isPublicPath(path: string): boolean {
   return (
@@ -50,15 +51,31 @@ export const LOCAL_ADMIN: User = {
 
 export type RouteDecision =
   | { kind: 'pass'; asLocalAdmin: boolean }
-  | { kind: 'redirect'; to: string };
+  | { kind: 'redirect'; to: string }
+  | { kind: 'error'; status: number; message: string };
 
 export function decideRoute(ctx: {
   setupComplete: boolean;
   loginEnabled: boolean;
   user: User | null;
   path: string;
+  exposed?: boolean;
 }): RouteDecision {
-  const { setupComplete, loginEnabled, user, path } = ctx;
+  const { setupComplete, loginEnabled, user, path, exposed = false } = ctx;
+
+  // Two shortcuts below are safe only on loopback: the anonymous setup wizard,
+  // and passing every request as local admin when login is off. On an instance
+  // reachable from the internet either one hands over full admin, so refuse to
+  // serve anything at all until it is configured with a login.
+  if (exposed && (!setupComplete || !loginEnabled)) {
+    return {
+      kind: 'error',
+      status: 503,
+      message:
+        'Not configured for exposed access: set ADMIN_EMAIL and ADMIN_PASSWORD ' +
+        '(and GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET) in the deployment environment.'
+    };
+  }
 
   if (!setupComplete) {
     if (path === '/setup' || isPublicPath(path)) return { kind: 'pass', asLocalAdmin: false };
@@ -85,8 +102,15 @@ export const authGuard: Handle = async ({ event, resolve }) => {
     setupComplete: isSetupComplete(database),
     loginEnabled: loginEnabled(database),
     user,
-    path
+    path,
+    exposed: isExposedDeployment(process.env)
   });
+
+  if (decision.kind === 'error') {
+    return als.run({ userId: null }, async () => {
+      throw error(decision.status, decision.message);
+    });
+  }
 
   if (decision.kind === 'redirect') {
     return als.run({ userId: user?.id ?? null }, async () => {

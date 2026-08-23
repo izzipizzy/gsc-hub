@@ -15,20 +15,32 @@ export function verifyPassword(h: string, password: string): Promise<boolean> {
   return verify(h, password);
 }
 
-const norm = (e: string) => e.trim().toLowerCase();
+// Exported so anything keyed by email (the login throttle) agrees with the
+// spelling used to look the user up. Otherwise a leading space is a new bucket.
+export const normalizeEmail = (e: string) => e.trim().toLowerCase();
+const norm = normalizeEmail;
+
+// Synchronous, so callers can insert the user inside a transaction. Hashing is
+// the slow, async half — do it before opening one.
+export function createUserWithHash(
+  db: Db,
+  input: { email: string; password_hash: string; role: Role }
+): User {
+  const id = randomUUID();
+  const email = norm(input.email);
+  const created_at = Date.now();
+  db.prepare(
+    'INSERT INTO users (id, email, password_hash, role, created_at) VALUES (?,?,?,?,?)'
+  ).run(id, email, input.password_hash, input.role, created_at);
+  return { id, email, role: input.role, created_at };
+}
 
 export async function createUser(
   db: Db,
   input: { email: string; password: string; role: Role }
 ): Promise<User> {
-  const id = randomUUID();
-  const email = norm(input.email);
   const password_hash = await hashPassword(input.password);
-  const created_at = Date.now();
-  db.prepare(
-    'INSERT INTO users (id, email, password_hash, role, created_at) VALUES (?,?,?,?,?)'
-  ).run(id, email, password_hash, input.role, created_at);
-  return { id, email, role: input.role, created_at };
+  return createUserWithHash(db, { email: input.email, password_hash, role: input.role });
 }
 
 export function getUserByEmail(db: Db, email: string): UserWithHash | undefined {

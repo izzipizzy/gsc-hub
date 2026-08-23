@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { goto, invalidateAll } from '$app/navigation';
   import { env as pubenv } from '$env/dynamic/public';
-  import { displaySite, siteDomain, siteHref, siteSearchHref, bingWebmasterHref } from '$lib/utils/site';
+  import { displaySite, siteDomain, siteHref, siteSearchHref, bingWebmasterHref, gscHref } from '$lib/utils/site';
   import googleIcon from '$lib/assets/google.svg';
   import bingIcon from '$lib/assets/bing.svg';
   import { googleSerpUrl } from '$lib/utils/country';
@@ -1095,6 +1095,15 @@
                 aria-label="Site analytics"
                 onclick={(e) => e.stopPropagation()}
               >📊</a>
+              <a
+                class="ml-1.5 inline-flex h-4 items-center rounded bg-gray-100 px-1 align-middle text-[10px] font-medium text-gray-600 hover:bg-gray-200 hover:text-blue-600 print:hidden"
+                href={gscHref(s.siteUrl, s.accountEmail)}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Открыть в Google Search Console ({s.accountEmail})"
+                aria-label="Open in Google Search Console"
+                onclick={(e) => e.stopPropagation()}
+              >GSC</a>
               <a
                 class="ml-1.5 inline-flex h-4 align-middle opacity-70 transition-opacity hover:opacity-100 print:hidden"
                 href={siteSearchHref(s.siteUrl)}

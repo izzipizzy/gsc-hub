@@ -34,6 +34,14 @@ export function siteSearchHref(siteUrl: string): string {
   return `https://www.google.com/search?q=${encodeURIComponent(`site:${target}`)}`;
 }
 
+// Открыть property в UI Google Search Console под нужным аккаунтом — сразу на
+// Performance → Search results, а не на overview.
+// resource_id принимает обе формы siteUrl ('sc-domain:example.com' и 'https://example.com/').
+export function gscHref(siteUrl: string, accountEmail?: string): string {
+  const base = `https://search.google.com/search-console/performance/search-analytics?resource_id=${encodeURIComponent(siteUrl)}`;
+  return accountEmail ? `${base}&authuser=${encodeURIComponent(accountEmail)}` : base;
+}
+
 // Open this site's Bing Webmaster Tools dashboard.
 export function bingWebmasterHref(siteUrl: string): string {
   return `https://www.bing.com/webmasters/home?siteUrl=${siteHref(siteUrl)}`;

@@ -160,6 +160,7 @@ The `webmasters` scope is a "sensitive scope" in Google's classification, but Go
 | `GSC_CONCURRENCY` | optional | Concurrent Search Console calls per fan-out. Defaults to `8`. Guards the local socket pool — unbounded, a ~200-site account times out the whole batch. Lower it if you still see connect timeouts. |
 | `GSC_INSPECT_CONCURRENCY` | optional | Concurrent URL Inspection calls. Defaults to `4` — lower on purpose, since inspection is capped by quota (2000/day and 600/min per property), not by sockets. |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | optional | Set both to enable multi-user login/roles (seeds an admin on first start). Leave unset for the default single-user, loopback-only mode. |
+| `EXPOSED_MODE` | optional | Forces whether the app treats itself as reachable from outside loopback. Derived from `ORIGIN`/`AUTH_URL` by default. An exposed app with no login configured returns 503 rather than falling back to single-user local admin. |
 | `ORIGIN` | optional | Public origin (e.g. `https://your-domain.example`). Enables secure cookies when it starts with `https://`. |
 | `AUTH_URL` | optional | Public URL Auth.js uses to build the OAuth redirect; must match the GCP OAuth redirect base. |
 

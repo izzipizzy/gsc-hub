@@ -1,7 +1,9 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
-import { verifyLogin, createSession, SESSION_TTL_MS } from '$lib/server/auth-session';
+import {
+  verifyLogin, createSession, normalizeEmail, SESSION_TTL_MS
+} from '$lib/server/auth-session';
 import { recordFailure, clearFailures, isBlocked } from '$lib/server/login-throttle';
 import { env } from '$env/dynamic/private';
 
@@ -15,16 +17,22 @@ export const actions: Actions = {
     const form = await request.formData();
     const email = String(form.get('email') ?? '');
     const password = String(form.get('password') ?? '');
-    const key = `${email.toLowerCase()}|${getClientAddress()}`;
+    const address = getClientAddress();
+    // Normalised the same way verifyLogin looks the user up — otherwise every
+    // extra space is a fresh bucket and the limit means nothing. The second key
+    // caps one address spraying many accounts.
+    const keys = [`${normalizeEmail(email)}|${address}`, `addr|${address}`];
 
-    if (isBlocked(key)) return fail(429, { error: 'Слишком много попыток. Подождите 15 минут.' });
+    if (keys.some((k) => isBlocked(k))) {
+      return fail(429, { error: 'Слишком много попыток. Подождите 15 минут.' });
+    }
 
     const user = await verifyLogin(db(), email, password);
     if (!user) {
-      recordFailure(key);
+      for (const k of keys) recordFailure(k);
       return fail(401, { error: 'Неверный email или пароль', email });
     }
-    clearFailures(key);
+    for (const k of keys) clearFailures(k);
     const token = createSession(db(), user.id);
     cookies.set('gsc_session', token, {
       path: '/',

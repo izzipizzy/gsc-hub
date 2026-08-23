@@ -5,6 +5,48 @@ All notable changes to this project are documented here. Format loosely follows
 
 Русская версия — [CHANGELOG.ru.md](CHANGELOG.ru.md).
 
+## [0.6.3] — 2026-08-23
+
+Security release. **Upgrade if you run this app on anything other than
+loopback.** Two shortcuts meant for a single-user localhost install could hand a
+visitor full admin over every connected Search Console account when the app was
+reachable from the internet.
+
+### Security
+- An instance behind a public origin no longer falls back to anonymous local
+  admin. `decideRoute` passed *every* request as admin whenever login was off —
+  a mode intended for a loopback install, but nothing checked that the request
+  came from loopback. A deployment that lost its `ADMIN_EMAIL`/`ADMIN_PASSWORD`,
+  or came up on a fresh volume, served an open panel. It now refuses to serve
+  anything (503) until a login is configured.
+- The setup wizard is no longer reachable anonymously on a public origin. `/setup`
+  is deliberately open until setup completes, which on a public host meant the
+  first visitor could claim the instance. Configure `GOOGLE_CLIENT_ID`,
+  `GOOGLE_CLIENT_SECRET`, `ADMIN_EMAIL` and `ADMIN_PASSWORD` through the
+  environment when deploying exposed.
+- A rejected setup form no longer leaves the app configured. The Google
+  credentials were written before the admin password was validated, and
+  `isSetupComplete()` only looks at those credentials — so a failed submission
+  flipped the app from "redirect everything to /setup" to "set up, no login,
+  everything open". Nothing is written now until every field is accepted, and
+  the writes happen in one transaction. (thanks @klimenkoalex — [#2](https://github.com/izzipizzy/gsc-hub/pull/2))
+- Exposed mode always enables login. `LOGIN_ENABLED` was set only when creating
+  the first admin, so a second submission completed setup with login switched off.
+- Reconfiguring a completed setup now requires an admin, instead of accepting an
+  anonymous POST to `/setup`.
+- The login throttle can no longer be bypassed with whitespace. The user lookup
+  trims and lowercases the email while the throttle key only lowercased it, so
+  `" admin@example.com"` was a fresh five-attempt bucket against the same
+  password hash. A per-address bucket was added alongside it, so one client
+  cannot spend a full allowance against each of many accounts in turn.
+
+### Added
+- `EXPOSED_MODE` forces the exposed/loopback decision either way. By default it
+  is derived from `ORIGIN` (falling back to `AUTH_URL`): loopback addresses,
+  mDNS `.local` names and private IP ranges are treated as not exposed.
+- Per-site link into the Search Console UI that opens under the owning account,
+  landing directly on Performance → Search results.
+
 ## [0.6.2] — 2026-08-04
 
 Reliability release for large portfolios: the per-site fan-out no longer melts
