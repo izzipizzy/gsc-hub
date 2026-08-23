@@ -226,6 +226,106 @@ export async function searchAnalyticsQuery(
   return json.rows ?? [];
 }
 
+// Search Console returns at most 25,000 rows per response and never says that
+// more exist, so a single request silently truncates a large export.
+export const SEARCH_ANALYTICS_PAGE_SIZE = 25_000;
+
+// Number(), on its own, turns a typo into Infinity or NaN — and NaN silently
+// removes the cap, because every comparison against it is false.
+export function positiveIntFromEnv(
+  raw: string | undefined, fallback: number, max = Number.MAX_SAFE_INTEGER
+): number {
+  const n = Number((raw ?? '').trim());
+  if (!Number.isSafeInteger(n) || n <= 0) return fallback;
+  return Math.min(n, max);
+}
+
+// An export bounded only by MAX_SAFE_INTEGER is not bounded. One stray digit in
+// the environment should not turn the cap off.
+export const SEARCH_ANALYTICS_MAX_ROWS_LIMIT = 2_000_000;
+// Paging without a ceiling trades silent truncation for an export that can
+// exhaust memory or run past any request timeout. The CSV is built row by row,
+// but the API quota and the wall clock still need a bound.
+export const SEARCH_ANALYTICS_MAX_ROWS = positiveIntFromEnv(
+  process.env.GSC_EXPORT_MAX_ROWS, 250_000, SEARCH_ANALYTICS_MAX_ROWS_LIMIT
+);
+
+export interface SearchAnalyticsPages extends AsyncIterable<SearchAnalyticsRow[]> {
+  /** True when the cap stopped the walk before the data ran out. */
+  readonly truncated: boolean;
+  /** The cap actually in force, which env parsing may have clamped. */
+  readonly maxRows: number;
+}
+
+export function searchAnalyticsPages(
+  db: Db,
+  acc: AccountRow,
+  siteUrl: string,
+  body: Omit<SearchAnalyticsBody, 'rowLimit' | 'startRow'>,
+  opts: { pageSize?: number; maxRows?: number; signal?: AbortSignal } = {}
+): SearchAnalyticsPages {
+  // Clamped to what one response can carry. Asking for more gets 25,000 back,
+  // which reads as a short page — "we are done" — while startRow would have
+  // stepped over every row the API never delivered.
+  const pageSize = Math.min(
+    opts.pageSize ?? positiveIntFromEnv(process.env.GSC_EXPORT_PAGE_SIZE, SEARCH_ANALYTICS_PAGE_SIZE),
+    SEARCH_ANALYTICS_PAGE_SIZE
+  );
+  const maxRows = Math.min(
+    opts.maxRows ?? positiveIntFromEnv(
+      process.env.GSC_EXPORT_MAX_ROWS, 250_000, SEARCH_ANALYTICS_MAX_ROWS_LIMIT
+    ),
+    SEARCH_ANALYTICS_MAX_ROWS_LIMIT
+  );
+  const state = { truncated: false };
+
+  async function* walk(): AsyncGenerator<SearchAnalyticsRow[]> {
+    let fetched = 0;
+    for (let startRow = 0; ; startRow += pageSize) {
+      // Checked before each request, so a client that closed the download stops
+      // costing quota rather than paying for the whole walk.
+      if (opts.signal?.aborted) return;
+      const page = await searchAnalyticsQuery(db, acc, siteUrl, {
+        ...body, rowLimit: pageSize, startRow
+      });
+      if (page.length === 0) return;
+
+      const remaining = maxRows - fetched;
+      if (page.length >= remaining) {
+        const ambiguous = page.length === remaining && page.length === pageSize;
+        state.truncated = page.length > remaining;
+        // Handed over before the probe: rows already in hand must not be lost
+        // to a request whose only job is to label them.
+        yield page.slice(0, remaining);
+        if (ambiguous && !opts.signal?.aborted) {
+          // The cap was filled exactly, on a full page. Only the next row can
+          // say whether anything was left behind — so ask for exactly one.
+          try {
+            const probe = await searchAnalyticsQuery(db, acc, siteUrl, {
+              ...body, rowLimit: 1, startRow: startRow + pageSize
+            });
+            state.truncated = probe.length > 0;
+          } catch {
+            // Unknown is closer to "short" than to "complete" here.
+            state.truncated = true;
+          }
+        }
+        return;
+      }
+      fetched += page.length;
+      yield page;
+      // A short page is the only signal the API gives that it is done.
+      if (page.length < pageSize) return;
+    }
+  }
+
+  return {
+    get truncated() { return state.truncated; },
+    maxRows,
+    [Symbol.asyncIterator]: walk
+  };
+}
+
 export async function revokeToken(token: string): Promise<void> {
   await fetch(REVOKE_URL(token), { method: 'POST' });
 }

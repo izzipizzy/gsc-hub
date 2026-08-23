@@ -190,16 +190,38 @@ export interface BrandedSplit {
   brandedPct: number; // share of clicks 0..1 (0 when no clicks)
 }
 
+// Terms of three characters or fewer need boundaries: "co" sits inside
+// discount and coffee, "app" inside happy and apple, "one" inside money and
+// phone. From four up a term is distinctive enough that a glued occurrence is a
+// real branded query — "ikealogin" and "myikea" are searches for the brand.
+const SUBSTRING_SAFE_LENGTH = 4;
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Short terms match only where they stand as their own word, so "co" catches
+// "co uk" and "co-op" but not "discount code". Longer ones keep matching as
+// substrings, because a real brand name is worth finding even glued to
+// something ("examplelogin"). Boundaries are Unicode-aware: \b would treat
+// every Cyrillic letter as a boundary and make short terms match everywhere.
+function termMatcher(term: string): (query: string) => boolean {
+  if (term.length >= SUBSTRING_SAFE_LENGTH) return (q) => q.includes(term);
+  const re = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(term)}(?![\\p{L}\\p{N}])`, 'u');
+  return (q) => re.test(q);
+}
+
 export function splitBranded(
   queryRows: { query: string; clicks: number; impressions: number }[],
   terms: string[]
 ): BrandedSplit {
   const lc = terms.map((t) => t.toLowerCase().trim()).filter(Boolean);
+  const matchers = lc.map(termMatcher);
   const branded = { clicks: 0, impressions: 0 };
   const nonBranded = { clicks: 0, impressions: 0 };
   for (const r of queryRows) {
     const q = r.query.toLowerCase();
-    const isBrand = lc.some((t) => q.includes(t));
+    const isBrand = matchers.some((m) => m(q));
     const bucket = isBrand ? branded : nonBranded;
     bucket.clicks += r.clicks;
     bucket.impressions += r.impressions;

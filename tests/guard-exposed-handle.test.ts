@@ -43,6 +43,7 @@ describe('authGuard on a deployment with a public ORIGIN', () => {
     vi.stubEnv('GOOGLE_CLIENT_ID', '');
     vi.stubEnv('GOOGLE_CLIENT_SECRET', '');
     vi.stubEnv('LOGIN_ENABLED', '');
+    vi.stubEnv('EXPOSED_MODE', '');
   });
 
   afterEach(() => {
@@ -89,5 +90,23 @@ describe('authGuard on a deployment with a public ORIGIN', () => {
     vi.stubEnv('AUTH_URL', 'http://localhost:5173');
     setConfigValues(database, { GOOGLE_CLIENT_ID: 'cid', GOOGLE_CLIENT_SECRET: 'csec' });
     await expect(run('/properties', 'localhost')).resolves.toBeInstanceOf(Response);
+  });
+
+  it('honours EXPOSED_MODE=0 even when the request arrives on a non-loopback host', async () => {
+    // This is the case the flag exists for: OrbStack publishes gsc.local, the
+    // operator has said that network is trusted. Silencing only the config
+    // signal leaves the host signal to return 503 anyway.
+    vi.stubEnv('ORIGIN', '');
+    vi.stubEnv('AUTH_URL', 'http://localhost:5173');
+    vi.stubEnv('EXPOSED_MODE', '0');
+    setConfigValues(database, { GOOGLE_CLIENT_ID: 'cid', GOOGLE_CLIENT_SECRET: 'csec' });
+    await expect(run('/properties', 'gsc.local')).resolves.toBeInstanceOf(Response);
+  });
+
+  it('honours EXPOSED_MODE=1 even when everything else looks like loopback', async () => {
+    vi.stubEnv('ORIGIN', 'http://localhost:5173');
+    vi.stubEnv('EXPOSED_MODE', '1');
+    setConfigValues(database, { GOOGLE_CLIENT_ID: 'cid', GOOGLE_CLIENT_SECRET: 'csec' });
+    await expect(run('/properties', 'localhost')).rejects.toMatchObject({ status: 503 });
   });
 });

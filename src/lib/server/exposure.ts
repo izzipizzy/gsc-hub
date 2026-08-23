@@ -18,24 +18,59 @@ export interface ExposureEnv {
   EXPOSED_MODE?: string;
 }
 
+// Expand an IPv6 hostname to its eight 16-bit groups, or null if it is not one.
+function ipv6Groups(host: string): number[] | null {
+  if (!host.includes(':')) return null;
+  const [head, tail] = host.split('::');
+  const parse = (part: string) =>
+    part === '' ? [] : part.split(':').flatMap((g) => {
+      // A trailing dotted-quad, as in ::ffff:127.0.0.1.
+      const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(g);
+      if (v4) {
+        const b = v4.slice(1).map(Number);
+        if (b.some((n) => n > 255)) return [NaN];
+        return [(b[0] << 8) | b[1], (b[2] << 8) | b[3]];
+      }
+      return [/^[0-9a-f]{1,4}$/.test(g) ? parseInt(g, 16) : NaN];
+    });
+  const left = parse(head);
+  const right = tail === undefined ? [] : parse(tail);
+  if ([...left, ...right].some(Number.isNaN)) return null;
+  if (tail === undefined) return left.length === 8 ? left : null;
+  const fill = 8 - left.length - right.length;
+  if (fill < 0) return null;
+  return [...left, ...Array(fill).fill(0), ...right];
+}
+
 export function isLoopbackHostname(hostname: string): boolean {
   // URL.hostname keeps IPv6 brackets and may keep a fully-qualified trailing dot.
   const host = hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
   if (host === 'localhost' || host.endsWith('.localhost')) return true;
-  if (host === '::1') return true;
 
-  // ::ffff:127.0.0.1 and friends.
-  const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/.exec(host);
-  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(mapped ? mapped[1] : host);
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
   // The whole 127.0.0.0/8 block, not just 127.0.0.1.
-  return !!v4 && Number(v4[1]) === 127;
+  if (v4) return Number(v4[1]) === 127;
+
+  // Parsed rather than string-matched: new URL() rewrites ::ffff:127.0.0.1 as
+  // ::ffff:7f00:1, so comparing spellings misses the form that actually arrives.
+  const groups = ipv6Groups(host);
+  if (!groups) return false;
+  if (groups.slice(0, 7).every((g) => g === 0) && groups[7] === 1) return true;
+  const isMapped = groups.slice(0, 5).every((g) => g === 0) && groups[5] === 0xffff;
+  return isMapped && groups[6] >>> 8 === 127;
 }
 
-export function isExposedDeployment(env: ExposureEnv): boolean {
+// null only when the operator has said nothing at all. A value we do not
+// recognise is an attempt to say something, most likely "this is exposed" —
+// guessing the other way turns a typo into an open instance.
+function explicitMode(env: ExposureEnv): boolean | null {
   const flag = (env.EXPOSED_MODE ?? '').trim().toLowerCase();
-  if (flag === '1' || flag === 'true') return true;
+  if (flag === '') return null;
   if (flag === '0' || flag === 'false') return false;
+  return true;
+}
 
+function isExposedOrigin(env: ExposureEnv): boolean {
   // An unset compose variable arrives as an empty string, not as undefined, so
   // ?? would let a blank ORIGIN shadow a perfectly good AUTH_URL.
   const origin = [env.ORIGIN, env.AUTH_URL].map((v) => (v ?? '').trim()).find((v) => v !== '') ?? '';
@@ -52,4 +87,20 @@ export function isExposedDeployment(env: ExposureEnv): boolean {
   }
   if (!hostname) return true;
   return !isLoopbackHostname(hostname);
+}
+
+/** Config only. The guard wants isExposedRequest, which also sees the host. */
+export function isExposedDeployment(env: ExposureEnv): boolean {
+  return explicitMode(env) ?? isExposedOrigin(env);
+}
+
+// The configured origin cannot see a publisher the app was never told about — a
+// tunnel, an OrbStack label, a bind on 0.0.0.0 — so the host the request
+// actually arrived on is a second signal, and either one is enough. An explicit
+// EXPOSED_MODE outranks both: that is the whole point of setting it, and
+// silencing only one of them is how "trusted network" stopped working.
+export function isExposedRequest(env: ExposureEnv, requestHostname: string): boolean {
+  const explicit = explicitMode(env);
+  if (explicit !== null) return explicit;
+  return isExposedOrigin(env) || !isLoopbackHostname(requestHostname);
 }

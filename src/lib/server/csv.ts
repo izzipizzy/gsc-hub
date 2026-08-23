@@ -22,14 +22,22 @@ function escape(field: string): string {
   return field;
 }
 
+// One CSV record, terminated. Exposed so a large export can be streamed row by
+// row instead of assembled in memory first.
+export function csvLine(fields: string[]): string {
+  return fields.map(neutralizeFormula).map(escape).join(',') + '\n';
+}
+
+export function csvHeader(fields: string[]): string {
+  return fields.map(escape).join(',') + '\n';
+}
+
 export function rowsToCsv<T>(
   header: string[],
   rows: T[],
   mapper: (row: T) => string[]
 ): string {
-  const lines: string[] = [header.map(escape).join(',')];
-  for (const row of rows) {
-    lines.push(mapper(row).map(neutralizeFormula).map(escape).join(','));
-  }
-  return lines.join('\n') + '\n';
+  let out = csvHeader(header);
+  for (const row of rows) out += csvLine(mapper(row));
+  return out;
 }

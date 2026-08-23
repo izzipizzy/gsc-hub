@@ -125,3 +125,75 @@ describe('computeDecay', () => {
     expect(big.priorImpressions).toBe(1000);
   });
 });
+
+// A brand term is tested against every query, so how it matches decides the
+// whole branded/non-branded split. Substring matching is right for a
+// distinctive name and wrong for a two-letter one.
+describe('splitBranded term matching', () => {
+  const rows = (query: string) => [{ query, clicks: 1, impressions: 10 }];
+  const isBranded = (query: string, terms: string[]) =>
+    splitBranded(rows(query), terms).branded.clicks === 1;
+
+  it.each(['discount code', 'cost of delivery', 'coffee beans', 'recover data'])(
+    'does not call %s branded for the two-letter term "co"',
+    (query) => {
+      expect(isBranded(query, ['co'])).toBe(false);
+    }
+  );
+
+  it.each(['co uk delivery', 'shop co', 'co-op partners', 'best (co) prices'])(
+    'still calls %s branded for "co", where it stands as its own word',
+    (query) => {
+      expect(isBranded(query, ['co'])).toBe(true);
+    }
+  );
+
+  // A distinctive name is worth finding even when it is glued to something.
+  it.each(['example login', 'examplelogin', 'buy example-pro'])(
+    'calls %s branded for the term "example"',
+    (query) => {
+      expect(isBranded(query, ['example'])).toBe(true);
+    }
+  );
+
+  it('matches non-ASCII queries on word boundaries too', () => {
+    expect(isBranded('купить со скидкой', ['со'])).toBe(true);
+    expect(isBranded('сообщение доставлено', ['со'])).toBe(false);
+  });
+
+  it('keeps matching case-insensitively', () => {
+    expect(isBranded('Example Login', ['example'])).toBe(true);
+    expect(isBranded('CO uk', ['co'])).toBe(true);
+  });
+
+  // Only genuinely ambiguous one- and two-character terms need boundaries.
+  // A four-letter brand is distinctive enough that a glued occurrence is a real
+  // branded query, which is the whole argument for substring matching.
+  it.each(['ikea chair', 'ikealogin', 'myikea', 'IKEA'])(
+    'calls %s branded for the four-letter term "ikea"',
+    (query) => {
+      expect(isBranded(query, ['ikea'])).toBe(true);
+    }
+  );
+
+  it('still keeps two-character terms on word boundaries', () => {
+    expect(isBranded('discount code', ['co'])).toBe(false);
+    expect(isBranded('co uk', ['co'])).toBe(true);
+  });
+
+  // Three characters are as ambiguous as two: the fix for IKEA must not import
+  // this class of error one length down.
+  it.each([
+    ['app', 'happy meal'], ['app', 'apple pie'], ['car', 'scarf wool'],
+    ['one', 'money transfer'], ['one', 'phone case']
+  ])('does not call %s branded inside %s', (term, query) => {
+    expect(isBranded(query, [term])).toBe(false);
+  });
+
+  it.each([['app', 'app store'], ['car', 'car hire'], ['one', 'one day']])(
+    'still matches %s where it stands alone in %s',
+    (term, query) => {
+      expect(isBranded(query, [term])).toBe(true);
+    }
+  );
+});

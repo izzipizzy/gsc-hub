@@ -5,6 +5,43 @@ All notable changes to this project are documented here. Format loosely follows
 
 Русская версия — [CHANGELOG.ru.md](CHANGELOG.ru.md).
 
+## [0.6.6] — 2026-08-23
+
+Corrections to v0.6.5, plus the bounded CSV export.
+
+**`EXPOSED_MODE=0` did not work in v0.6.5.** The release notes said it would
+restore single-user mode on a network you trust. It silenced only one of the two
+signals the guard uses, so an instance reached over a LAN address or a `.local`
+name still returned 503 — the exact case the flag exists for. If you set it and
+got 503 anyway, this is why.
+
+### Fixed
+- `EXPOSED_MODE` now outranks both the configured origin and the request host,
+  in both directions. Setting it is a statement about the deployment, and half
+  of it being honoured is worse than neither.
+- An unrecognised `EXPOSED_MODE` value — `treu`, `yes`, `2` — no longer falls
+  back to auto-detection. A typo in "this instance is exposed" should not be
+  read as "decide for me", so anything that is not an off value means exposed.
+- IPv6 loopback origins are parsed rather than string-matched. `new URL()`
+  rewrites `::ffff:127.0.0.1` as `::ffff:7f00:1`, so the form that actually
+  arrives was treated as public — an unexpected 503 on a genuinely local
+  deployment.
+- Brand terms of three characters or fewer match on word boundaries; four and
+  up still match as substrings. v0.6.5 drew that line at five, which meant a
+  four-letter brand stopped matching `brandlogin` or `mybrand`.
+
+### Added
+- The CSV export pages past 25,000 rows. A single request is all Search Console
+  will answer, so any larger property exported a file that stopped there — no
+  error, no warning, nothing in the file to say so. The walk is bounded by
+  `GSC_EXPORT_MAX_ROWS` (250,000 by default), streamed so it advances at the
+  speed of the download rather than buffering, and stops when the download is
+  cancelled. If the cap did stop it, the file's last line says so.
+  (thanks @klimenkoalex — [#4](https://github.com/izzipizzy/gsc-hub/pull/4))
+- `GSC_EXPORT_MAX_ROWS` and `GSC_EXPORT_PAGE_SIZE`, both parsed as positive
+  integers and clamped — the page size to the 25,000 rows one response can
+  carry, since asking for more silently skips everything past it.
+
 ## [0.6.5] — 2026-08-23
 
 Security release, and a correction to v0.6.3.

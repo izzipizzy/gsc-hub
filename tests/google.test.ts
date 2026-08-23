@@ -10,12 +10,14 @@ import {
   refreshIfNeeded,
   listSitesForAllAccounts,
   searchAnalyticsQuery,
+  searchAnalyticsPages,
   listSitesWithSummary,
   fetchPerSiteQueries,
   fetchPerSitePages,
   fetchDailyBreakdown,
   fetchQueryHistory,
-  bulkInspect
+  bulkInspect,
+  type SearchAnalyticsRow
 } from '../src/lib/server/google';
 
 const REFRESH_URL = 'https://oauth2.googleapis.com/token';
@@ -818,5 +820,164 @@ describe('google.bulkInspect', () => {
     expect(result).toHaveLength(40);
     expect(peak).toBeLessThanOrEqual(INSPECT_LIMIT);
     expect(INSPECT_LIMIT).toBeLessThan(DEFAULT_LIMIT);
+  });
+});
+
+describe('google.searchAnalyticsPages', () => {
+  let dir: string;
+  let db: Db;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'gsc-hub-'));
+    db = openDb(join(dir, 'test.db'));
+    vi.stubEnv('GOOGLE_CLIENT_ID', 'cid');
+    vi.stubEnv('GOOGLE_CLIENT_SECRET', 'csec');
+    upsertAccount(db, {
+      id: 'a1', email: 'a1@x', access_token: 't1', refresh_token: 'r',
+      expires_at: Math.floor(Date.now() / 1000) + 3600, scope: 's'
+    });
+  });
+
+  afterEach(() => {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  // pageSize is injectable so these run at 2 rows instead of allocating 25,000.
+  function stubPages(pages: SearchAnalyticsRow[][]) {
+    const seen: { startRow: number; rowLimit: number }[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { startRow: number; rowLimit: number };
+      seen.push({ startRow: body.startRow, rowLimit: body.rowLimit });
+      // Indexed by the walk's page size, not by rowLimit: the truncation probe
+      // deliberately asks for a single row.
+      const index = body.startRow / 2;
+      return new Response(JSON.stringify({ rows: pages[index] ?? [] }));
+    }));
+    return seen;
+  }
+  const row = (k: string): SearchAnalyticsRow =>
+    ({ keys: [k], clicks: 1, impressions: 1, ctr: 1, position: 1 });
+
+  async function collect(gen: AsyncIterable<SearchAnalyticsRow[]>) {
+    const out: SearchAnalyticsRow[] = [];
+    for await (const page of gen) out.push(...page);
+    return out;
+  }
+
+  const opts = (extra = {}) => ({ pageSize: 2, ...extra });
+  type PagesArgs = [
+    Parameters<typeof searchAnalyticsPages>[0],
+    Parameters<typeof searchAnalyticsPages>[1],
+    string,
+    Parameters<typeof searchAnalyticsPages>[3]
+  ];
+  const args = (): PagesArgs => [db, getAccount(db, 'a1')!, 'https://a.com/', {
+    startDate: '2026-04-01', endDate: '2026-04-28', dimensions: ['query']
+  }];
+
+  // Reported by @klimenkoalex in izzipizzy/gsc-hub#4: a single request stops at
+  // the API's per-response maximum and the CSV looks complete.
+  it('pages until a short page comes back', async () => {
+    const seen = stubPages([[row('a'), row('b')], [row('c')]]);
+    const rows = await collect(searchAnalyticsPages(...args(), opts()));
+    expect(rows.map((r) => r.keys[0])).toEqual(['a', 'b', 'c']);
+    expect(seen).toEqual([{ startRow: 0, rowLimit: 2 }, { startRow: 2, rowLimit: 2 }]);
+  });
+
+  it('costs one request when everything fits on a page', async () => {
+    const seen = stubPages([[row('a')]]);
+    await collect(searchAnalyticsPages(...args(), opts()));
+    expect(seen).toHaveLength(1);
+  });
+
+  it('makes one extra request when the total is an exact multiple', async () => {
+    const seen = stubPages([[row('a'), row('b')], []]);
+    const rows = await collect(searchAnalyticsPages(...args(), opts()));
+    expect(rows).toHaveLength(2);
+    expect(seen).toHaveLength(2);
+  });
+
+  it('stops at maxRows instead of paging forever', async () => {
+    const seen = stubPages([[row('a'), row('b')], [row('c'), row('d')], [row('e'), row('f')]]);
+    const rows = await collect(searchAnalyticsPages(...args(), opts({ maxRows: 3 })));
+    expect(rows).toHaveLength(3);
+    expect(seen).toHaveLength(2);
+  });
+
+  it('reports whether the cap truncated the result', async () => {
+    const capped = searchAnalyticsPages(...args(), opts({ maxRows: 3 }));
+    stubPages([[row('a'), row('b')], [row('c'), row('d')]]);
+    await collect(capped);
+    expect(capped.truncated).toBe(true);
+  });
+
+  it('stops when the caller aborts', async () => {
+    const controller = new AbortController();
+    const seen = stubPages([[row('a'), row('b')], [row('c'), row('d')]]);
+    const gen = searchAnalyticsPages(...args(), opts({ signal: controller.signal }));
+    const out: SearchAnalyticsRow[] = [];
+    for await (const page of gen) {
+      out.push(...page);
+      controller.abort();
+    }
+    expect(out).toHaveLength(2);
+    expect(seen).toHaveLength(1);
+  });
+
+  it('does not claim truncation when the data ends exactly at the cap', async () => {
+    // Two full pages fill maxRows exactly. Whether anything was lost is only
+    // knowable by asking for the next page.
+    const seen = stubPages([[row('a'), row('b')], [row('c'), row('d')], []]);
+    const capped = searchAnalyticsPages(...args(), opts({ maxRows: 4 }));
+    const rows = await collect(capped);
+    expect(rows).toHaveLength(4);
+    expect(capped.truncated).toBe(false);
+    expect(seen).toHaveLength(3);
+  });
+
+  it('claims truncation when more rows follow the cap', async () => {
+    stubPages([[row('a'), row('b')], [row('c'), row('d')], [row('e'), row('f')]]);
+    const capped = searchAnalyticsPages(...args(), opts({ maxRows: 4 }));
+    await collect(capped);
+    expect(capped.truncated).toBe(true);
+  });
+
+  it('never asks for more rows than one response can carry', async () => {
+    // Search Console caps a response at 25,000. Asking for 50,000 gets 25,000
+    // back, which reads as "short page, we are done" while startRow would have
+    // jumped past the rows never delivered.
+    vi.stubEnv('GSC_EXPORT_PAGE_SIZE', '50000');
+    const seen = stubPages([[row('a')]]);
+    await collect(searchAnalyticsPages(...args(), {}));
+    expect(seen[0].rowLimit).toBeLessThanOrEqual(25_000);
+  });
+
+  it('asks for a single row when probing past the cap', async () => {
+    const seen = stubPages([[row('a'), row('b')], [row('c'), row('d')], []]);
+    const capped = searchAnalyticsPages(...args(), opts({ maxRows: 4 }));
+    await collect(capped);
+    // The probe only needs to know whether anything follows.
+    expect(seen.at(-1)!.rowLimit).toBe(1);
+  });
+
+  it('still yields the cap-filling page when the probe fails', async () => {
+    let calls = 0;
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      calls += 1;
+      if (calls <= 2) {
+        return new Response(JSON.stringify({
+          rows: [row(`p${calls}a`), row(`p${calls}b`)]
+        }));
+      }
+      return new Response('probe exploded', { status: 500 });
+    }));
+    const capped = searchAnalyticsPages(...args(), opts({ maxRows: 4 }));
+    const rows = await collect(capped);
+    // Losing four rows we already hold, to find out whether a fifth exists,
+    // is a bad trade.
+    expect(rows).toHaveLength(4);
   });
 });

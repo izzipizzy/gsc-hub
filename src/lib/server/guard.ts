@@ -6,7 +6,7 @@ import type { User } from './auth-session';
 import { als } from './request-context';
 import { env } from '$env/dynamic/private';
 import { getConfigValue, isSetupComplete } from './config';
-import { isExposedDeployment, isLoopbackHostname } from './exposure';
+import { isExposedRequest } from './exposure';
 
 export function isPublicPath(path: string): boolean {
   return (
@@ -112,7 +112,7 @@ export const authGuard: Handle = async ({ event, resolve }) => {
     // OrbStack label, a bind on 0.0.0.0 — while the request host is only as
     // trustworthy as the Host header. Either saying "exposed" is enough;
     // EXPOSED_MODE=0 silences both for a network the operator trusts.
-    exposed: isExposedDeployment(process.env) || !isLoopbackHostname(event.url.hostname),
+    exposed: isExposedRequest(process.env, event.url.hostname),
     hasAdmin: countAdmins(database) > 0
   });
 

@@ -77,4 +77,32 @@ describe('isExposedDeployment', () => {
     expect(isExposedDeployment({ ORIGIN: '', AUTH_URL: 'http://localhost:5173' })).toBe(false);
     expect(isExposedDeployment({ ORIGIN: '   ', AUTH_URL: 'https://gsc.example.com' })).toBe(true);
   });
+
+  // new URL() rewrites ::ffff:127.0.0.1 to its hex form, so testing the dotted
+  // spelling alone would pass while the real parsed hostname failed.
+  it.each([
+    'http://[::ffff:127.0.0.1]:3000',
+    'http://[::ffff:7f00:1]:3000',
+    'http://[0:0:0:0:0:0:0:1]:3000'
+  ])('treats IPv6 loopback %s as not exposed', (ORIGIN) => {
+    expect(isExposedDeployment({ ORIGIN })).toBe(false);
+  });
+
+  it('does not mistake a non-loopback IPv6 address for loopback', () => {
+    expect(isExposedDeployment({ ORIGIN: 'http://[::ffff:8.8.8.8]:3000' })).toBe(true);
+    expect(isExposedDeployment({ ORIGIN: 'http://[2001:db8::1]:3000' })).toBe(true);
+  });
+
+  it.each(['treu', 'yes', '2', 'on'])(
+    'treats the unrecognised EXPOSED_MODE value %j as exposed rather than ignoring it',
+    (EXPOSED_MODE) => {
+      // Silently falling back to the heuristic turns a typo in "I am exposed"
+      // into "decide for me", which is the wrong direction to guess in.
+      expect(isExposedDeployment({ ORIGIN: 'http://localhost:5173', EXPOSED_MODE })).toBe(true);
+    }
+  );
+
+  it('still auto-detects when EXPOSED_MODE is blank', () => {
+    expect(isExposedDeployment({ ORIGIN: 'http://localhost:5173', EXPOSED_MODE: '  ' })).toBe(false);
+  });
 });
