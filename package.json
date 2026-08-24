@@ -1,7 +1,7 @@
 {
 	"name": "gsc-hub",
 	"private": true,
-	"version": "0.6.8",
+	"version": "0.7.0",
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
@@ -11,7 +11,8 @@
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"test": "vitest run --passWithNoTests",
-		"test:watch": "vitest"
+		"test:watch": "vitest",
+		"release": "node scripts/release.mjs"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-node": "^5.5.4",

@@ -5,6 +5,45 @@ All notable changes to this project are documented here. Format loosely follows
 
 Русская версия — [CHANGELOG.ru.md](CHANGELOG.ru.md).
 
+## [0.7.0] — 2026-08-24
+
+A running instance now says what it is, and says when it has fallen behind.
+
+### How to update
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+Data survives — SQLite lives in the mounted `./data`, not in the image, and
+schema migrations run at start. From a source checkout: `git pull && pnpm
+install && pnpm dev`. Rollback is `git checkout v0.6.8 && docker compose up -d
+--build`, but do not roll back across a schema migration without copying
+`data/gsc-hub.db` aside first. Full details, including the sequence for an AI
+agent: [Updating](README.md#updating).
+
+### Added
+- **The footer prints the version this instance is running**, linked to its
+  release notes. In a container that is the release tag; on a dev host the
+  commit of the working tree is shown beside it, since the image carries neither
+  git nor `.git`.
+- **A dismissible banner when a newer release exists.** The check runs in the
+  browser once every 12 hours against the GitHub Releases API and is cached in
+  `localStorage` — the server makes no outbound call and stores nothing for it.
+  Dismissal is remembered per version, so the next release shows up again.
+  `UPDATE_CHECK=off` removes the check entirely; the footer keeps the version.
+- `pnpm release <x.y.z>` bumps the manifest and commits it. The footer reads its
+  version from there, so a bump that never happens makes the app misreport
+  itself — as it already had, at 0.6.0 in the manifest against tag v0.6.8.
+- README documents updating both ways: the commands a person runs, and a
+  deterministic sequence an AI agent can follow, including what to do when
+  `git pull --ff-only` refuses or a build fails.
+
+### Changed
+- Footer links: Telegram now points at @izzypizzy_seo, and a link to the site
+  was added.
+
 ## [0.6.8] — 2026-08-23
 
 International domains, and the last of the branded-split work.

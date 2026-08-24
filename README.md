@@ -161,6 +161,7 @@ The `webmasters` scope is a "sensitive scope" in Google's classification, but Go
 | `GSC_INSPECT_CONCURRENCY` | optional | Concurrent URL Inspection calls. Defaults to `4` — lower on purpose, since inspection is capped by quota (2000/day and 600/min per property), not by sockets. |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | optional | Set both to enable multi-user login/roles (seeds an admin on first start). Leave unset for the default single-user, loopback-only mode. |
 | `EXPOSED_MODE` | optional | `1` forces the app to treat itself as reachable by other machines, `0` accepts the risk on a trusted network. Left unset it is inferred from the configured origin and the request host — only loopback counts as local. An exposed app with no login configured returns 503 rather than falling back to single-user local admin. |
+| `UPDATE_CHECK` | optional | `off` disables the update check — the browser stops contacting `api.github.com`; the version stays in the footer. Enabled by default. |
 | `ORIGIN` | optional | Public origin (e.g. `https://your-domain.example`). Enables secure cookies when it starts with `https://`. |
 | `AUTH_URL` | optional | Public URL Auth.js uses to build the OAuth redirect; must match the GCP OAuth redirect base. |
 
@@ -332,6 +333,97 @@ docker compose down            # stop (data in ./data persists)
 - `./data` is bind-mounted, so the SQLite token store survives rebuilds and is shared with `pnpm dev`.
 
 **Security note:** the app has no built-in authentication (single-user tool). The port is intentionally bound to `127.0.0.1` only — do not expose it on `0.0.0.0` or the network, since the DB holds Google OAuth tokens. To publish on a public hostname, front it with an identity-aware proxy (e.g. Cloudflare Access) limited to your email, and add the production callback URL to your Google OAuth client.
+
+## Updating
+
+### How you find out there is a new version
+
+The footer prints the version this instance is running — `v0.7.0`, linked to the
+release notes for that tag. On a dev host the working tree's commit is shown
+beside it (`v0.7.0 · 55f992f`); inside a container there is no git, so only the
+tag appears.
+
+Once every 12 hours the browser asks the GitHub Releases API for the newest
+release. If it is newer than the running one, a banner appears above the header
+for signed-in users: **Доступна v0.8.0 — что нового**, linked to the release
+notes and dismissible per version (the next release shows up again). Nothing is
+checked server-side, nothing is stored in the database, and the answer is cached
+in `localStorage` — so the 12-hour window is per browser, not per instance.
+
+Set `UPDATE_CHECK=off` to stop the check entirely; the footer keeps showing the
+version.
+
+### Updating a Docker Compose deployment
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+Your data survives: the SQLite file lives in the bind-mounted `./data` (or a
+named volume), not in the image. Schema migrations run automatically at start.
+
+### Updating a source checkout
+
+```bash
+git pull
+pnpm install    # only needed when dependencies changed
+pnpm dev        # or `pnpm build && node build/index.js`
+```
+
+### Rolling back
+
+```bash
+git checkout v0.6.8
+docker compose up -d --build
+```
+
+Rolling back the code is safe; rolling back **across a schema migration** is not
+— the migration only moves forward. Copy `data/gsc-hub.db` aside before a major
+downgrade.
+
+### For an AI agent
+
+Deterministic sequence, no interactive steps. Run from the repository root.
+
+```bash
+# 1. What is running now (container has no git — read the manifest)
+docker compose exec -T gsc sh -c 'grep -m1 "\"version\"" /app/package.json'
+
+# 2. What is the newest release
+curl -s https://api.github.com/repos/izzipizzy/gsc-hub/releases/latest | grep -m1 '"tag_name"'
+
+# 3. Update if they differ
+git pull --ff-only
+docker compose up -d --build
+
+# 4. Verify: the tag in the footer must match the tag you pulled
+curl -sL http://localhost:5173/ | grep -o 'releases/tag/v[0-9.]*' | head -1   # -L: the app 303s to /login
+docker compose logs --tail 30 gsc
+```
+
+Expected end state: step 4 prints `releases/tag/<new version>` and the logs end
+with `Listening on http://0.0.0.0:3000` and no stack trace. If `git pull
+--ff-only` fails, the checkout has local commits — stop and report rather than
+merging or rebasing. If the build fails, the previous container keeps running;
+nothing has been lost.
+
+Versions are plain `vMAJOR.MINOR.PATCH` tags. The comparison the app itself uses
+is numeric per component, and anything that does not parse into exactly three
+numbers (a pre-release, a dev build) is treated as "not newer" — apply the same
+rule if you automate the decision.
+
+### Cutting a release (maintainers)
+
+```bash
+pnpm release 0.8.0   # bumps package.json and commits — no tag, pushes nothing
+git push origin main
+```
+
+The footer reads its version from `package.json`, so the bump is what the app
+reports about itself. The version tag is created when the release is published,
+on the public release commit — and the update banner fires for other people only
+once a **GitHub release** exists for that tag; a pushed tag alone is not enough.
 
 ## Roadmap
 

@@ -132,6 +132,16 @@
   .app-footer a {
     @apply text-gray-500 transition-colors duration-150 hover:text-gray-800 hover:underline;
   }
+  /* Update ticker — a newer release exists on GitHub */
+  .update-banner {
+    @apply flex items-center justify-center gap-3 border-b border-blue-200 bg-blue-50 px-4 py-1.5 text-xs text-blue-800;
+  }
+  .update-banner a {
+    @apply font-medium underline underline-offset-2 hover:text-blue-900;
+  }
+  .update-banner button {
+    @apply leading-none text-blue-400 transition-colors duration-150 hover:text-blue-800;
+  }
 }
 
 /* Print / PDF: a clean report — drop interactive chrome, keep the data and the
@@ -152,7 +162,8 @@
   .app-segmented,
   .app-toolbar-divider,
   .app-gsearch,
-  .app-footer {
+  .app-footer,
+  .update-banner {
     display: none !important;
   }
   /* Links print as plain text */
