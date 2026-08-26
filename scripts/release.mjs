@@ -3,10 +3,10 @@
 // package.json, and the manifest had already drifted once — 0.6.0 against tag
 // v0.6.8 — which made the app misreport what was running.
 //
-// This deliberately does NOT tag. Version tags in this repo live on the public
-// squashed release lineage (release/vX.Y.Z-public), not on private main: the
-// private repo carries no vX.Y.Z tags at all. The tag is created on the public
-// release commit at publish time. Pushes nothing.
+// This deliberately does NOT tag. The version tag is created on the public
+// release commit at publish time, by scripts/publish.sh (wrapped as `pnpm
+// release-publish`) — private main carries no vX.Y.Z tags at all. Pushes
+// nothing.
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 
@@ -47,10 +47,15 @@ git('commit', '-m', `chore(release): ${tag}`);
 
 console.log(`Manifest bumped to ${version} and committed. Next:
 
-  1. git push origin main
-  2. Publish ${tag} publicly: branch release/${tag}-public off the previous
-     public branch, squash the current tree into one "release: ${tag} — …"
-     commit, tag ${tag} there, push it to the github remote and create the
-     release with the ${tag} section of CHANGELOG.md as its notes.
+  1. Add the ${tag} section to CHANGELOG.md and CHANGELOG.ru.md, then commit
+     them — publish.sh refuses to run on uncommitted tracked changes.
+  2. git push origin main
+  3. pnpm release-publish --dry-run ${version}   # preview only, writes nothing
+  4. pnpm release-publish ${version}
+     Builds the public tree, commits it as a child of the public tip, tags
+     it, pushes to GitHub, and creates the release. If it finds public paths
+     that were never published before, it prints them and a confirmation
+     hash and asks you to retype the hash before it pushes anything — never
+     set PUBLISH_CONFIRM=auto for a real release, that skips the check.
 
 The update banner only fires for other people once that GitHub release exists.`);

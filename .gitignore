@@ -21,4 +21,6 @@ vite.config.ts.timestamp-*
 
 # internal process notes (specs/plans) — local only
 docs/superpowers/
+.superpowers/
 .pnpm-store/
+.dataforseo/

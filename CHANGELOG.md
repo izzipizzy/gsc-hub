@@ -5,6 +5,37 @@ All notable changes to this project are documented here. Format loosely follows
 
 Русская версия — [CHANGELOG.ru.md](CHANGELOG.ru.md).
 
+## [0.7.1] — 2026-08-26
+
+Nothing changes for a running instance. What changed is how this project gets
+released: the tooling that publishes it now lives in the repository.
+
+### How to update
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+There is nothing to gain by updating — the application is byte-for-byte the
+same as v0.7.0. Update only if you want the release tooling in your checkout.
+Data survives regardless: SQLite lives in the mounted `./data`, not in the
+image. Rollback is `git checkout v0.7.0 && docker compose up -d --build`. Full
+details, including the sequence for an AI agent: [Updating](README.md#updating).
+
+### Changed
+- **Releases are one command.** `scripts/publish.sh` builds the public tree,
+  commits it as a child of the previous release, tags it, pushes branch and tag
+  in a single atomic push, and creates the GitHub release. It is idempotent: a
+  retry after a dropped connection finishes the release instead of starting a
+  second one. It never force-pushes, and it refuses to publish when the public
+  branch has moved under it.
+- **What stays out of the public tree is declared, not remembered.**
+  `.publicignore` lists it in gitignore syntax, and any path that would become
+  public for the first time is printed and has to be confirmed by hand before
+  anything is pushed.
+- The application itself is untouched — no change under `src/`.
+
 ## [0.7.0] — 2026-08-24
 
 A running instance now says what it is, and says when it has fallen behind.

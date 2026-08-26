@@ -417,8 +417,20 @@ rule if you automate the decision.
 
 ```bash
 pnpm release 0.8.0   # bumps package.json and commits — no tag, pushes nothing
+# add the 0.8.0 sections to CHANGELOG.md / CHANGELOG.ru.md, commit them
 git push origin main
+pnpm release-publish --dry-run 0.8.0   # preview only, writes nothing
+pnpm release-publish 0.8.0
 ```
+
+`release-publish` builds the public tree, commits it as a child of the public
+tip, tags it, pushes to GitHub, and creates the release. If the tree carries
+a public path that was never published before, it prints the list and a
+confirmation hash and asks you to retype the hash before it pushes
+anything — that prompt is the only thing standing between a private file and
+a public push, so read the list. **Never** set `PUBLISH_CONFIRM=auto` for a
+real release; it exists only for the test suite and skips the check with
+just a warning on stderr. See `CLAUDE.md` for the full release ritual.
 
 The footer reads its version from `package.json`, so the bump is what the app
 reports about itself. The version tag is created when the release is published,
