@@ -5,41 +5,59 @@
 
 <svelte:head><title>Users · gsc-hub</title></svelte:head>
 
-<main class="mx-auto max-w-2xl px-4 py-6">
-  <h1 class="mb-4 text-lg font-semibold">Пользователи</h1>
+<main class="page">
+  <header class="app-toolbar">
+    <div class="app-toolbar-left">
+      <nav class="app-breadcrumbs"><span>Admin</span><span aria-hidden="true">/</span><span class="text-ink-2">Users</span></nav>
+      <h1 class="app-pagetitle">Пользователи</h1>
+    </div>
+  </header>
   {#if form && 'error' in form && form.error}
-    <p class="mb-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{form.error}</p>
+    <p class="app-errors">{form.error}</p>
   {/if}
 
-  <form method="POST" action="?/create" class="mb-6 flex flex-wrap items-end gap-2">
-    <input name="email" type="email" required placeholder="email" class="rounded border px-2 py-1 text-sm" />
-    <input name="password" type="text" required placeholder="пароль" class="rounded border px-2 py-1 text-sm" />
-    <select name="role" class="rounded border px-2 py-1 text-sm"><option value="manager">manager</option><option value="admin">admin</option></select>
-    <button class="rounded bg-blue-600 px-3 py-1 text-sm text-white">Создать</button>
-  </form>
+  <div class="flex flex-col gap-3">
+    <section class="pane">
+      <div class="pane-head">Новый пользователь</div>
+      <form method="POST" action="?/create" class="pane-body flex flex-wrap items-end gap-2">
+        <input name="email" type="email" required placeholder="email" aria-label="email" class="input" />
+        <input name="password" type="text" required placeholder="пароль" aria-label="пароль" class="input" />
+        <select name="role" class="input" aria-label="роль"><option value="manager">manager</option><option value="admin">admin</option></select>
+        <button class="btn btn-pri">Создать</button>
+      </form>
+    </section>
 
-  <table class="w-full text-sm">
-    <thead><tr class="text-left text-gray-500"><th>email</th><th>роль</th><th>действия</th></tr></thead>
-    <tbody>
-      {#each data.users as u (u.id)}
-        <tr class="border-t">
-          <td class="py-1">{u.email}</td>
-          <td>{u.role}</td>
-          <td class="flex flex-wrap gap-2 py-1">
-            <form method="POST" action="?/setPassword" class="flex gap-1">
-              <input type="hidden" name="id" value={u.id} />
-              <input name="password" type="text" placeholder="новый пароль" class="w-28 rounded border px-1 text-xs" />
-              <button class="text-blue-600">пароль</button>
-            </form>
-            <form method="POST" action="?/setRole" class="flex gap-1">
-              <input type="hidden" name="id" value={u.id} />
-              <select name="role" class="rounded border text-xs"><option value="manager" selected={u.role==='manager'}>manager</option><option value="admin" selected={u.role==='admin'}>admin</option></select>
-              <button class="text-blue-600">роль</button>
-            </form>
-            <form method="POST" action="?/delete"><input type="hidden" name="id" value={u.id} /><button class="text-red-600">удалить</button></form>
-          </td>
-        </tr>
-      {/each}
-    </tbody>
-  </table>
+    <section class="pane">
+      <div class="pane-head">Пользователи <span class="aside app-num">{data.users.length}</span></div>
+      <div class="overflow-x-auto">
+        <table class="app-table">
+          <thead><tr><th>email</th><th>роль</th><th>действия</th></tr></thead>
+          <tbody>
+            {#each data.users as u (u.id)}
+              <tr>
+                <td class="font-medium text-ink">{u.email}</td>
+                <td><span class="badge {u.role === 'admin' ? 'badge-acc' : 'badge-muted'}">{u.role}</span></td>
+                <td>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <form method="POST" action="?/setPassword" class="flex gap-1">
+                      <input type="hidden" name="id" value={u.id} />
+                      <input name="password" type="text" placeholder="новый пароль" aria-label="новый пароль" class="input h-6 w-28 text-xs" />
+                      <button class="btn btn-sec btn-sm">пароль</button>
+                    </form>
+                    <form method="POST" action="?/setRole" class="flex gap-1">
+                      <input type="hidden" name="id" value={u.id} />
+                      <select name="role" aria-label="роль" class="input h-6 text-xs"><option value="manager" selected={u.role==='manager'}>manager</option><option value="admin" selected={u.role==='admin'}>admin</option></select>
+                      <button class="btn btn-sec btn-sm">роль</button>
+                    </form>
+                    <span class="app-toolbar-divider" aria-hidden="true"></span>
+                    <form method="POST" action="?/delete"><input type="hidden" name="id" value={u.id} /><button class="btn btn-danger btn-sm">удалить</button></form>
+                  </div>
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
 </main>

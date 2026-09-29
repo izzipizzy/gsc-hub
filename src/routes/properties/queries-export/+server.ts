@@ -2,7 +2,7 @@ import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { fetchPerSiteQueries } from '$lib/server/google';
-import { listQueryFilters } from '$lib/server/filters';
+import { filterPatterns, queryHidden } from '$lib/server/filters';
 import { rowsToCsv } from '$lib/server/csv';
 import { requireAdmin } from '$lib/server/guard';
 
@@ -16,11 +16,8 @@ export const GET: RequestHandler = async ({ url, locals }) => {
   // accountId|siteUrl keys the client wants excluded (mirrors the UI's hidden set).
   const hidden = new Set((url.searchParams.get('hidden') ?? '').split(',').filter(Boolean));
 
-  const filters = listQueryFilters(db()).map((f) => f.pattern.toLowerCase());
-  const isFiltered = (q: string) => {
-    const lq = q.toLowerCase();
-    return filters.some((p) => lq.includes(p));
-  };
+  const filters = filterPatterns(db());
+  const isFiltered = (q: string) => queryHidden(q, filters);
 
   const { entries } = await fetchPerSiteQueries(db(), days, 25000);
 

@@ -1,7 +1,15 @@
 import { randomBytes } from 'node:crypto';
 import type { Db } from './db';
 
-export type ConfigKey = 'GOOGLE_CLIENT_ID' | 'GOOGLE_CLIENT_SECRET' | 'AUTH_SECRET' | 'LOGIN_ENABLED';
+export type ConfigKey =
+  | 'GOOGLE_CLIENT_ID'
+  | 'GOOGLE_CLIENT_SECRET'
+  | 'AUTH_SECRET'
+  | 'LOGIN_ENABLED'
+  | 'MAGICLINKS_API_TOKEN'
+  | 'MAGICLINKS_API_BASE'
+  | 'MAGIC369_API_TOKEN'
+  | 'MAGIC369_API_BASE';
 
 function envVal(key: ConfigKey): string | undefined {
   const v = process.env[key];
@@ -27,6 +35,11 @@ export function setConfigValue(db: Db, key: ConfigKey, value: string): void {
     `INSERT INTO app_config (key, value, updated_at) VALUES (?, ?, ?)
      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
   ).run(key, value, Date.now());
+}
+
+/** Убирает значение из базы. Значение из окружения так не снять — там оно и живёт. */
+export function clearConfigValue(db: Db, key: ConfigKey): void {
+  db.prepare('DELETE FROM app_config WHERE key = ?').run(key);
 }
 
 export function setConfigValues(db: Db, values: Partial<Record<ConfigKey, string>>): void {

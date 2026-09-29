@@ -6,13 +6,15 @@
 
 ![Portfolio analytics — striking distance, cannibalization, CTR, branded & decay across all sites](docs/screenshots/portfolio.png)
 
-| All sites — multi-account, sparklines, Bing/IndexNow | Dashboard — sparkline cards |
+| All sites — multi-account, sparklines, Bing/IndexNow | Dashboard — site cards with a separate Today |
 |---|---|
 | ![Sites](docs/screenshots/sites.png) | ![Dashboard](docs/screenshots/dashboard.png) |
 
 ![Top queries](docs/screenshots/queries.png)
 
-Local self-hosted multi-account hub for **Google Search Console**. Connect several Google accounts via OAuth, view all Search Console sites in a single table, aggregate queries and pages across accounts, see per-site dashboards with sparklines and period-over-period deltas, drill into 16-month query history with one click. Since 0.6.0 it also ships a full **SEO analytics suite** — per-site deep-dives (striking distance, cannibalization, CTR benchmark, content decay, branded split, site health) and a portfolio-wide view across all sites — plus Bing/IndexNow and optional multi-user login. No external service, no GSC data leaves your machine, only OAuth tokens (and a little per-site config) persist locally in SQLite. All analytics are live-fetched.
+Local self-hosted multi-account hub for **Google Search Console**. Connect several Google accounts via OAuth, view all Search Console sites in a single table, aggregate queries and pages across accounts, see per-site dashboards with sparklines and period-over-period deltas, drill into 16-month query history with one click. Since 0.6.0 it also ships a full **SEO analytics suite** — per-site deep-dives (striking distance, cannibalization, CTR benchmark, content decay, branded split, site health) and a portfolio-wide view across all sites — plus Bing/IndexNow and optional multi-user login. Since 0.8.0: traffic charts annotated with Google updates and your own site events, a site-scoped machine API with a built-in **MCP server** for AI agents, and optional link buying straight from striking-distance tables. No external service: Search Console data stays on your machine (the one exception is link buying - the query and URL you choose go to the provider you pay). SQLite holds OAuth tokens, your settings and a few caches, never Search Analytics metrics; analytics are fetched live, with a short in-memory cache.
+
+The interface is Russian-first: navigation and table headers are English, many buttons and messages are Russian.
 
 Built as a personal alternative to seogets-style SaaS tools when you have multiple Google accounts (personal, work, clients) and don't want to log in to each Search Console separately.
 
@@ -31,7 +33,7 @@ Built as a personal alternative to seogets-style SaaS tools when you have multip
 - A **totals bar** above the table sums **Sites / Impressions / Clicks** across all non-hidden sites for the selected period.
 - URL-driven sort and filter: `?days=1|3|7|28|60&sort=clicks|impressions|ctr|position|site|account&dir=asc|desc`. Bookmark, share, browser-back work as expected.
 - A **"G" badge** next to each site opens a Google `site:` search for a quick manual indexation check.
-- Hide sites you don't care about (kept in localStorage per browser; doesn't sync).
+- Hide sites you don't care about. The list lives in SQLite, so it is the same in every browser and bulk actions skip hidden sites.
 - Domain properties displayed as `example.com` (the `sc-domain:` GSC prefix is stripped for display, link still goes to `https://example.com/`).
 - Click any site row to expand a quick **URL Inspection** report for its top 10 URLs (verdict, coverage, robots, last crawl, canonical mismatch). Uses Google's URL Inspection API; daily quota is 2000 per Google account. Results are cached for **12 hours** in SQLite (key: account + site + url-set hash). Re-clicking the same site reuses the cache; **Force refresh** button bypasses it. The cache exists because URL Inspection has a hard 2000-call/day quota per Google account. Sites with no/low impressions in the current period fall back to URLs from their **sitemap**: gsc-hub asks Search Console which sitemaps the site submitted, downloads the first one (following sitemapindex if needed), and uses up to 10 page URLs from there. The homepage is always included.
 
@@ -60,23 +62,71 @@ Click through to a single property for a full SEO deep-dive. Tabs:
 
 All tabs are computed live from Search Console; nothing is persisted beyond the editable brand terms and the health cache.
 
-### Portfolio analytics (`/properties/portfolio`)
+### Portfolio analytics (`/properties/striking`, **Portfolio** in the top menu)
 The same lenses across every non-hidden site at once, computed from a single query fan-out:
 - Tabbed **Striking / Cannibalization / CTR / Branded / Decay**, all **URL-addressable** via `?tab=`.
 - **Country (Geo) filter** and **copy-queries-to-clipboard**, both respecting the current filter.
 - Per-decaying-page **index status** via the URL Inspection API, with a direct link into the owning Google account's inspection panel.
 - Async streaming (the shell renders immediately) plus a short in-memory result cache, so re-opens and period switches are instant.
 
+### Traffic charts and site events
+- The site page draws a full traffic chart (clicks, impressions, position) with **Google ranking updates** shaded in, taken from Google's public status feed.
+- The Sites page opens with a **portfolio pulse**: all visible sites summed per day, on the same update bands.
+- **Site events** are your own markers - domain merges (donor → site), migrations, anything worth seeing on the timeline. Add and remove them on the site page; they show up on the charts and dashboard cards. `/events` lists all of them in one table.
+
 ### Bing Webmaster + IndexNow
 - Bing performance data alongside GSC, with merged GSC/Bing keyword rollups.
 - **Submit sitemap to Bing** and **push URLs to IndexNow**, plus an IndexNow-key indicator per site.
 - Requires `BING_API_KEY` (see [Configuration](#configuration)).
+
+### Machine API (`/api`)
+- Create API keys on `/api`. A key is shown once; only its sha256 is stored. Each key can be limited to a list of sites - everything else is invisible to it (`404`, not `403`).
+- `GET /api/v1/sites`, `/queries`, `/query-pages`, `/properties`, `/countries`, `/site-countries` give a script or a SERP monitor the same numbers the UI shows. `POST /api/v1/site-events` records a domain merge.
+- Agent-facing documentation is served at `/api/v1/doc.md` (with a key).
+
+### MCP server & agent skills
+
+- A built-in **MCP server** at `/api/v1/mcp`: Claude Code, Claude Desktop, Cursor
+  or any Streamable-HTTP MCP client reads your Search Console data directly.
+  Nine **read-only** tools - portfolio summary, per-site queries, pages for a
+  query, striking distance, cannibalization, CTR benchmark, content decay,
+  country split and domain-merge events.
+- **Keys are scoped to sites.** Create as many keys as you need on `/api` and
+  tick which properties each one may see: an agent working on one pool, a
+  contractor on a single site. Everything outside the scope is invisible -
+  missing from lists, `404` when asked for by name. A key with nothing ticked
+  sees all sites, which is how keys behaved before scopes existed.
+- The MCP surface never writes: no merges, no purchases, no edits, so an agent
+  talking MCP cannot change anything or spend money. The key itself is not
+  read-only, though: the same Bearer is accepted by the REST endpoint
+  `POST /api/v1/site-events`, which records a domain merge on a site in the
+  key's scope. Hand out keys with that in mind.
+- **Four agent skills** ship with the hub (striking plan, cannibalization,
+  decay triage, portfolio review). They are served by the same instance as MCP
+  prompts - `/mcp__gsc-hub__gsc-striking-plan` in Claude Code - and as files over
+  `/api/v1/skills`, so installing them needs a key and a URL, not a copy of this
+  repository. See [docs/MCP-SETUP.md](docs/MCP-SETUP.md).
+
+```bash
+claude mcp add --transport http gsc-hub https://your-hub.example.com/api/v1/mcp \
+  --header "Authorization: Bearer gsk_your_key"
+```
+
+### Link buying (MagicLinks, optional)
+- Buy posts with links to pages that sit in striking distance, straight from the striking tables (portfolio and per site): tick rows, get a quote, pay. Two providers are supported, and the purchase window picks the one with the larger balance by default:
+  - **FieldLink** - two-step purchase (task → quote → order), the quoted amount is re-checked when the order is sent. [Sign up](https://seoboost-root.info/r/flt_czhTpL1GKPqQXI2h1c463ULMS2IEzV6fjJow2hiGlMg) (referral link), then create an API key in the dashboard.
+  - **Magic 369** (`magiclinks.online`) - one-step purchase, charged when the order is created; the price is re-checked right before. For an account and an API key, message [@links_369](https://t.me/links_369) on Telegram.
+- `/magiclinks` holds both keys, balances and every order with its provider, progress and (for FieldLink) search-indexing status; each order opens to its positions and published URLs, with a CSV export.
+- Service data is never cached: orders and statuses are read live. The hub keeps only the keys and a purchase trail (which query/URL pairs were already bought), so striking tables can mark them.
+- Nothing here is on by default - without a key the feature stays out of the way.
+- Disclosure: both integrations are affiliate ones. The FieldLink sign-up link is a referral link, and requests to Magic 369 carry the author's referral ID (`X-Referal-ID`).
 
 ### Optional login & roles
 - **Off by default** — the tool stays single-user and loopback-only. Set `ADMIN_EMAIL` / `ADMIN_PASSWORD` to turn on a login form, server sessions (argon2-hashed passwords), a user-management page, and roles (**admin** / **manager**) with per-owner account scoping.
 - Intended for when you expose the app beyond `127.0.0.1`; secure cookies switch on automatically once `ORIGIN` starts with `https://`.
 
 ### Dashboard (`/dashboard`)
+- A separate **Today** block: the current day in Search Console's timezone, still accumulating, deliberately not compared with anything.
 - Grid of per-site cards: account label, site, sparkline of daily clicks for the current period, four metrics with **deltas vs the previous period of the same length** (e.g., last 7 days vs the 7 days before that). Green/red, also dual-encoded with `+` / `−` so colour-blind users get the signal.
 - Configurable density: **2 / 4 / 6 columns** via URL `?cols=`. Same period filter as Sites.
 - Stable order across reloads (clicks desc, impressions tiebreaker, then alphabetical).
@@ -90,7 +140,7 @@ The same lenses across every non-hidden site at once, computed from a single que
 - **Refresh** preserves all URL state (period, sort, dir, cols) via SvelteKit's `invalidateAll()`. No `<form method="POST">` redirect dance.
 - All numbers in tables are tabular-nums for vertical alignment.
 - Light hover affordance on rows. Sortable headers show ↑ / ↓.
-- **No data is cached server-side.** Every page load is a live fan-out across active accounts. The cost is honest latency. The benefit is you see exactly what GSC sees, right now.
+- **Short in-memory cache.** Search Console responses are kept in process memory for up to 60 minutes, so page switches are fast and quota lasts; **Refresh** drops the cache, and a restart starts cold. Search Analytics responses never reach the database; the disk exceptions (URL Inspection cache, bought query + URL pairs) are listed under [Privacy](#privacy-and-data-handling).
 - No background jobs, no cron, no queues, no email.
 
 ## Quickstart
@@ -119,10 +169,14 @@ For a long-running local deploy, use Docker Compose instead — see [Deploying w
    choose access mode (loopback-only or exposed-with-login), and save. No manual
    `.env` editing — `AUTH_SECRET` is generated for you and stored in SQLite.
 
-If you're exposing the app on a public URL, set `GOOGLE_*`/`ADMIN_*` in env before
-exposing it, or complete `/setup` yourself first — until setup completes, `/setup`
-is open with no authentication and the first visitor to reach it could claim the
-admin account.
+If the app will be reachable from other machines, set `GOOGLE_CLIENT_ID`,
+`GOOGLE_CLIENT_SECRET`, `ADMIN_EMAIL` and `ADMIN_PASSWORD` in the environment
+before exposing it (or finish the wizard over loopback first, with login
+enabled). An exposed instance without Google credentials, a login and an admin
+answers `503` to everything - the anonymous wizard and single-user mode are
+loopback-only. The bundled `compose.yaml` sets `EXPOSED_MODE=0`, which declares
+the OrbStack network trusted and keeps single-user mode; drop it if that network
+is not yours alone.
 
 The detailed GCP OAuth walkthrough below is only needed to obtain the two values
 the wizard asks for. Everything under "Configuration" is optional / for automated
@@ -157,6 +211,11 @@ The `webmasters` scope is a "sensitive scope" in Google's classification, but Go
 | `PAGESPEED_KEY` | optional | Google API key for the Site Health tab (Core Web Vitals via PageSpeed Insights). Enable the **PageSpeed Insights API**. One Google API key can serve both Health checks. |
 | `GOOGLE_SAFE_BROWSING_KEY` | optional | Google API key for the Site Health tab's Safe Browsing check. Enable the **Safe Browsing API** — the same key as `PAGESPEED_KEY` works. Without these two, the Health tab stays hidden; nothing else needs them. |
 | `BING_API_KEY` | optional | Bing Webmaster API key — enables Bing data, "Submit to Bing", and IndexNow push. |
+| `SERP_API_TOKEN` | optional | Shared token the SERP monitor presents to `GET /api/v1/sites` and `GET /api/v1/queries`. Keys created on `/api` are accepted as well; with neither, the machine API rejects every request - it is never open. |
+| `SERP_MONITOR_URL` | optional | Base URL of the SERP monitor (e.g. `https://serp.example.com`). Enables the real-position column and the "check now" button on a site page. |
+| `SERP_MONITOR_TOKEN` | optional | Token this hub presents to the SERP monitor. Without it the site page says the integration is off rather than claiming the site is not monitored. |
+| `MAGICLINKS_API_TOKEN` | optional | FieldLink key for link buying. Usually entered on `/magiclinks` instead; the env var wins over the stored one. |
+| `MAGIC369_API_TOKEN` | optional | Magic 369 key for link buying, same rules. Keys are issued via [@links_369](https://t.me/links_369). |
 | `GSC_CONCURRENCY` | optional | Concurrent Search Console calls per fan-out. Defaults to `8`. Guards the local socket pool — unbounded, a ~200-site account times out the whole batch. Lower it if you still see connect timeouts. |
 | `GSC_INSPECT_CONCURRENCY` | optional | Concurrent URL Inspection calls. Defaults to `4` — lower on purpose, since inspection is capped by quota (2000/day and 600/min per property), not by sockets. |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | optional | Set both to enable multi-user login/roles (seeds an admin on first start). Leave unset for the default single-user, loopback-only mode. |
@@ -174,53 +233,26 @@ The `webmasters` scope is a "sensitive scope" in Google's classification, but Go
                                                                        └──> ./data/gsc-hub.db  (only OAuth tokens)
 ```
 
-One Node process. One SQLite file. The DB schema is small — tokens plus a little per-site config and an external-check cache:
+One Node process. One SQLite file. Tables are created and migrated at startup:
 
-```sql
-CREATE TABLE google_accounts (
-  id            TEXT PRIMARY KEY,    -- google sub
-  email         TEXT NOT NULL,
-  label         TEXT,
-  access_token  TEXT NOT NULL,
-  refresh_token TEXT NOT NULL,
-  expires_at    INTEGER NOT NULL,
-  scope         TEXT NOT NULL,
-  status        TEXT NOT NULL DEFAULT 'active',  -- active | revoked | error
-  last_error    TEXT,
-  added_at      INTEGER NOT NULL
-);
+| table | holds |
+|---|---|
+| `google_accounts` | OAuth tokens of connected Google accounts |
+| `users`, `sessions` | optional login (argon2 hashes, server sessions) |
+| `app_config` | settings from the setup wizard and service keys (env wins over the DB) |
+| `api_keys` | machine API keys: sha256 hash, prefix and site scope |
+| `hidden_sites`, `query_filters` | what you hid: sites and junk query patterns |
+| `site_branded_keywords`, `site_dates` | per-site brand terms and creation dates |
+| `site_events` | your timeline markers (domain merges and the like) |
+| `indexnow_keys` | per-site IndexNow keys |
+| `url_inspection_cache`, `site_health` | caches of URL Inspection (12 h) and external health checks |
+| `magiclinks_purchases` | purchase trail: which query + URL pairs were bought, from which provider |
 
-CREATE TABLE url_inspection_cache (
-  account_id   TEXT NOT NULL,
-  site_url     TEXT NOT NULL,
-  urls_hash    TEXT NOT NULL,
-  fetched_at   INTEGER NOT NULL,
-  payload      TEXT NOT NULL,
-  PRIMARY KEY (account_id, site_url, urls_hash)
-);
-
-CREATE TABLE site_branded_keywords (
-  site_url    TEXT PRIMARY KEY,
-  terms       TEXT,
-  updated_at  INTEGER
-);
-
-CREATE TABLE site_health (
-  site_url    TEXT PRIMARY KEY,
-  data        TEXT,
-  checked_at  INTEGER
-);
-```
-
-All four tables are created by the startup migration. When the optional login is enabled (`ADMIN_EMAIL`/`ADMIN_PASSWORD` set), two more tables — `users` and `sessions` — are seeded on first start.
-
-**No GSC analytics data is persisted.** Every request to `/properties`, the per-site and portfolio analytics, `/dashboard`, the query-history endpoint or the CSV export does a fresh fan-out to Google. The database holds only OAuth tokens plus small per-site config (brand terms in `site_branded_keywords`) and a cache of the external health checks (`site_health`). Hidden sites are kept in browser localStorage only.
-
-This keeps things simple, eliminates a "stale data" UX class, and means the database file you care about is tiny (a few KB per account). The trade-off is page-load latency proportional to the number of active sites: roughly 2N parallel API calls for the sites view, 3N for the dashboard, 1N for query history.
+**No GSC analytics data is persisted.** Every request to `/properties`, the per-site and portfolio analytics, `/dashboard`, the query-history endpoint or the CSV export goes to Google; the only thing between you and the API is the in-memory cache (up to 60 minutes, dropped by **Refresh**). The cost is page-load latency proportional to the number of active sites on a cold cache.
 
 ### Auth.js custom signIn callback
 
-Auth.js v5 is wired with a custom `signIn` callback that, instead of creating an app session, **upserts the Google profile + tokens into `google_accounts`** keyed by `profile.sub`, then returns `'/'` to redirect cleanly without setting a session cookie. The app has no concept of "logged-in user" beyond local trust (single-user tool, defended by `127.0.0.1` binding in dev).
+Auth.js v5 is wired with a custom `signIn` callback that, instead of creating an app session, **upserts the Google profile + tokens into `google_accounts`** keyed by `profile.sub`, then returns `'/'` to redirect cleanly without setting a session cookie. Connecting a Google account and logging in to the hub are separate things: the Google OAuth flow only adds a Search Console account, while the optional hub login (`ADMIN_EMAIL`/`ADMIN_PASSWORD`, users and roles) is a server session of its own. Without that login the app runs single-user and trusts loopback.
 
 ## Tech stack
 
@@ -238,7 +270,6 @@ No chart libraries: every sparkline and the query-history chart are hand-rolled 
 gsc-hub/
 ├── PRODUCT.md             — strategic context (users, principles, anti-references)
 ├── DESIGN.md              — visual system (colors, typography, components, rules)
-├── DESIGN.json            — sidecar with HTML/CSS snippets per component
 ├── Dockerfile             — multi-stage production image (Node runtime)
 ├── compose.yaml           — Docker Compose: OrbStack domain + loopback port 5173
 ├── src/
@@ -249,31 +280,29 @@ gsc-hub/
 │   │   ├── server/
 │   │   │   ├── db.ts               — SQLite open + migration
 │   │   │   ├── accounts.ts         — CRUD over google_accounts (only file with SQL for that table)
-│   │   │   ├── inspection_cache.ts — 12h SQLite cache for URL Inspection responses
 │   │   │   ├── google.ts           — GSC client, refresh, fan-out, search analytics
+│   │   │   ├── gsc-cache.ts        — 60-minute in-memory cache of GSC responses
+│   │   │   ├── gsc-calendar.ts     — dates the way Search Console means them (Pacific time, completed days)
 │   │   │   ├── analytics.ts        — pure SEO analytics (striking / cannibalization / CTR benchmark / branded split / decay)
+│   │   │   ├── algo-updates.ts     — Google ranking updates for chart bands
+│   │   │   ├── site-events.ts      — your timeline markers (domain merges)
 │   │   │   ├── health.ts           — Site Health (SSL / Safe Browsing / Core Web Vitals)
-│   │   │   ├── branded.ts          — per-site brand terms (site_branded_keywords)
-│   │   │   ├── bing.ts             — Bing Webmaster API client
-│   │   │   ├── indexnow.ts         — IndexNow submit + key handling
+│   │   │   ├── bing.ts, indexnow.ts — Bing Webmaster client, IndexNow submit + keys
+│   │   │   ├── api-keys.ts, api-token.ts — machine API keys and the per-key site scope
+│   │   │   ├── mcp.ts              — MCP server (JSON-RPC over HTTP, read-only tools)
+│   │   │   ├── magiclinks.ts, magic369.ts — link-buying clients (FieldLink, Magic 369)
+│   │   │   ├── guard.ts, auth-session.ts — access guard, optional login and sessions
 │   │   │   └── csv.ts              — RFC 4180 CSV writer
-│   │   └── utils/
-│   │       ├── site.ts            — strip sc-domain: prefix, build proper href + Google site: search
-│   │       └── country.ts         — map GSC country codes to Google SERP URLs
+│   │   └── utils/                  — shared helpers (site/country/language formatting)
 │   └── routes/
 │       ├── +page.svelte           — Accounts list (/)
-│       ├── auth/[...auth]/        — Auth.js catch-all
-│       ├── accounts/[id]/         — delete, relabel
-│       └── properties/
-│           ├── +page.svelte       — Sites table + Top queries + Top pages
-│           ├── [site]/            — per-site analytics detail (analytics / decay / health / branded sub-endpoints)
-│           ├── striking/          — portfolio analytics + decay endpoint
-│           ├── export/+server.ts        — CSV stream
-│           ├── inspect/+server.ts       — URL Inspection (cached)
-│           ├── refresh/+server.ts       — force-refresh helpers
-│           ├── sitemap-urls/+server.ts  — fetch sitemap URLs for inspection fallback
-│           ├── sitemap-submit/+server.ts — (re)submit sitemaps to GSC
-│           └── query-history/+server.ts — 16-month per-query history
+│       ├── setup/                 — first-run setup wizard
+│       ├── dashboard/             — site cards + Today
+│       ├── properties/            — Sites table, per-site analytics ([site]/), portfolio (striking/), exports, sitemaps, IndexNow
+│       ├── events/                — all site events in one table
+│       ├── api/                   — machine API keys page; api/v1/* — machine API and MCP
+│       ├── magiclinks/            — link-buying keys, orders, positions
+│       └── admin/, login/, logout/ — optional multi-user login
 ├── tests/                          — Vitest, mocks fetch/env
 └── data/gsc-hub.db                 — gitignored, created on first run
 ```
@@ -294,26 +323,15 @@ gsc-hub/
 
 ## Tests
 
-62 unit tests cover the server modules:
-- SQLite migration and schema, including `url_inspection_cache` table (`tests/db.test.ts`)
-- SEO analytics pure functions: striking distance, cannibalization, CTR benchmark, branded split, content decay (`tests/analytics.test.ts`)
-- URL Inspection cache: hash determinism, miss, hit, TTL expiry, upsert, delete (`tests/inspection_cache.test.ts`)
-- Accounts CRUD including `markActive` / `markRevoked` / `markError` (`tests/accounts.test.ts`)
-- GSC client: token refresh skew window, 5xx → markError, 401/invalid_grant → markRevoked, fan-out aggregation, per-site queries / pages / daily breakdown / query-history (`tests/google.test.ts`)
-- Sitemap URL fetching and parsing (`tests/sitemap.test.ts`)
-- RFC 4180 CSV escaping (`tests/csv.test.ts`)
-
-Routes are not unit-tested; smoke-tested via `curl` against `pnpm dev`.
+`pnpm test` runs the Vitest suite (~480 tests): SQLite migrations, the GSC client (token refresh, revocation, fan-out, date windows in Search Console's timezone), the pure SEO analytics, CSV and the export, auth and the access guard, the machine API and MCP tools (including a check that MCP stays read-only), both link-buying clients and the release/publish scripts. Routes are covered through their server modules, the Google and vendor APIs through a mocked `fetch`.
 
 ## Privacy and data handling
 
-- The only data persisted on your machine is the OAuth token row per connected Google account.
-- No Search Console data (queries, clicks, impressions, page URLs, ranking positions) is ever written to disk.
-- No analytics, no telemetry, no outbound calls except to Google's APIs.
-- The SQLite file lives in `./data/` (gitignored). Delete it to wipe all connections.
-- Tokens are stored in plaintext. This is acceptable for a local single-user tool; encrypt at rest if you ever expose this beyond `127.0.0.1`.
-- The exception is the URL Inspection cache (`url_inspection_cache` table) which stores response payloads keyed by `(account_id, site_url, urls_hash)` for 12 hours, to avoid burning the daily 2000-call quota on repeat clicks. Delete `data/gsc-hub.db` to wipe it.
-- Two more small tables hold per-site config, not GSC analytics: `site_branded_keywords` (your editable brand terms) and `site_health` (a cache of external SSL / Safe Browsing / Core Web Vitals checks). Both are wiped with the same DB file.
+- Search Analytics responses (queries, clicks, impressions, positions) are never written to disk: they live in process memory for up to 60 minutes and vanish on restart.
+- Two things from Search Console do reach SQLite: URL Inspection results (cached for 12 hours to spare the daily quota) and, if you buy links, the query + URL pairs you bought (so striking tables can mark them). A purchase also sends those queries and URLs to the provider you chose.
+- On disk you have OAuth tokens and your own settings - see the table list in [Architecture](#architecture). The SQLite file lives in `./data/` (gitignored); delete it to wipe everything.
+- Outbound calls go to Google's APIs, plus only what you switch on: Bing Webmaster and IndexNow (`BING_API_KEY`), the SERP monitor (`SERP_MONITOR_URL`), link-buying services (their keys), and the GitHub Releases check from the browser (`UPDATE_CHECK=off` stops it). No analytics, no telemetry.
+- Tokens and service keys are stored in plaintext. That is acceptable for a local single-user tool; encrypt at rest if you ever expose this beyond `127.0.0.1`. Machine API keys are the exception: only their sha256 is stored.
 
 ## Deploying with Docker Compose + OrbStack
 
@@ -332,20 +350,20 @@ docker compose down            # stop (data in ./data persists)
 - `.env` is read via `env_file`; secrets are injected at runtime through `$env/dynamic/private`, not baked into the image.
 - `./data` is bind-mounted, so the SQLite token store survives rebuilds and is shared with `pnpm dev`.
 
-**Security note:** the app has no built-in authentication (single-user tool). The port is intentionally bound to `127.0.0.1` only — do not expose it on `0.0.0.0` or the network, since the DB holds Google OAuth tokens. To publish on a public hostname, front it with an identity-aware proxy (e.g. Cloudflare Access) limited to your email, and add the production callback URL to your Google OAuth client.
+**Security note:** by default the app runs single-user with no login, which is why the port is bound to `127.0.0.1` only - the DB holds Google OAuth tokens. To put it on a network, turn on the built-in login (`ADMIN_EMAIL`/`ADMIN_PASSWORD`, see above); an exposed instance refuses to serve without it. A proxy in front (e.g. Cloudflare Access) is a good extra layer, not a replacement for the login. Add the production callback URL to your Google OAuth client.
 
 ## Updating
 
 ### How you find out there is a new version
 
-The footer prints the version this instance is running — `v0.7.0`, linked to the
+The footer prints the version this instance is running — `v0.8.0`, linked to the
 release notes for that tag. On a dev host the working tree's commit is shown
-beside it (`v0.7.0 · 55f992f`); inside a container there is no git, so only the
+beside it (`v0.8.0 · 3af8529`); inside a container there is no git, so only the
 tag appears.
 
 Once every 12 hours the browser asks the GitHub Releases API for the newest
 release. If it is newer than the running one, a banner appears above the header
-for signed-in users: **Доступна v0.8.0 — что нового**, linked to the release
+for signed-in users: **Доступна v0.9.0 — что нового** (the UI says "v0.9.0 is available - what's new" in Russian), linked to the release
 notes and dismissible per version (the next release shows up again). Nothing is
 checked server-side, nothing is stored in the database, and the answer is cached
 in `localStorage` — so the 12-hour window is per browser, not per instance.
@@ -368,13 +386,13 @@ named volume), not in the image. Schema migrations run automatically at start.
 ```bash
 git pull
 pnpm install    # only needed when dependencies changed
-pnpm dev        # or `pnpm build && node build/index.js`
+pnpm dev        # or: pnpm build && HOST=127.0.0.1 ORIGIN=http://localhost:3000 node build/index.js
 ```
 
 ### Rolling back
 
 ```bash
-git checkout v0.6.8
+git checkout v0.7.1
 docker compose up -d --build
 ```
 
@@ -415,6 +433,8 @@ rule if you automate the decision.
 
 ### Cutting a release (maintainers)
 
+This works only in the maintainer's private source checkout: the publish configuration (`.publish.conf`, `.publicignore`) is deliberately not part of the public tree, so the commands below fail in a public clone.
+
 ```bash
 pnpm release 0.8.0   # bumps package.json and commits — no tag, pushes nothing
 # add the 0.8.0 sections to CHANGELOG.md / CHANGELOG.ru.md, commit them
@@ -430,7 +450,7 @@ confirmation hash and asks you to retype the hash before it pushes
 anything — that prompt is the only thing standing between a private file and
 a public push, so read the list. **Never** set `PUBLISH_CONFIRM=auto` for a
 real release; it exists only for the test suite and skips the check with
-just a warning on stderr. See `CLAUDE.md` for the full release ritual.
+just a warning on stderr.
 
 The footer reads its version from `package.json`, so the bump is what the app
 reports about itself. The version tag is created when the release is published,
@@ -439,14 +459,13 @@ once a **GitHub release** exists for that tag; a pushed tag alone is not enough.
 
 ## Roadmap
 
-The SEO analytics suite (per-site + portfolio: striking distance, cannibalization, CTR benchmark, content decay, branded split, site health), Bing/IndexNow, and optional login/roles all shipped in 0.6.0. Still on the list:
+The SEO analytics suite and Bing/IndexNow shipped in 0.6.0; charts with Google-update bands, site events, the machine API with MCP and link buying in 0.8.0. Still on the list:
 
 - Daily background pull of aggregates into Postgres for trends and period comparisons that span weeks/months without re-querying GSC each time.
-- Charts with hover tooltips on the dashboard cards.
 - Sitemap change monitoring.
 - Alerts on traffic drops.
 
-Analytics stay intentionally live-fetched; a persistent cache will come only when usage shows it's needed. Until then, every load is fresh.
+Analytics stay live-fetched with only the short in-memory cache; a persistent store will come only when usage shows it's needed.
 
 ## License
 

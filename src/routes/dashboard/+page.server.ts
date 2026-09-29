@@ -2,6 +2,7 @@ import type { PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { fetchDailyBreakdown } from '$lib/server/google';
 import { requireAdmin } from '$lib/server/guard';
+import { listSiteEvents, hostOfSite, toChartEvents } from '$lib/server/site-events';
 
 const ALLOWED_COLS = [2, 4, 6] as const;
 type AllowedCols = (typeof ALLOWED_COLS)[number];
@@ -45,7 +46,22 @@ export const load: PageServerLoad = async ({ url, locals }) => {
     if (od !== 0) return od;
     return a.siteUrl.localeCompare(b.siteUrl);
   });
-  return { entries: sorted, errors, days, cols, sort, dir, comparable };
+
+  // Per-site event markers (domain merges etc.) for the card sparklines, matched by
+  // host. Dates outside the entry's window are kept — the card clamps them to the
+  // nearest edge so a merge that just happened is still visible.
+  const eventsByHost = new Map<string, ReturnType<typeof listSiteEvents>>();
+  for (const ev of listSiteEvents(db())) {
+    const arr = eventsByHost.get(ev.siteHost) ?? [];
+    arr.push(ev);
+    eventsByHost.set(ev.siteHost, arr);
+  }
+  const withEvents = sorted.map((e) => ({
+    ...e,
+    events: toChartEvents(eventsByHost.get(hostOfSite(e.siteUrl)) ?? [])
+  }));
+
+  return { entries: withEvents, errors, days, cols, sort, dir, comparable };
 };
 
 export const prerender = false;

@@ -44,6 +44,22 @@ const ALPHA2_TO_HL: Record<string, string> = {
   IN: 'en', PK: 'en', BD: 'bn', LK: 'si', NP: 'ne'
 };
 
+// Обратная карта строится из прямой, а не пишется руками: две независимые
+// таблицы на 249 стран разъезжаются на первой же правке.
+const ALPHA2_TO_ALPHA3: Record<string, string> = Object.fromEntries(
+  Object.entries(ALPHA3_TO_ALPHA2).map(([a3, a2]) => [a2, a3])
+);
+
+/** 'esp' -> 'ES'. Неизвестный код -> null, без догадок. */
+export function alpha3ToAlpha2(code: string): string | null {
+  return ALPHA3_TO_ALPHA2[(code ?? '').toLowerCase()] ?? null;
+}
+
+/** 'es' -> 'esp'. Search Analytics фильтрует страну именно alpha-3. */
+export function alpha2ToAlpha3(code: string): string | null {
+  return ALPHA2_TO_ALPHA3[(code ?? '').toUpperCase()] ?? null;
+}
+
 export function googleSerpUrl(query: string, alpha3: string): string | null {
   if (!query) return null;
   const code = alpha3.toLowerCase();

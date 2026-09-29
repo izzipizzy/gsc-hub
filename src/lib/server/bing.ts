@@ -1,5 +1,7 @@
 import { env as privateEnv } from '$env/dynamic/private';
 
+import { completedDayRange } from './gsc-calendar';
+
 const BASE = 'https://ssl.bing.com/webmaster/api.svc/json';
 
 function apiKey(): string {
@@ -44,6 +46,54 @@ export interface BingQuery {
 export interface BingData {
   traffic: Map<string, BingTraffic>; // host -> recent site-total clicks/impressions
   queries: BingQuery[]; // top queries per site
+}
+
+/** `/Date(1755993600000)/` → `2025-08-24`. Не разобралось — null, без догадок. */
+export function parseBingDate(raw: string): string | null {
+  const match = /\/Date\((\d+)\)\//.exec(raw ?? '');
+  if (!match) return null;
+  return new Date(Number(match[1])).toISOString().slice(0, 10);
+}
+
+/**
+ * Строки серии → агрегат по запросу ВНУТРИ окна.
+ *
+ * Даты в ответе есть всегда, но раньше выбрасывались: без них любой период
+ * был бы обманом — вернулось бы всё окно Bing под видом запрошенных 28 дней.
+ */
+export function aggregateBingRows(
+  rows: { Query: string; Date: string; Clicks: number; Impressions: number; AvgImpressionPosition: number }[],
+  startDate: string,
+  endDate: string
+): { query: string; clicks: number; impressions: number; ctr: number; position: number }[] {
+  const agg = new Map<string, { clicks: number; impressions: number; posW: number; w: number }>();
+  for (const r of rows ?? []) {
+    const day = parseBingDate(r.Date);
+    if (!day || day < startDate || day > endDate) continue;
+    const q = (r.Query ?? '').trim();
+    if (!q || q.startsWith('site:')) continue;
+    const a = agg.get(q) ?? { clicks: 0, impressions: 0, posW: 0, w: 0 };
+    a.clicks += r.Clicks || 0;
+    a.impressions += r.Impressions || 0;
+    a.posW += (r.AvgImpressionPosition || 0) * (r.Impressions || 0);
+    a.w += r.Impressions || 0;
+    agg.set(q, a);
+  }
+  return [...agg.entries()].map(([query, a]) => ({
+    query,
+    clicks: a.clicks,
+    impressions: a.impressions,
+    ctr: a.impressions ? a.clicks / a.impressions : 0,
+    position: a.w > 0 ? a.posW / a.w : 0
+  }));
+}
+
+/**
+ * Ключ процессного кэша. Период входит: один общий кэш иначе отдаёт чужой
+ * диапазон под видом запрошенного.
+ */
+export function bingCacheKey(days: number): string {
+  return `bing|${days}`;
 }
 
 // Concurrency-limited map — Bing throttles bursts, so cap parallel calls.
@@ -142,6 +192,118 @@ export async function getBing(): Promise<BingData> {
   // background. Only a cold start (no cache at all) waits for the fan-out.
   if (bingCache) return bingCache.data;
   return bingInflight;
+}
+
+// Сколько запросов на сайт отдаём наружу. Лимит остаётся: снять его значит
+// материализовать всю серию Bing по всем сайтам в памяти процесса.
+export const BING_PER_SITE_LIMIT = 200;
+
+/**
+ * Сайты Bing с итогами за окно — для /api/v1/sites?source=bing.
+ *
+ * Отдельная функция, а не ветка в Google-веере: у Bing свой список сайтов,
+ * свой API и НЕТ разреза по странам. Прогнать его через Google и пометить
+ * результат как bing значило бы выдать чужие цифры за его.
+ */
+export async function bingSitesByPeriod(days: number): Promise<{
+  sites: { site: string; source: 'bing'; account: string; clicks: number;
+           impressions: number; ctr: number; position: number }[];
+  partial: { account: string; reason: string }[];
+  period_start: string;
+  period_end: string;
+  fetched_at: string;
+  country_supported: false;
+}> {
+  const { startDate, endDate } = completedDayRange(days);
+  const partial: { account: string; reason: string }[] = [];
+  let verified: { host: string; url: string }[] = [];
+  try {
+    const sites = await bingGet<{ Url: string }[]>('GetUserSites');
+    verified = (sites ?? []).map((s) => ({ host: new URL(s.Url).host, url: s.Url }));
+  } catch (e) {
+    partial.push({ account: 'bing', reason: (e as Error).message });
+  }
+
+  const out: {
+    site: string; source: 'bing'; account: string; clicks: number;
+    impressions: number; ctr: number; position: number;
+  }[] = [];
+  await mapPool(verified, 4, async ({ host, url }) => {
+    try {
+      const rows = await bingGet<
+        { Date: string; Impressions: number; Clicks: number; AvgImpressionPosition: number }[]
+      >('GetRankAndTrafficStats', { siteUrl: url });
+      let clicks = 0;
+      let impressions = 0;
+      let posW = 0;
+      for (const r of rows ?? []) {
+        const day = parseBingDate(r.Date);
+        if (!day || day < startDate || day > endDate) continue;
+        clicks += r.Clicks || 0;
+        impressions += r.Impressions || 0;
+        posW += (r.AvgImpressionPosition || 0) * (r.Impressions || 0);
+      }
+      if (impressions > 0) {
+        out.push({
+          site: host, source: 'bing', account: 'bing',
+          clicks, impressions,
+          ctr: clicks / impressions,
+          position: posW / impressions
+        });
+      }
+    } catch (e) {
+      partial.push({ account: host, reason: (e as Error).message });
+    }
+  });
+
+  return {
+    sites: out,
+    partial,
+    period_start: startDate,
+    period_end: endDate,
+    fetched_at: new Date().toISOString(),
+    country_supported: false
+  };
+}
+
+/**
+ * Запросы одного сайта Bing за окно — для /api/v1/queries?source=bing.
+ *
+ * `country_supported: false` не косметика: у GetQueryStats разреза по
+ * странам нет вовсе, и потребитель обязан сказать это словами, а не сделать
+ * вид, что отфильтровал.
+ */
+export async function bingQueriesForSite(site: string, days: number): Promise<{
+  rows: { query: string; clicks: number; impressions: number; ctr: number; position: number }[];
+  period_start: string;
+  period_end: string;
+  fetched_at: string;
+  data_state: 'all';
+  truncated: boolean;
+  max_rows: number;
+  source: 'bing';
+  account: string;
+  country_supported: false;
+}> {
+  const { startDate, endDate } = completedDayRange(days);
+  const rows = await bingGet<
+    { Query: string; Date: string; Impressions: number; Clicks: number; AvgImpressionPosition: number }[]
+  >('GetQueryStats', { siteUrl: siteToUrl(site) });
+  const all = aggregateBingRows(rows ?? [], startDate, endDate)
+    .sort((a, b) => b.impressions - a.impressions);
+  const kept = all.slice(0, BING_PER_SITE_LIMIT);
+  return {
+    rows: kept,
+    period_start: startDate,
+    period_end: endDate,
+    fetched_at: new Date().toISOString(),
+    data_state: 'all',
+    truncated: all.length > kept.length,
+    max_rows: BING_PER_SITE_LIMIT,
+    source: 'bing',
+    account: 'bing',
+    country_supported: false
+  };
 }
 
 // Submit a sitemap to Bing Webmaster (the API method is SubmitFeed). Throws on error.

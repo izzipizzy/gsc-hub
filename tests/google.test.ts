@@ -346,6 +346,37 @@ describe('google.searchAnalyticsQuery', () => {
     ).rejects.toThrow(/401/);
     expect(getAccount(db, 'a1')!.status).toBe('revoked');
   });
+
+  it('caches by the whole body: different filters are different entries', async () => {
+    const future = Math.floor(Date.now() / 1000) + 3600;
+    upsertAccount(db, {
+      id: 'a1', email: 'a1@x', access_token: 't1', refresh_token: 'r', expires_at: future, scope: 's'
+    });
+    // Answers with the filter expression it was asked about, so a cache hit
+    // on the wrong entry shows up as the wrong key.
+    const fetchMock = vi.fn(async (_url: unknown, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      const expr = body.dimensionFilterGroups?.[0]?.filters?.[0]?.expression ?? '';
+      return new Response(
+        JSON.stringify({ rows: [{ keys: [expr], clicks: 1, impressions: 1, ctr: 1, position: 1 }] }),
+        { status: 200 }
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const acc = getAccount(db, 'a1')!;
+    const ask = (expression: string) =>
+      searchAnalyticsQuery(db, acc, 'https://a.com/', {
+        startDate: '2026-04-01', endDate: '2026-04-28', dimensions: ['date'],
+        dimensionFilterGroups: [{ filters: [{ dimension: 'query', operator: 'equals', expression }] }]
+      });
+
+    expect((await ask('alpha'))[0].keys[0]).toBe('alpha');
+    expect((await ask('beta'))[0].keys[0]).toBe('beta');
+    // The same filter again is a genuine hit.
+    expect((await ask('alpha'))[0].keys[0]).toBe('alpha');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('google.listSitesWithSummary', () => {

@@ -10,26 +10,26 @@
 
 <svelte:head><title>Accounts — gsc-hub</title></svelte:head>
 
-<main class="w-full p-3 sm:p-6">
+<main class="page">
   <header class="app-toolbar">
     <div class="app-toolbar-left">
       <nav class="app-breadcrumbs">
         <span>gsc-hub</span>
         <span aria-hidden="true">/</span>
-        <span class="text-gray-800">Accounts</span>
+        <span class="text-ink-2">Accounts</span>
       </nav>
       <h1 class="app-pagetitle">Connected Google accounts</h1>
     </div>
     <div class="app-toolbar-right">
       {#if isAdmin}
-        <a href="/properties" class="app-pill app-pill-secondary">Sites</a>
-        <a href="/dashboard" class="app-pill app-pill-secondary">Dashboard</a>
+        <a href="/properties" class="btn btn-sec">Sites</a>
+        <a href="/dashboard" class="btn btn-sec">Dashboard</a>
       {/if}
       <span class="app-toolbar-divider" aria-hidden="true"></span>
       <form method="POST" action="?/connect">
         <input type="hidden" name="providerId" value="google" />
-        <button type="submit" class="app-pill app-pill-primary">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3v8M3 7h8" /></svg>
+        <button type="submit" class="btn btn-pri">
+          <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3v8M3 7h8" /></svg>
           Connect Google account
         </button>
       </form>
@@ -39,63 +39,65 @@
   {#if data.accounts.length === 0}
     <div class="app-empty">
       <div class="app-empty-title">No connected accounts yet</div>
-      <p class="app-empty-sub">Click <span class="font-medium text-gray-700">Connect Google account</span> above to authorize one or more accounts. OAuth tokens stay local in <code class="rounded bg-gray-100 px-1 py-0.5 text-[11px] text-gray-700">data/gsc-hub.db</code>.</p>
+      <p class="app-empty-sub">Click <span class="font-medium text-ink-2">Connect Google account</span> above to authorize one or more accounts. OAuth tokens stay local in <code class="rounded bg-sunk px-1 py-0.5 font-mono text-[11px] text-ink-2">data/gsc-hub.db</code>.</p>
     </div>
   {:else}
-    <div class="-mx-3 overflow-x-auto sm:-mx-6">
-    <table class="app-table">
-      <thead>
-        <tr>
-          <th class="pl-3 sm:pl-6">Email</th>
-          {#if isAdmin}<th class="hidden sm:table-cell">Label</th>{/if}
-          <th>Status</th>
-          <th class="hidden md:table-cell">Added</th>
-          {#if isAdmin}<th class="hidden lg:table-cell text-xs text-gray-500">Owner</th>{/if}
-          {#if isAdmin}<th class="w-px pr-3 text-right sm:pr-6">Actions</th>{/if}
-        </tr>
-      </thead>
-      <tbody>
-        {#each data.accounts as a (a.id)}
+    <section class="pane">
+      <div class="pane-head">Accounts <span class="aside app-num">{data.accounts.length}</span></div>
+      <div class="overflow-x-auto">
+      <table class="app-table">
+        <thead>
           <tr>
-            <td class="break-all pl-3 font-medium text-gray-900 sm:pl-6">{a.email}</td>
-            {#if isAdmin}
-            <td class="hidden sm:table-cell">
-              <form method="POST" action="/accounts/{a.id}/relabel" class="flex items-center gap-1">
-                <input
-                  name="label"
-                  value={a.label ?? ''}
-                  class="w-32 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-800 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  placeholder="—"
-                />
-                <button type="submit" class="app-pill app-pill-secondary !px-2 !py-1">Save</button>
-              </form>
-            </td>
-            {/if}
-            <td>
-              <span class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium {a.status === 'active' ? 'bg-green-50 text-green-800' : a.status === 'revoked' ? 'bg-red-50 text-red-800' : 'bg-yellow-50 text-yellow-800'}" title={a.last_error ?? ''}>
-                <span class="app-status-dot {a.status === 'active' ? 'bg-green-500' : a.status === 'revoked' ? 'bg-red-500' : 'bg-yellow-500'}"></span>
-                {a.status}
-              </span>
-            </td>
-            <td class="app-num hidden text-xs text-gray-500 md:table-cell">{fmtDate(a.added_at)}</td>
-            {#if isAdmin}
-            <td class="hidden lg:table-cell text-xs text-gray-500">{a.owner_id ?? '—'}</td>
-            <td class="pr-3 text-right sm:pr-6">
-              <form method="POST" action="/accounts/{a.id}/delete" class="inline-block">
-                <button
-                  type="submit"
-                  class="rounded px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
-                  onclick={(e) => {
-                    if (!confirm('Delete this account connection?')) e.preventDefault();
-                  }}
-                >Delete</button>
-              </form>
-            </td>
-            {/if}
+            <th>Email</th>
+            {#if isAdmin}<th class="hidden sm:table-cell">Label</th>{/if}
+            <th>Status</th>
+            <th class="hidden md:table-cell">Added</th>
+            {#if isAdmin}<th class="hidden lg:table-cell">Owner</th>{/if}
+            {#if isAdmin}<th class="w-px text-right">Actions</th>{/if}
           </tr>
-        {/each}
-      </tbody>
-    </table>
-    </div>
+        </thead>
+        <tbody>
+          {#each data.accounts as a (a.id)}
+            <tr>
+              <td class="break-all font-medium text-ink">{a.email}</td>
+              {#if isAdmin}
+              <td class="hidden sm:table-cell">
+                <form method="POST" action="/accounts/{a.id}/relabel" class="flex items-center gap-1">
+                  <input
+                    name="label"
+                    value={a.label ?? ''}
+                    class="input h-6 w-32 text-xs"
+                    placeholder="—"
+                  />
+                  <button type="submit" class="btn btn-sec btn-sm">Save</button>
+                </form>
+              </td>
+              {/if}
+              <td>
+                <span class="badge {a.status === 'active' ? 'badge-ok' : a.status === 'revoked' ? 'badge-bad' : 'badge-warn'}" title={a.last_error ?? ''}>
+                  {a.status}
+                </span>
+              </td>
+              <td class="app-num hidden text-ink-3 md:table-cell">{fmtDate(a.added_at)}</td>
+              {#if isAdmin}
+              <td class="app-num hidden text-ink-3 lg:table-cell">{a.owner_id ?? '—'}</td>
+              <td class="text-right">
+                <form method="POST" action="/accounts/{a.id}/delete" class="inline-block">
+                  <button
+                    type="submit"
+                    class="btn btn-danger btn-sm"
+                    onclick={(e) => {
+                      if (!confirm('Delete this account connection?')) e.preventDefault();
+                    }}
+                  >Delete</button>
+                </form>
+              </td>
+              {/if}
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+      </div>
+    </section>
   {/if}
 </main>

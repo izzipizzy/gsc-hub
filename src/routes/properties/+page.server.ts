@@ -73,7 +73,7 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 
   // Flag sites without an IndexNow key (no {key}.txt → not wired up for Bing/IndexNow),
   // attach recent Bing traffic (best-effort; empty if no BING_API_KEY) and the site's
-  // creation date (from git.local repos, synced by scripts/sync-site-dates.py).
+  // creation date (from the site_dates table, filled by an external import).
   const indexNowHosts = listIndexNowHosts(db());
   const siteDates = listSiteDates(db());
   const enriched = sitesResult.sites.map((s) => {

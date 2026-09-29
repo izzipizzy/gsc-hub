@@ -1,4 +1,5 @@
 import type { Db } from './db';
+import { gscCached } from './gsc-cache';
 import { addCalendarDays, gscToday, completedDayRange } from './gsc-calendar';
 import { INSPECT_LIMIT, mapSettledLimit } from './concurrency';
 import { getGoogleClientId, getGoogleClientSecret } from './config';
@@ -9,6 +10,8 @@ import {
   markRevoked,
   updateTokens
 } from './accounts';
+import { listHiddenSites } from './hidden';
+import { hostOfSite } from './site-events';
 
 const REFRESH_URL = 'https://oauth2.googleapis.com/token';
 const SITES_URL = 'https://searchconsole.googleapis.com/webmasters/v3/sites';
@@ -121,26 +124,28 @@ export async function listSitesForAccount(
   db: Db,
   acc: AccountRow
 ): Promise<SiteRow[]> {
-  const res = await authorizedFetch(db, acc, SITES_URL);
-  if (res.status === 401) {
-    markRevoked(db, acc.id, 'sites.list 401');
-    throw new Error('401 unauthorized');
-  }
-  if (!res.ok) {
-    const text = await res.text();
-    markError(db, acc.id, `sites.list ${res.status}: ${text.slice(0, 200)}`);
-    throw new Error(`sites.list ${res.status}`);
-  }
-  const json = (await res.json()) as {
-    siteEntry?: { siteUrl: string; permissionLevel: string }[];
-  };
-  return (json.siteEntry ?? []).map((s) => ({
-    siteUrl: s.siteUrl,
-    permissionLevel: s.permissionLevel,
-    accountId: acc.id,
-    accountEmail: acc.email,
-    accountLabel: acc.label
-  }));
+  return gscCached(`sites:${acc.id}`, async () => {
+    const res = await authorizedFetch(db, acc, SITES_URL);
+    if (res.status === 401) {
+      markRevoked(db, acc.id, 'sites.list 401');
+      throw new Error('401 unauthorized');
+    }
+    if (!res.ok) {
+      const text = await res.text();
+      markError(db, acc.id, `sites.list ${res.status}: ${text.slice(0, 200)}`);
+      throw new Error(`sites.list ${res.status}`);
+    }
+    const json = (await res.json()) as {
+      siteEntry?: { siteUrl: string; permissionLevel: string }[];
+    };
+    return (json.siteEntry ?? []).map((s) => ({
+      siteUrl: s.siteUrl,
+      permissionLevel: s.permissionLevel,
+      accountId: acc.id,
+      accountEmail: acc.email,
+      accountLabel: acc.label
+    }));
+  });
 }
 
 export async function listSitesForAllAccounts(db: Db): Promise<SitesFanOut> {
@@ -200,21 +205,40 @@ export async function searchAnalyticsQuery(
   // Default to fresh data ('all') so short windows like days=1 work.
   // Callers can override with dataState: 'final' for stable-only queries.
   const payload: SearchAnalyticsBody = { dataState: 'all', ...body };
-  const res = await authorizedFetch(
-    db,
-    acc,
-    SEARCH_ANALYTICS_URL(siteUrl),
-    { method: 'POST', body: JSON.stringify(payload) }
+  return gscCached(`saq:${acc.id}:${siteUrl}:${stableKey(payload)}`, async () => {
+    const res = await authorizedFetch(
+      db,
+      acc,
+      SEARCH_ANALYTICS_URL(siteUrl),
+      { method: 'POST', body: JSON.stringify(payload) }
+    );
+    if (res.status === 401) {
+      markRevoked(db, acc.id, 'searchAnalytics 401');
+      throw new Error('searchAnalytics 401 unauthorized');
+    }
+    if (!res.ok) {
+      throw new Error(`searchAnalytics ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    }
+    const json = (await res.json()) as { rows?: SearchAnalyticsRow[] };
+    return json.rows ?? [];
+  });
+}
+
+// Deterministic key for a cache entry: the whole body, nested filters
+// included, with object keys sorted at every level so the spelling of the
+// literal does not matter. Array order is kept - it carries meaning. Flattening
+// with String() once turned every filter into "[object Object]", and one
+// query's history was served for another.
+function stableKey(value: unknown): string {
+  return JSON.stringify(value, (_k, v: unknown) =>
+    v && typeof v === 'object' && !Array.isArray(v)
+      ? Object.fromEntries(
+          Object.keys(v as Record<string, unknown>)
+            .sort()
+            .map((k) => [k, (v as Record<string, unknown>)[k]])
+        )
+      : v
   );
-  if (res.status === 401) {
-    markRevoked(db, acc.id, 'searchAnalytics 401');
-    throw new Error('searchAnalytics 401 unauthorized');
-  }
-  if (!res.ok) {
-    throw new Error(`searchAnalytics ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  }
-  const json = (await res.json()) as { rows?: SearchAnalyticsRow[] };
-  return json.rows ?? [];
 }
 
 // Search Console returns at most 25,000 rows per response and never says that
@@ -1242,7 +1266,7 @@ export interface SiteDaily {
   impressions: number;
   ctr: number;
   position: number;
-  series: { date: string; clicks: number }[]; // oldest → newest
+  series: { date: string; clicks: number; impressions: number }[]; // oldest → newest
 }
 
 // One GSC call, dims=['date']: aggregate totals + daily series for a single site (sparkline +
@@ -1269,6 +1293,86 @@ export async function fetchSiteDaily(
     impressions,
     ctr: impressions > 0 ? clicks / impressions : 0,
     position: impressions > 0 ? posWeight / impressions : 0,
-    series: sorted.map((x) => ({ date: x.keys[0] ?? '', clicks: x.clicks }))
+    series: sorted.map((x) => ({ date: x.keys[0] ?? '', clicks: x.clicks, impressions: x.impressions }))
+  };
+}
+
+export interface PortfolioDaily {
+  totals: { clicks: number; impressions: number; ctr: number };
+  series: { date: string; clicks: number; impressions: number }[]; // oldest → newest
+}
+
+export interface PortfolioDailyFanOut {
+  daily: PortfolioDaily;
+  hosts: string[]; // bare hosts of the sites included in the aggregate (hidden excluded)
+  errors: { accountId: string; accountEmail: string; reason: string }[];
+}
+
+// Portfolio pulse: one dims=['date'] call per site, aggregated by calendar date across
+// every connected account. Hidden sites are excluded so the pulse matches the visible
+// list. Same call count as the sites list — call lazily, not on the main render path.
+export async function fetchPortfolioDaily(db: Db, days: number = 180): Promise<PortfolioDailyFanOut> {
+  const accounts = listAccounts(db).filter((a) => a.status === 'active');
+  const hidden = new Set(listHiddenSites(db));
+
+  const perAccount = await Promise.allSettled(
+    accounts.map((a) => listSitesForAccount(db, a).then((sites) => ({ acc: a, sites })))
+  );
+
+  const pairs: { acc: AccountRow; site: SiteRow }[] = [];
+  const errors: PortfolioDailyFanOut['errors'] = [];
+  perAccount.forEach((r, i) => {
+    const acc = accounts[i];
+    if (r.status === 'fulfilled') {
+      r.value.sites.forEach((s) => {
+        if (!hidden.has(`${acc.id}|${s.siteUrl}`)) pairs.push({ acc, site: s });
+      });
+    } else {
+      errors.push({ accountId: acc.id, accountEmail: acc.email, reason: (r.reason as Error).message });
+    }
+  });
+
+  if (pairs.length === 0) {
+    return { daily: { totals: { clicks: 0, impressions: 0, ctr: 0 }, series: [] }, hosts: [], errors };
+  }
+
+  const { startDate, endDate } = gscDateRange(days);
+  const settled = await mapSettledLimit(pairs, ({ acc, site }) =>
+    searchAnalyticsQuery(db, acc, site.siteUrl, {
+      startDate,
+      endDate,
+      dimensions: ['date'],
+      rowLimit: 500
+    })
+  );
+
+  // Sum every site's rows into one per-date bucket. Positions are dropped on purpose:
+  // an average across domains of different sizes describes no domain in particular.
+  const byDate = new Map<string, { clicks: number; impressions: number }>();
+  settled.forEach((r, i) => {
+    if (r.status !== 'fulfilled') return;
+    for (const x of r.value) {
+      const d = x.keys[0] ?? '';
+      if (!d) continue;
+      const cur = byDate.get(d) ?? { clicks: 0, impressions: 0 };
+      cur.clicks += x.clicks;
+      cur.impressions += x.impressions;
+      byDate.set(d, cur);
+    }
+  });
+
+  const series = [...byDate.entries()]
+    .map(([date, b]) => ({ date, clicks: b.clicks, impressions: b.impressions }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const clicks = series.reduce((s, x) => s + x.clicks, 0);
+  const impressions = series.reduce((s, x) => s + x.impressions, 0);
+
+  return {
+    daily: {
+      totals: { clicks, impressions, ctr: impressions > 0 ? clicks / impressions : 0 },
+      series
+    },
+    hosts: [...new Set(pairs.map(({ site }) => hostOfSite(site.siteUrl)))],
+    errors
   };
 }

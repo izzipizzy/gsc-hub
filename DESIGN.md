@@ -1,266 +1,374 @@
 ---
 name: gsc-hub
-description: Локальный мульти-аккаунт хаб для Google Search Console — функциональный, плотный, без фуфла.
+description: Мульти-аккаунт хаб Google Search Console в виде светлого торгового терминала - каждый сайт это тикер.
 colors:
-  operator-blue: "#2563eb"
-  operator-blue-deep: "#1d4ed8"
-  operator-blue-mist: "#dbeafe"
-  operator-blue-haze: "#eff6ff"
-  rank-decay-red: "#dc2626"
-  drift-red: "#b91c1c"
-  drift-red-tint: "#fee2e2"
-  drift-red-vapor: "#fef2f2"
-  alert-red-edge: "#fca5a5"
-  drift-red-ink: "#991b1b"
-  live-pulse-green: "#16a34a"
-  live-pulse-tint: "#dcfce7"
-  live-pulse-ink: "#166534"
-  warning-amber-tint: "#fef9c3"
-  warning-amber-ink: "#854d0e"
-  impression-mist: "#bfdbfe"
-  console-fog-50: "#f9fafb"
-  console-fog-100: "#f3f4f6"
-  console-fog-200: "#e5e7eb"
-  console-fog-300: "#d1d5db"
-  console-fog-400: "#9ca3af"
-  console-fog-500: "#6b7280"
-  console-fog-600: "#4b5563"
-  console-fog-700: "#374151"
-  console-fog-800: "#1f2937"
-  paper-white: "#ffffff"
+  bg: "#f6f7f9"
+  pane: "#ffffff"
+  sunk: "#fafbfc"
+  line: "#e4e7ec"
+  line-soft: "#eef0f3"
+  ink: "#131722"
+  ink-2: "#434a57"
+  ink-3: "#6e7684"
+  ink-4: "#aab1bd"
+  acc: "#2962ff"
+  acc-deep: "#1e4cd6"
+  acc-t: "#e9efff"
+  up: "#088771"
+  up-t: "#e3f5f1"
+  dn: "#e02a3a"
+  dn-t: "#fdebed"
+  upd: "#f5923c"
+  upd-t: "#fff3e6"
+  upd-ink: "#8a4a0c"
+  upd-spam: "#e0a324"
+  upd-discover: "#f0b35a"
+  upd-other: "#d9a066"
+  warn: "#a16207"
+  warn-t: "#fef7e0"
+  series-impr: "#9aa3b2"
+  series-ctr: "#6b7684"
+  series-prev: "#c3c9d3"
 typography:
-  page-title:
+  symbol:
     fontFamily: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-    fontSize: "1.5rem"
+    fontSize: "17px"
     fontWeight: 700
-    lineHeight: 2rem
-  section-title:
+    lineHeight: 1.25
+    letterSpacing: "-0.025em"
+  title:
     fontFamily: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-    fontSize: "1.25rem"
-    fontWeight: 700
-    lineHeight: 1.75rem
+    fontSize: "13px"
+    fontWeight: 600
+    lineHeight: 1.45
   body:
     fontFamily: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-    fontSize: "0.875rem"
+    fontSize: "13px"
     fontWeight: 400
-    lineHeight: 1.25rem
-  metric-number:
+    lineHeight: 1.45
+  table:
     fontFamily: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-    fontSize: "0.875rem"
+    fontSize: "12.5px"
+    fontWeight: 400
+    lineHeight: 1.45
+  label:
+    fontFamily: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+    fontSize: "11px"
     fontWeight: 600
-    lineHeight: 1.25rem
-  caption:
-    fontFamily: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-    fontSize: "0.75rem"
+    lineHeight: 1
+    letterSpacing: "0.06em"
+  stat-value:
+    fontFamily: "ui-monospace, 'SF Mono', Menlo, Consolas, monospace"
+    fontSize: "14px"
+    fontWeight: 600
+    lineHeight: 1.45
+    fontFeature: "tnum"
+  num:
+    fontFamily: "ui-monospace, 'SF Mono', Menlo, Consolas, monospace"
+    fontSize: "12px"
     fontWeight: 400
-    lineHeight: 1rem
+    lineHeight: 1.45
+    fontFeature: "tnum"
+  axis:
+    fontFamily: "ui-monospace, 'SF Mono', Menlo, Consolas, monospace"
+    fontSize: "10.5px"
+    fontWeight: 400
+    lineHeight: 1
+    fontFeature: "tnum"
 rounded:
-  edge: "4px"
-  card: "8px"
+  none: "0px"
+  tag: "2px"
+  chip: "3px"
+  base: "4px"
 spacing:
-  cell-y: "8px"
-  cell-x: "8px"
-  card: "16px"
-  page: "24px"
-  section: "40px"
+  px: "1px"
+  cell-y: "6px"
+  cell-x: "10px"
+  pane: "12px"
+  page: "16px"
+  page-sm: "20px"
+  section: "24px"
 components:
   button-primary:
-    backgroundColor: "{colors.operator-blue}"
-    textColor: "{colors.paper-white}"
-    rounded: "{rounded.edge}"
-    padding: "8px 16px"
+    backgroundColor: "{colors.acc}"
+    textColor: "{colors.pane}"
+    rounded: "{rounded.base}"
+    padding: "0 12px"
+    height: "28px"
+    typography: "{typography.title}"
   button-primary-hover:
-    backgroundColor: "{colors.operator-blue-deep}"
-    textColor: "{colors.paper-white}"
-    rounded: "{rounded.edge}"
+    backgroundColor: "{colors.acc-deep}"
+    textColor: "{colors.pane}"
   button-secondary:
-    backgroundColor: "{colors.console-fog-100}"
-    textColor: "{colors.console-fog-700}"
-    rounded: "{rounded.edge}"
-    padding: "8px 16px"
+    backgroundColor: "{colors.pane}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.base}"
+    padding: "0 12px"
+    height: "28px"
   button-secondary-hover:
-    backgroundColor: "{colors.console-fog-200}"
-    textColor: "{colors.console-fog-700}"
-    rounded: "{rounded.edge}"
-  button-destructive:
-    backgroundColor: "{colors.drift-red-tint}"
-    textColor: "{colors.drift-red}"
-    rounded: "{rounded.edge}"
-    padding: "4px 8px"
-  button-destructive-hover:
-    backgroundColor: "{colors.alert-red-edge}"
-    textColor: "{colors.drift-red-ink}"
-    rounded: "{rounded.edge}"
-  badge-active:
-    backgroundColor: "{colors.live-pulse-tint}"
-    textColor: "{colors.live-pulse-ink}"
-    rounded: "{rounded.edge}"
-    padding: "4px 8px"
-  badge-revoked:
-    backgroundColor: "{colors.drift-red-tint}"
-    textColor: "{colors.drift-red-ink}"
-    rounded: "{rounded.edge}"
-    padding: "4px 8px"
-  badge-error:
-    backgroundColor: "{colors.warning-amber-tint}"
-    textColor: "{colors.warning-amber-ink}"
-    rounded: "{rounded.edge}"
-    padding: "4px 8px"
-  card-site:
-    backgroundColor: "{colors.paper-white}"
-    rounded: "{rounded.card}"
-    padding: "16px"
-  table-row:
-    backgroundColor: "{colors.paper-white}"
-    textColor: "{colors.console-fog-800}"
-    padding: "8px 0"
+    backgroundColor: "{colors.sunk}"
+    textColor: "{colors.ink}"
+  button-ghost:
+    textColor: "{colors.ink-2}"
+    rounded: "{rounded.base}"
+    padding: "0 12px"
+    height: "28px"
+  button-ghost-hover:
+    backgroundColor: "{colors.bg}"
+    textColor: "{colors.ink}"
+  button-buy:
+    backgroundColor: "{colors.up}"
+    textColor: "{colors.pane}"
+    rounded: "{rounded.base}"
+    padding: "0 16px"
+    height: "36px"
+  button-danger:
+    backgroundColor: "{colors.pane}"
+    textColor: "{colors.dn}"
+    rounded: "{rounded.base}"
+    padding: "0 12px"
+    height: "28px"
+  button-danger-hover:
+    backgroundColor: "{colors.dn-t}"
+    textColor: "{colors.dn}"
+  input:
+    backgroundColor: "{colors.pane}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.base}"
+    padding: "0 8px"
+    height: "28px"
+  segment-active:
+    backgroundColor: "{colors.acc-t}"
+    textColor: "{colors.acc}"
+    rounded: "{rounded.base}"
+    padding: "0 8px"
+    height: "24px"
+  pane:
+    backgroundColor: "{colors.pane}"
+    rounded: "{rounded.base}"
+    padding: "{spacing.pane}"
+  pane-head:
+    textColor: "{colors.ink-3}"
+    typography: "{typography.label}"
+    padding: "0 12px"
+    height: "36px"
+  table-head:
+    backgroundColor: "{colors.sunk}"
+    textColor: "{colors.ink-3}"
+    padding: "6px 10px"
+  chip-up:
+    backgroundColor: "{colors.up-t}"
+    textColor: "{colors.up}"
+    rounded: "{rounded.chip}"
+    padding: "1px 6px"
+  chip-dn:
+    backgroundColor: "{colors.dn-t}"
+    textColor: "{colors.dn}"
+    rounded: "{rounded.chip}"
+    padding: "1px 6px"
+  badge-warn:
+    backgroundColor: "{colors.warn-t}"
+    textColor: "{colors.warn}"
+    rounded: "{rounded.chip}"
+    padding: "1px 6px"
+  badge-muted:
+    backgroundColor: "{colors.bg}"
+    textColor: "{colors.ink-2}"
+    rounded: "{rounded.chip}"
+    padding: "1px 6px"
+  nav-bar:
+    backgroundColor: "{colors.pane}"
+    height: "40px"
+    padding: "0 12px"
+  nav-link-active:
+    backgroundColor: "{colors.bg}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.base}"
+    padding: "0 10px"
+    height: "28px"
 ---
 
 # Design System: gsc-hub
 
-## 1. Overview
+## Overview
 
-**Creative North Star: "The Operator's Console"**
+**Creative North Star: "Светлый торговый стол"**
 
-`gsc-hub` визуально напоминает терминал диспетчера, а не маркетинговый дашборд. Сетка таблиц во всю ширину окна, без декоративных карточек и теней, без отступов-впрок. Числа и домены — главные жители страницы, всё остальное служит читаемости. Палитра — практически чёрно-белая с одним рабочим синим (`#2563eb`) на интерактив и тремя статусными (зелёный жив, красный отозван, янтарный сбоит). Графики — два цвета без тултипов: `rgb(220 38 38)` для позиции, `rgb(191 219 254)` для столбиков impressions.
+Каждый сайт - тикер на одном светлом торговом столе. Оператор просматривает watchlist всех сайтов, открывает один и читает клики как цену, а показы как объём - на фоне апдейтов Google и склеек доменов. Отсюда грамматика терминала: панель символа со стрипом статистики, строка таймфреймов, ценовой график с правой шкалой и тегом последнего значения, под ним вкладки и плотная таблица. Это прямой отказ от сетки карточек SaaS-дашборда.
 
-Этот язык явно отвергает то, что перечислено в PRODUCT.md: Salesforce-захламлённость, Notion-эмодзи, hero-метрики SaaS, AI-фиолетово-розовые градиенты, glassmorphism, тяжёлые chart-libs. Тон — Stripe Dashboard и Linear: спокойный, плотный, доверяет цифрам.
+Мир светлый и плотный. Прохладный серый стол (`bg`) виден только как рамка; работа идёт на белых панелях, разделённых линией в 1px. Один синий (`acc`) означает действие и выделение. Зелёный и красный появляются только там, где есть знак: рост и падение, здоровье и поломка, покупка и удаление. Янтарь принадлежит апдейтам Google и больше никому. Все числа моноширинные и табличные, чтобы колонки читались вертикально.
+
+Системный шрифт, светлая тема и плотность подтверждены пользователем: это не компромисс, а выбор. Данные никогда не кешируются, поэтому у каждого экрана с данными есть штамп `live HH:MM` и кнопка Refresh.
 
 **Key Characteristics:**
-- Full-bleed layout (`w-full p-6`) — никаких `max-w-*` ограничителей.
-- Mono-accent: один рабочий синий, всё остальное — нейтрали и статусы.
-- Flat surfaces — теней почти нет, разделение через `border-b` и tonal layering.
-- Density-first: `text-sm` (14px) как базовый размер тела, `py-2` строки таблиц.
-- SVG-графики собраны вручную (`<path>`, `<rect>`) без библиотек.
+- Панели стыкуются в «стол»: 1px линии вместо отступов, серый фон только снаружи.
+- Один синий на действие, зелёный/красный только со знаком, янтарь только для апдейтов.
+- Моно-цифры с `tabular-nums` везде: таблицы, стат-стрип, оси, чипы.
+- Кнопки 28px, радиус 4px, порядок в ряду ghost → sec → pri.
+- Графики собраны вручную на SVG, один цвет на метрику во всём приложении.
+- Иконки только SVG со штрихом 1.5-1.6.
 
-## 2. Colors
+## Colors
 
-Палитра — нейтральная серая шкала Tailwind с одним рабочим синим, тремя статусными цветами (зелёный/красный/янтарь) и парой служебных оттенков для столбиков графиков.
+Нейтральная прохладная шкала «стол / панель / чернила», один синий для действия и три зарезервированных семейства: направление (зелёный/красный), апдейты (янтарь), предупреждение (охра). Источник истины - RGB-каналы CSS-переменных в `src/app.css` (Tailwind применяет к ним альфу); цвета SVG продублированы литералами в `src/lib/chart-theme.ts`.
 
 ### Primary
-- **Operator Blue** (`#2563eb`): рабочий accent — кнопка Connect, активная вкладка периода/колонок, ссылки в таблицах, sparkline clicks на дашборде. ≤10% любого экрана.
-- **Operator Blue Deep** (`#1d4ed8`): hover-состояние primary-кнопок.
-- **Operator Blue Mist** (`#dbeafe`): фон CSV-кнопок в таблицах, очень бледный синий.
-- **Operator Blue Haze** (`#eff6ff`): зарезервирован под подсветку выбранной строки, не используется по умолчанию.
+- **Сигнальный синий** (`acc`): единственный цвет действия. Primary-кнопка, активный сегмент таймфрейма, подчёркивание активной вкладки, стрелка сортировки, кольцо фокуса, чекбоксы, линия кликов на графике и тег последнего значения.
+- **Глубокий синий** (`acc-deep`): только hover primary-кнопки и ссылок в баннере.
+- **Синий туман** (`acc-t`): фон активного сегмента, бейджа `acc`, выделенной строки таблицы (60%), баннера обновления.
 
-### Tertiary (статусы и графики)
-- **Live Pulse Green** (`#16a34a`): пока только в дельтах на дашборде (рост clicks/impressions/CTR).
-- **Live Pulse Tint** (`#dcfce7`) / **Live Pulse Ink** (`#166534`): badge `active` для подключённого аккаунта.
-- **Rank Decay Red** (`#dc2626`): линия позиции в графике query history. Также падающая дельта на дашборде.
-- **Drift Red Tint** (`#fee2e2`) / **Drift Red Ink** (`#991b1b`): badge `revoked`, кнопка Delete, плашка ошибок per-account.
-- **Warning Amber Tint** (`#fef9c3`) / **Warning Amber Ink** (`#854d0e`): badge `error` для нерасшифрованных сбоев аккаунта.
-- **Impression Mist** (`#bfdbfe`): столбики impressions в графике query history. Намеренно слабее линии позиции, чтобы не конкурировать.
+### Secondary
+- **Рост** (`up` / `up-t`): положительная дельта, бейдж «ok», положительный импакт апдейта, кнопка Buy в панели заказа.
+- **Падение** (`dn` / `dn-t`): отрицательная дельта, CTR ниже бенчмарка, бейдж «revoked»/ошибка, блок ошибок, текст destructive-кнопки.
+
+### Tertiary
+- **Янтарь апдейта** (`upd`, семейство `upd-spam`, `upd-discover`, `upd-other`): полосы раскатки апдейтов Google на графике и их свотч в легенде. Тип апдейта различается оттенком внутри семейства, а подпись называет тип (Core, Spam, Discover).
+- **Чернила апдейта** (`upd-ink`): текст подписей апдейтов на янтарной подложке.
+- **Охра предупреждения** (`warn` / `warn-t`): статус «требует внимания» - бейдж warn, подсветка строки сайта без ключа IndexNow, заголовок панели с одноразовым API-ключом. Это статус, не апдейт; на графиках не появляется.
 
 ### Neutral
-- **Paper White** (`#ffffff`): фон страницы и карточек.
-- **Console Fog 50** (`#f9fafb`): развёрнутый блок query history (контраст к строкам таблицы).
-- **Console Fog 100** (`#f3f4f6`): фон Refresh-кнопки и кнопки Hide.
-- **Console Fog 200** (`#e5e7eb`): hover Refresh, граница карточек дашборда (`border-gray-200`).
-- **Console Fog 300** (`#d1d5db`): inputs, разделители таблиц.
-- **Console Fog 400–500** (`#9ca3af` / `#6b7280`): второстепенные подписи (caption «Aggregated across N visible sites»).
-- **Console Fog 600–800** (`#4b5563` / `#374151` / `#1f2937`): основной текст, заголовки таблиц.
+- **Стол** (`bg`): фон страницы, рамка вокруг панелей; hover ghost-кнопок и пунктов навигации.
+- **Панель** (`pane`): рабочая поверхность, фон кнопок sec и полей.
+- **Утопленная** (`sunk`): шапки таблиц, трей действий строки, hover строки, подписи групп кнопок.
+- **Линия** (`line`): границы панелей, швы стола, границы кнопок и полей. **Мягкая линия** (`line-soft`): разделители строк и сетка графика.
+- **Чернила** (`ink` → `ink-4`): текст по убыванию веса. `ink-3` - подписи и оси (4.6:1 на белом, нижняя граница для текста), `ink-4` - только плейсхолдеры, прочерки отсутствующих значений и выключенные пункты легенды.
+- **Серии** (`series-impr`, `series-ctr`, `series-prev`): столбцы показов, линия CTR, пунктир прошлого периода. Позиция рисуется `ink`.
 
 ### Named Rules
-**The One-Voice Rule.** Operator Blue — единственный «громкий» цвет интерфейса. Если на экране два разных синих или два разных зелёных — это ошибка композиции, а не вариативность. Статусные цвета (зелёный/красный/янтарь) применяются строго в роли индикатора состояния, никогда декоративно.
+**The Colour Reservation Rule.** Зелёный и красный несут знак: направление изменения, здоровье (ok/revoked), глагол заказа (Buy зелёный, удаление красное) - как в терминале. Янтарь - только апдейты Google. События сайта (склейки, миграции) и позиция рисуются чернилами `ink`, чтобы никогда не читаться как падение.
 
-**The No-Gradient Rule.** Цвета — плоские. Никаких `linear-gradient`, `radial-gradient`, `background-clip: text`. Ни в кнопках, ни в заголовках, ни в фонах. Один цвет — одна плоскость.
+**The One Blue Rule.** Синий означает «можно нажать» или «выбрано». Им не красят заголовки, иллюстрации и декоративные акценты.
 
-## 3. Typography
+**The One Colour Per Metric Rule.** Клики всегда `acc`, показы всегда `series-impr`, позиция всегда `ink`, CTR всегда `series-ctr` - на графике сайта, спарклайнах дашборда и истории запроса. Новый график берёт цвета из `chart-theme.ts`, а не выдумывает свои.
 
-**Single Font:** `ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif` — нативный системный sans (San Francisco на macOS, Segoe UI на Windows). Никакого `@font-face`, никакого Google Fonts.
+## Typography
 
-**Character:** интерфейсный, нейтральный, оптимизирован под плотные ряды чисел. Метрики не выделяются другим шрифтом — только weight (`font-semibold`).
+**Display Font:** нет - дисплейного шрифта в системе нет
+**Body Font:** системный sans (`ui-sans-serif, system-ui, -apple-system, 'Segoe UI'`)
+**Label/Mono Font:** `ui-monospace, 'SF Mono', Menlo, Consolas, monospace`
+
+**Character:** Системный sans для слов, системный моно для чисел. Пара ничего не декларирует - она делает таблицу колонкой цифр, как в стакане котировок.
 
 ### Hierarchy
-- **Page Title** (`font-bold`, `text-2xl` = 24px, `leading-8`): «Connected Google accounts», «All properties», «Dashboard». Один на страницу.
-- **Section Title** (`font-bold`, `text-xl` = 20px, `leading-7`): «Top queries (across all sites)», «Top pages», «Errors».
-- **Body** (`font-normal`, `text-sm` = 14px, `leading-5`): таблицы, формы, тело dashboard-карточек. Базовый размер интерфейса.
-- **Metric Number** (`font-semibold`, `text-sm` = 14px): большие числа в `<dl>` карточек дашборда.
-- **Caption** (`font-normal`, `text-xs` = 12px, `leading-4`): подписи под графиками, «Top N queries by current sort over the last N days», status badges, account label под siteUrl, надписи дельт.
+- **Symbol** (700, 17px, 1.25, трекинг -0.025em): имя сайта в панели символа и заголовок страницы. Крупнее на экране ничего нет.
+- **Title** (600, 13px): заголовки секций, кнопки (12.5px), активная вкладка.
+- **Body** (400, 13px, 1.45): базовый размер `body`.
+- **Table** (400, 12.5px): ячейки таблиц, поля, вкладки, пункты навигации.
+- **Label** (600, 11px, 0.06em, uppercase): заголовки панелей; подписи стат-стрипа (500, 10.5px, 0.05em), подписи групп сегментов (500, 11px).
+- **Stat value** (mono 600, 14px, tnum): значения в стат-стрипе; дельта рядом mono 11.5px.
+- **Num** (mono 400, 12px, tnum): числа в таблицах, всегда выровнены вправо.
+- **Axis** (mono 10.5px, `ink-3`): метки осей, даты легенды, теги на оси.
 
 ### Named Rules
-**The System-Font Rule.** `font-family` — только системный sans-стек. Ни Inter, ни SF Pro Display, ни Roboto. Производительность и аутентичность ОС важнее «дизайнерского» шрифта.
+**The Mono Numbers Rule.** Любое число, которое сравнивают с другим числом, набрано моно с `tabular-nums` и выровнено вправо. Даты в таблицах и в легенде графика - тоже моно.
 
-**The Numbers-Don't-Whisper Rule.** Метрики (`{q.clicks}`, `{e.currentTotals.impressions}`) выводятся через `Intl.NumberFormat('en-US')` с разделителями. Числа без разделителей в таблице из 50 строк — нечитаемы.
+**The System Face Rule.** Шрифты не подгружаются. Иерархию дают вес, размер и регистр подписи, а не гарнитура.
 
-## 4. Elevation
+## Layout
 
-`gsc-hub` — flat-by-default. Тени — почти отсутствуют. Глубина создаётся tonal layering: фон страницы белый (`paper-white`), развёрнутый блок query history — `console-fog-50` (на полтона темнее), границы между строками — `border-b` `console-fog-200`. Карточки дашборда несут единственный slot тени — `shadow-sm` (`box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05)`) — и только её.
+Страница во всю ширину окна (`page`: 16px, от `sm` 20px), без `max-width`. Сверху липкая навигация 40px. Основная единица - **стол**: сетка панелей с `gap: 1px` на фоне цвета `line`, обёрнутая одной рамкой с радиусом 4px; серый стол виден только снаружи. Колонки стола - вертикальные стеки, последняя панель колонки растягивается до низа. Страница сайта - стол из двух колонок `minmax(0,1fr) 300px` от `xl`; ниже `xl` правая колонка уходит под основную.
+
+Внутри панели ритм плотный: тело 12px, ячейка таблицы 10px × 6px, шапка панели 36px, вкладка 32px, сегмент 24px. Разбиения внутри панели делаются тем же приёмом - сетка с `gap-px` на `bg-line`, а не отступами.
+
+Первый экран страницы сайта: панель символа (домен, аккаунт, `live HH:MM`, стат-стрип, Refresh справа) → строка таймфреймов → график цена/объём → вкладки → таблица. На мобильном стат-стрип становится сеткой 2×2, кнопки уходят под него, навигация прокручивается горизонтально с маской затухания справа.
+
+**The Joined Desk Rule.** Внутри стола нет щелей: соседние панели делят одну линию в 1px. Исключение одно - плитки дашборда: это отдельные панели в сетке с зазором, каждая со своей рамкой и hover-рамкой `ink-4`.
+
+## Elevation & Depth
+
+Система плоская. Глубина передаётся тоном (стол → панель → утопленная шапка) и линиями. Тень появляется только у того, что всплывает над столом и перекрывает данные: выпадающие меню, модальные окна, липкая панель выделения внизу таблицы.
 
 ### Shadow Vocabulary
-- **Site Card Lift** (`shadow-sm` = `0 1px 2px 0 rgb(0 0 0 / 0.05)`): только на `<article>` карточках дашборда. Очень слабая, на грани заметности — нужна только чтобы карточка визуально «оторвалась» от фона страницы при плотной сетке 4–6 в ряд.
+- **Всплывающее** (`box-shadow: 0 6px 20px -6px rgb(19 23 34 / 0.25)`): выпадающий список, модалка списка, липкая панель действий по выделенным строкам.
+- **Модальное** (`box-shadow: 0 12px 40px -12px rgb(19 23 34 / 0.35)`): диалог заказа ссылок.
 
 ### Named Rules
-**The Flat-By-Default Rule.** Любой новый компонент рисуется без тени. Тень добавляется только если без неё компонент сливается с соседом. Никаких декоративных теней «для глубины».
+**The Flat Desk Rule.** Панели, кнопки, чипы и плитки лежат на столе без тени. Тень означает «это над столом и закроется».
 
-**The No-Glass Rule.** `backdrop-filter`, `filter: blur`, полупрозрачные фоны с blur — запрещены. Glassmorphism является явным анти-референсом PRODUCT.md.
+## Shapes
 
-## 5. Components
+Один радиус - 4px - для панелей, рамки стола, кнопок, полей, сегментов, пунктов навигации. Чипы и бейджи 3px, теги на осях графика 2px. Панели внутри стола теряют радиус и рамку, иначе стыки двоятся. Точка статуса - единственный круг. Метка события на графике - ромб (квадрат 10px, повёрнутый на 45°, с белой обводкой 1.5px); кластер событий - ромб 13px с числом.
+
+## Components
 
 ### Buttons
-- **Shape:** Square-ish (`rounded` = 4px). Никаких `rounded-full`, `rounded-2xl`.
-- **Primary** (`bg-blue-600 text-white px-4 py-2`, hover `bg-blue-700`): «Connect Google account», активные таблетки в переключателях периода/колонок (`px-3 py-1` для компактных).
-- **Secondary** (`bg-gray-100 text-gray-700 px-4 py-2`, hover `bg-gray-200`): «Refresh», «Hide», переключатели в неактивном состоянии. Также `bg-gray-200` для самых нейтральных Save-кнопок в inline-форме relabel.
-- **Destructive** (`bg-red-100 text-red-700 px-2 py-1 text-sm`, hover `bg-red-200`): «Delete» account. Маленькая, не акцент. Окно `confirm()` страхует.
-- **Tertiary action** (`bg-blue-100 text-blue-700 px-2 py-1`, hover `bg-blue-200`): «query CSV», «page CSV» в строках таблицы — частые, но не акцентные действия.
+Одна форма, четыре веса; кнопка сообщает важность весом, а не размером.
+- **Shape:** слегка скруглённый прямоугольник (4px), высота 28px, поля 12px, текст 12.5px/600, иконка 14px. `sm` - 24px, `lg` - 36px (только кнопка оплаты). Иконочная кнопка квадратная.
+- **Primary:** заливка `acc`, белый текст; hover `acc-deep`.
+- **Secondary:** белая с рамкой `line`; hover рамка `ink-4`, фон `sunk`.
+- **Ghost:** без фона, текст `ink-2`; hover фон `bg`, текст `ink`.
+- **Buy:** заливка `up`, белый текст, 36px во всю ширину панели заказа; текст показывает сумму из расчёта.
+- **Danger:** белая с рамкой, текст `dn`; hover фон `dn-t`.
+- **Disabled:** прозрачность 45%, курсор not-allowed.
+- **Button group:** сегменты в одной рамке, разделены 1px линией; может начинаться с утопленной подписи.
 
-### Status Badges
-- **Style:** `rounded px-2 py-1 text-xs`. Без бордера. Текст нижним регистром (`active`, `revoked`, `error`).
-- **Active** (`bg-green-100 text-green-800`).
-- **Revoked** (`bg-red-100 text-red-800`).
-- **Error** (`bg-yellow-100 text-yellow-800`) — `last_error` показывается через нативный `title="..."`, без отдельного tooltip-компонента.
+**The Button Order Rule.** В ряду слева направо ghost → sec → pri. На зону не больше одной primary. Destructive стоит отдельно от остальных, а не в общем ряду.
+
+**The Row Tray Rule.** Действия строки не занимают колонку. Они живут в трее, который наезжает на конец строки (фон `sunk`, левая линия) при hover, фокусе внутри строки, выделении или свежем статусе строки. На устройствах без hover трей стоит в строке статично.
+
+### Chips и Badges
+- **Chip (направление):** mono 11px/600, радиус 3px; `up` на `up-t`, `dn` на `dn-t`, «flat» - просто `ink-3`.
+- **Badge (статус):** 11px/500, радиус 3px; ok (`up`), bad (`dn`), warn (`warn`), muted (`ink-2` на `bg`), acc.
+
+### Cards / Containers
+- **Corner Style:** 4px снаружи, 0 внутри стола.
+- **Background:** `pane` на `bg`.
+- **Shadow Strategy:** нет (см. Elevation).
+- **Border:** 1px `line`.
+- **Pane head:** 36px, нижняя линия, заголовок 11px uppercase `ink-3`, справа приглушённая приписка обычным регистром (счётчик, пояснение). Заголовок панели - это имя окна терминала, а не надзаголовок над текстом.
+- **Internal Padding:** 12px.
+
+### Inputs / Fields
+- **Style:** 28px, рамка `line`, фон `pane`, радиус 4px, текст 12.5px, плейсхолдер `ink-4`.
+- **Focus:** рамка `acc` и кольцо `acc` 15%; глобальный `:focus-visible` - контур 2px `acc` со смещением 1px.
+- **Hover:** рамка `ink-4`.
+
+### Segmented control (таймфрейм)
+Сегменты 24px, текст 11.5px/600 `ink-2`; активный - `acc` на `acc-t`. Перед группой может стоять подпись 11px uppercase `ink-3` (Period, Sort, Metrics).
+
+### Tabs
+Подчёркивающие вкладки 32px над нижней линией; активная - подчёркивание 2px `acc`, текст `ink`/600. Счётчик - тихий моно-суффикс 11px `ink-3`.
 
 ### Tables
-- **Layout:** `w-full border-collapse`. Без внешних бордеров и обёртки `<div class="card">`. Шапка — `<tr class="border-b text-left">`, строки — `<tr class="border-b">`. Точка.
-- **Padding:** `py-2` на ячейках. Compact-density — это намеренный выбор, не bug.
-- **Sortable headers:** `<th class="cursor-pointer hover:underline">` с inline-стрелкой (` ↑` / ` ↓`) сразу после слова. Серверная сортировка через URL params (`?sort=`, `?dir=`) для главной таблицы; client-side `$state` для Top queries и Top pages.
-- **Row click affordance:** в Top queries вся строка кликабельна (`cursor-pointer hover:bg-gray-50`), маркер `▸ / ▾` слева от текста ключа.
-
-### Inputs
-- **Style:** `border rounded px-2 py-1 text-sm`. Inline-форма для relabel — компактная, без label сверху, плейсхолдер `—`.
-- **Focus:** браузерный default (Chrome/Safari/Firefox uniform — нет смысла переопределять).
-- Используются крайне редко: сейчас только relabel-account.
-
-### Cards (Dashboard only)
-- **Shape:** `rounded-lg` (8px) — на полтона мягче кнопок, потому что объект крупнее.
-- **Surface:** `bg-white border border-gray-200 shadow-sm`.
-- **Header:** account label/email в `text-xs text-gray-500`, ниже — `<a>` на siteUrl в `text-sm font-medium text-blue-600`.
-- **Sparkline:** SVG `viewBox="0 0 100 30" class="h-12 w-full"`, `<path>` без заливки, `stroke="rgb(37 99 235)" stroke-width="1.5"`.
-- **Metric grid:** `grid grid-cols-2 gap-2 text-sm`, четыре `<div>` (Clicks/Impressions/CTR/Avg Pos) с label/value/delta.
-- **Internal padding:** `p-4`.
+Плотные: ячейка 10px × 6px, 12.5px. Шапка утоплена (`sunk`), 11px `ink-3`; сортируемые колонки показывают SVG-стрелку `acc` 10px. Строки разделены `line-soft`, hover `sunk`, выделенная `acc-t`/60%, скрытая - 50% прозрачности. Отсутствующее значение - прочерк `ink-4`.
 
 ### Navigation
-- **Style:** один уровень — текстовые ссылки в шапке (`/` → «← Accounts», `/properties` → «→ View all properties», `/dashboard` → «→ Dashboard»). `text-blue-600 hover:underline`. Без активного состояния (на странице ясно, где ты).
-- **Period / Columns toggles:** ряд таблеток (`<a>` ссылки), активная — `bg-blue-600 text-white`, неактивная — `bg-gray-100 text-gray-700`. URL-driven.
+Белая липкая полоса 40px с нижней линией. Слева логотип (синий квадрат с SVG-линией графика) и слово gsc-hub 13px/700; пункты 28px, 12.5px `ink-2`; hover и активный - фон `bg`, активный ещё и 600. Справа ghost-кнопки Blur и выхода, email через разделитель. На узком экране пункты прокручиваются с маской затухания.
 
-### Signature Component: Query History Chart
-- Inline SVG `viewBox="0 0 800 200"` внутри развёрнутого `<tr>` поверх таблицы Top queries.
-- `<rect>` импрешшнов в `rgb(191 219 254)` (Impression Mist), x-координата по timestamp реальной даты — gaps в данных видны как пустые промежутки.
-- `<path>` позиции в `rgb(220 38 38)` (Rank Decay Red), `stroke-width="1.5"`, без `fill`. Lower position = higher Y (стандартная SEO-конвенция).
-- Подписи дат — 6 evenly spaced ниже chart-area, `text-anchor="middle" font-size="10"`. Y-axis labels — minPos сверху, maxPos снизу красным мини-текстом.
-- Loading-state: `<div class="text-sm text-gray-500">Loading 16-month history…</div>`. Error-state: `<div class="text-sm text-red-600">Failed: {message}</div>`.
-- Никаких tooltip'ов на hover. Сознательное упрощение: пользователь сам читает дату по столбику снизу.
+### Trend chart (сигнатура)
+График сайта в грамматике терминала, на SVG без библиотек:
+- **Цена:** клики - линия `acc` 1.6px с градиентной заливкой 14% → 0; шкала справа, моно 10.5px, сетка `line-soft`.
+- **Объём:** показы - столбцы `series-impr` 45% в нижней панели на 22% высоты, отделённой линией `line`; наведённый столбец темнеет до `ink-2`.
+- **Последнее значение:** точечный уровень `acc` и синий тег на правой оси; тег прячет метку оси под собой.
+- **Перекрестие:** пунктир 3/3 `ink-2`, точка с белой обводкой, тёмные (`ink`) теги на обеих осях. Ничего не всплывает поверх данных: легенда сверху читает наведённый день.
+- **Легенда:** дата моно слева, пункты-переключатели со свотчем 10px; выключенный - контурный свотч и `ink-4`.
+- **Апдейты:** полосы раскатки янтарём 8% с полосой подписи сверху; подписи, которые пересекаются, раскладываются максимум в три дорожки, остальные читаются в легенде. Импакт в подписи окрашен по знаку, идущий апдейт - пунктирный правый край.
+- **События:** ромбы `ink` на сплошной волосяной линии (28%); близкие события сливаются в один ромб с числом; подпись на белой плашке показывается, только если не перекрывает соседей.
+- **Клавиатура:** стрелки влево/вправо ходят по дням, Escape сбрасывает.
 
-## 6. Do's and Don'ts
+### Symbol header
+Имя сайта (Symbol), под ним аккаунт, тип свойства и моно-штамп `live HH:MM`; стат-стрип - колонки с левой линией `line`, подпись 10.5px uppercase над моно-значением; справа ghost «Open» и sec «Refresh».
+
+### Notices
+Ошибка - рамка `dn` 25% на `dn-t`; нейтральное уведомление - `sunk` с рамкой; предупреждение - `warn` на `warn-t`; пустое состояние - пунктирная рамка, центрированный текст.
+
+## Do's and Don'ts
 
 ### Do:
-- **Do** держать full-bleed layout (`w-full p-6`). Любой новый верхнеуровневый `<main>` использует именно это.
-- **Do** использовать `text-sm` (14px) как базовый размер тела. Метрики, таблицы, формы — всё в нём.
-- **Do** Tailwind-default colors через семантические описательные имена в DESIGN.md/JSON. Сам `tailwind.config.ts` не расширять без причины.
-- **Do** хранить состояние страницы (period, sort, dir, cols) в URL query-params — следствие принципа PRODUCT.md «URL — это состояние».
-- **Do** использовать `Intl.NumberFormat('en-US').format(n)` для всех целых чисел в таблицах.
-- **Do** отображать домен через `displaySite(siteUrl)` — `sc-domain:` префикс GSC скрывается, href поднимается через `siteHref(siteUrl)`.
-- **Do** дублировать цвет дельт знаком (`+12.4%` / `−3.0%`) — для colour-blind users.
-- **Do** дать каждому external-link `target="_blank" rel="noopener noreferrer"`.
+- **Do** собирать экран как стол: панели в сетке с `gap-px` на `bg-line`, одна внешняя рамка 4px.
+- **Do** выравнивать числа вправо и набирать их моно с `tabular-nums`.
+- **Do** брать цвета графиков только из `chart-theme.ts`: клики `acc`, показы `series-impr`, позиция и события `ink`, апдейты - семейство `upd`.
+- **Do** ставить кнопки в порядке ghost → sec → pri, одна primary на зону, destructive отдельно.
+- **Do** прятать действия строки в трей, который появляется по hover, фокусу, выделению или статусу.
+- **Do** показывать `live HH:MM` и Refresh на каждом экране с живыми данными GSC.
+- **Do** рисовать иконки SVG 16×16 со штрихом 1.5-1.6 и `currentColor`.
+- **Do** помечать email, домены и метрики классом `pii`, чтобы Blur их закрывал.
 
 ### Don't:
-- **Don't** добавлять `max-w-*` обёртки на главный `<main>`. PRODUCT.md явно требует «полную ширину окна».
-- **Don't** использовать `border-left` или `border-right` >1px как декоративную полосу слева у карточки/строки. Side-stripe borders — глобальный анти-паттерн impeccable.
-- **Don't** использовать `background-clip: text` с градиентом ни в одном заголовке. Gradient-text — анти-референс PRODUCT.md.
-- **Don't** использовать `backdrop-filter: blur`, `filter: blur`, `bg-white/70` для glassmorphism. Анти-референс PRODUCT.md.
-- **Don't** делать hero-метрики уровня Salesforce («**42 318%** ↑ Growth!»). Числа в карточках — `text-sm font-semibold`, не `text-5xl`.
-- **Don't** добавлять chart.js, ECharts, ApexCharts, Recharts. SVG-графики собираются вручную через `<rect>` и `<path>`. Анти-референс PRODUCT.md.
-- **Don't** добавлять Inter, SF Pro, Roboto, любой `@import url('https://fonts...')`. Только системный sans-стек.
-- **Don't** использовать эмодзи в UI или иконки sparkle/✨ в любых заголовках. Анти-референс PRODUCT.md.
-- **Don't** обёртывать таблицу в `<div class="card">` или `<section class="rounded-xl shadow-md p-6 border">`. Таблица — это уже полноценная единица контента.
-- **Don't** превращать Refresh в полноценный `<form method="POST">` с redirect — должен быть `invalidateAll()` чтобы URL state (period/sort/dir) сохранялся.
+- **Don't** красить зелёным или красным то, у чего нет знака, и не использовать янтарь ни для чего, кроме апдейтов Google.
+- **Don't** рисовать события сайта и позицию цветами направления.
+- **Don't** оставлять щели между панелями внутри стола и не возвращать сетку карточек с тенями (плитки дашборда - единственные отдельные панели).
+- **Don't** ставить тени на то, что лежит на столе.
+- **Don't** использовать эмодзи и юникод-глифы как иконки (стрелки, галочки, крестики) - только SVG.
+- **Don't** подгружать веб-шрифты и не вводить дисплейную гарнитуру.
+- **Don't** ставить вторую primary-кнопку в ту же зону и не заводить колонку под действия строки.

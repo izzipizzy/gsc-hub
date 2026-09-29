@@ -10,6 +10,11 @@ import { isExposedRequest } from './exposure';
 
 export function isPublicPath(path: string): boolean {
   return (
+    // Машинные ручки не проходят сессионный guard: у вызывающего нет cookie,
+    // и он получил бы редирект на /login вместо ответа. Их единственный
+    // замок — requireApiToken, и он обязан стоять ПЕРВОЙ строкой каждого
+    // обработчика под /api/v1.
+    path.startsWith('/api/v1/') ||
     path === '/login' ||
     path.startsWith('/auth/') ||
     path.startsWith('/_app/') ||
@@ -76,8 +81,10 @@ export function decideRoute(ctx: {
       kind: 'error',
       status: 503,
       message:
-        'Not configured for exposed access: set ADMIN_EMAIL and ADMIN_PASSWORD ' +
-        '(and GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET) in the deployment environment.'
+        'Not configured for exposed access. Running it only on this machine? Set ' +
+        'ORIGIN=http://localhost:<port> (or EXPOSED_MODE=0 on a trusted network). ' +
+        'Publishing it? Set ADMIN_EMAIL and ADMIN_PASSWORD (and GOOGLE_CLIENT_ID / ' +
+        'GOOGLE_CLIENT_SECRET) in the deployment environment.'
     };
   }
 

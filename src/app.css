@@ -2,145 +2,391 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Trading desk ─────────────────────────────────────────────────────────
+   Light terminal: cool gray desk, white panes split by 1px lines, one blue
+   for action and selection, green/red only for direction of change, amber
+   only for Google updates. Numbers are mono and tabular everywhere.
+   Channels are space-separated RGB so Tailwind can apply alpha. */
+:root {
+  --bg: 246 247 249;       /* desk behind panes */
+  --pane: 255 255 255;     /* working surface */
+  --sunk: 250 251 252;     /* table heads, inset rows */
+  --line: 228 231 236;     /* pane borders */
+  --line-soft: 238 240 243;/* row separators */
+  --ink: 19 23 34;
+  --ink-2: 67 74 87;
+  --ink-3: 110 118 132;    /* labels; 4.6:1 on white */
+  --ink-4: 170 177 189;    /* placeholders for absent values */
+  --acc: 41 98 255;
+  --acc-deep: 30 76 214;
+  --acc-t: 233 239 255;
+  --up: 8 135 113;
+  --up-t: 227 245 241;
+  --dn: 224 42 58;
+  --dn-t: 253 235 237;
+  --upd: 245 146 60;       /* Google update bands */
+  --upd-t: 255 243 230;
+  --upd-ink: 138 74 12;
+  --warn: 161 98 7;
+  --warn-t: 254 247 224;
+
+  /* chart series: one colour per metric on every chart */
+  --series-clicks: #2962ff;
+  --series-impr: #9aa3b2;
+  --series-pos: #131722;
+  --series-ctr: #6b7684;
+}
+
 @layer base {
+  html {
+    background: rgb(var(--bg));
+  }
   body {
-    color: theme('colors.gray.800');
-    background: #ffffff;
+    color: rgb(var(--ink));
+    background: rgb(var(--bg));
+    font-size: 13px;
+    line-height: 1.45;
     -webkit-font-smoothing: antialiased;
   }
   table {
     font-variant-numeric: tabular-nums;
   }
-  /* respect reduced motion */
+  ::selection {
+    background: rgb(var(--acc) / 0.18);
+  }
+  :focus-visible {
+    outline: 2px solid rgb(var(--acc));
+    outline-offset: 1px;
+  }
+  input[type='checkbox'],
+  input[type='radio'] {
+    accent-color: rgb(var(--acc));
+  }
+  a {
+    text-underline-offset: 2px;
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--line)) transparent;
+  }
   @media (prefers-reduced-motion: reduce) {
     * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
   }
 }
 
 @layer components {
-  /* App toolbar — used on every top-level page header */
-  .app-toolbar {
-    @apply mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-gray-200 pb-4;
+  /* ── Buttons: one shape, four weights. Order in a row is always
+        ghost → sec → pri, left to right; destructive stands apart. ── */
+  .btn {
+    @apply inline-flex h-7 shrink-0 cursor-pointer select-none items-center justify-center gap-1.5 whitespace-nowrap rounded px-3 text-[12.5px] font-semibold leading-none transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-45;
   }
-  .app-toolbar-left {
-    @apply flex flex-col gap-1;
+  .btn svg {
+    @apply h-3.5 w-3.5 shrink-0;
   }
-  .app-toolbar-right {
-    @apply flex flex-wrap items-center gap-3;
+  .btn-sm {
+    @apply h-6 px-2 text-xs;
   }
-  .app-toolbar-divider {
-    @apply h-5 w-px bg-gray-200;
+  .btn-lg {
+    @apply h-9 px-4 text-[13px];
   }
-  .app-breadcrumbs {
-    @apply flex items-center gap-2 text-xs text-gray-500;
+  .btn-pri {
+    @apply bg-acc text-white hover:bg-acc-deep;
   }
-  .app-breadcrumbs a {
-    @apply text-gray-500 hover:text-gray-800 hover:underline;
+  .btn-sec {
+    @apply border border-line bg-pane text-ink hover:border-ink-4 hover:bg-sunk;
   }
-  .app-pagetitle {
-    @apply text-xl font-bold tracking-tight text-gray-900 sm:text-2xl;
+  .btn-ghost {
+    @apply text-ink-2 hover:bg-bg hover:text-ink;
   }
-  /* Segmented control — for period (3/7/28) + columns (2/4/6) toggles */
+  .btn-buy {
+    @apply bg-up text-white hover:brightness-95;
+  }
+  .btn-danger {
+    @apply border border-line bg-pane text-dn hover:border-dn/40 hover:bg-dn-t;
+  }
+  .btn-icon {
+    @apply w-7 px-0;
+  }
+  .btn-icon.btn-sm {
+    @apply w-6;
+  }
+
+  /* ── Inputs ── */
+  .input {
+    @apply h-7 rounded border border-line bg-pane px-2 text-[12.5px] text-ink placeholder:text-ink-4 transition-colors hover:border-ink-4 focus:border-acc focus:outline-none focus:ring-2 focus:ring-acc/15;
+  }
+  select.input {
+    @apply pr-6;
+  }
+
+  /* ── Timeframe / segmented control ── */
   .app-segmented {
-    @apply inline-flex items-center gap-0.5 rounded-md bg-gray-100 p-0.5;
+    @apply inline-flex items-center gap-px;
   }
   .app-segmented-label {
-    @apply px-2 text-xs text-gray-500;
+    @apply px-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-3;
   }
-  .app-segmented a {
-    @apply inline-flex min-h-[34px] items-center rounded px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors duration-150 hover:text-gray-900 sm:min-h-0;
+  .app-segmented :is(a, button) {
+    @apply inline-flex h-6 min-w-[2rem] cursor-pointer items-center justify-center rounded px-2 text-[11.5px] font-semibold text-ink-2 transition-colors duration-150 hover:bg-bg hover:text-ink;
   }
-  .app-segmented a.is-active {
-    @apply bg-white text-gray-900 shadow-sm;
+  .app-segmented :is(a, button).is-active {
+    @apply bg-acc-t text-acc hover:bg-acc-t hover:text-acc;
   }
-  /* Pill button — small icon + label */
+
+  /* ── Tabs: underline, count as quiet suffix ── */
+  .tabs {
+    @apply flex items-end gap-0.5 overflow-x-auto border-b border-line;
+  }
+  .tabs > :is(a, button) {
+    @apply -mb-px inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap border-b-2 border-transparent px-2.5 text-[12.5px] text-ink-3 transition-colors hover:text-ink;
+  }
+  .tabs > :is(a, button).is-active {
+    @apply border-acc font-semibold text-ink;
+  }
+  .tabs .count {
+    @apply font-mono text-[11px] font-normal text-ink-3;
+  }
+
+  /* ── Panes: white working surfaces on the gray desk ── */
+  .pane {
+    @apply rounded border border-line bg-pane;
+  }
+  /* Desk: panes joined edge to edge, split by 1px lines; the gray shows only as
+     the outer frame. Columns inside are flex stacks whose last pane fills. */
+  .desk {
+    @apply grid gap-px overflow-hidden rounded border border-line bg-line;
+  }
+  .desk-col {
+    @apply flex min-w-0 flex-col gap-px;
+  }
+  .desk .pane {
+    @apply rounded-none border-0;
+  }
+  .desk-col > .pane:last-child {
+    @apply flex-1;
+  }
+  .pane-head {
+    @apply flex h-9 items-center justify-between gap-3 border-b border-line px-3 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-3;
+  }
+  .pane-head .aside {
+    @apply text-xs font-medium normal-case tracking-normal;
+  }
+  .pane-body {
+    @apply p-3;
+  }
+
+  /* ── Symbol header: the site as a ticker, stats in a strip ── */
+  .symbol {
+    @apply flex flex-wrap items-center gap-x-5 gap-y-2;
+  }
+  .symbol-name {
+    @apply text-[17px] font-bold leading-tight tracking-tight text-ink;
+  }
+  .symbol-sub {
+    @apply text-xs text-ink-3;
+  }
+  .stat {
+    @apply flex flex-col border-l border-line pl-4;
+  }
+  .stat-label {
+    @apply text-[10.5px] font-medium uppercase tracking-[0.05em] text-ink-3;
+  }
+  .stat-value {
+    @apply font-mono text-[14px] font-semibold tabular-nums text-ink;
+  }
+  .stat-delta {
+    @apply ml-1.5 font-mono text-[11.5px] font-medium;
+  }
+
+  /* ── Direction chips ── */
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-[3px] px-1.5 py-px font-mono text-[11px] font-semibold tabular-nums;
+  }
+  .chip-up { @apply bg-up-t text-up; }
+  .chip-dn { @apply bg-dn-t text-dn; }
+  .chip-flat { @apply text-ink-3; }
+
+  /* ── Badges (status) ── */
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-[3px] px-1.5 py-px text-[11px] font-medium;
+  }
+  .badge-ok { @apply bg-up-t text-up; }
+  .badge-bad { @apply bg-dn-t text-dn; }
+  .badge-warn { @apply bg-warn-t text-warn; }
+  .badge-muted { @apply bg-bg text-ink-2; }
+  .badge-acc { @apply bg-acc-t text-acc; }
+
+  /* ── Page frame ── */
+  .page {
+    @apply w-full px-4 py-4 sm:px-5;
+  }
+  .app-toolbar {
+    @apply mb-4 flex flex-wrap items-center justify-between gap-3;
+  }
+  .app-toolbar-left {
+    @apply flex flex-col gap-0.5;
+  }
+  .app-toolbar-right {
+    @apply flex flex-wrap items-center gap-2;
+  }
+  .app-toolbar-divider {
+    @apply mx-1 h-5 w-px bg-line;
+  }
+  .app-breadcrumbs {
+    @apply flex items-center gap-1.5 text-xs text-ink-3;
+  }
+  .app-breadcrumbs a {
+    @apply text-ink-3 hover:text-ink hover:underline;
+  }
+  .app-pagetitle {
+    @apply text-[17px] font-bold tracking-tight text-ink;
+  }
+
+  /* Legacy pill → same as .btn */
   .app-pill {
-    @apply inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors duration-150;
+    @apply btn;
   }
   .app-pill-secondary {
-    @apply bg-gray-100 hover:bg-gray-200;
+    @apply btn-sec;
   }
   .app-pill-primary {
-    @apply bg-blue-600 text-white hover:bg-blue-700;
+    @apply btn-pri;
   }
+
   /* Google `site:` search badge — manual indexation check */
   .app-gsearch {
-    @apply ml-1.5 inline-flex h-4 w-4 items-center justify-center rounded-sm bg-gray-100 align-middle text-[10px] font-bold leading-none text-gray-500 transition-colors hover:bg-blue-600 hover:text-white;
+    @apply ml-1.5 inline-flex h-4 w-4 items-center justify-center rounded-sm bg-bg align-middle text-[10px] font-bold leading-none text-ink-3 transition-colors hover:bg-acc hover:text-white;
   }
-  /* Section title pattern — h2 with subtitle */
+
+  /* ── Sections ── */
   .app-section {
-    @apply mt-12;
+    @apply mt-6;
   }
   .app-section-head {
-    @apply mb-4 flex items-baseline justify-between gap-3 border-b border-gray-200 pb-2;
+    @apply mb-2 flex items-baseline justify-between gap-3;
   }
   .app-section-title {
-    @apply text-base font-semibold tracking-tight text-gray-900;
+    @apply text-[13px] font-semibold text-ink;
   }
   .app-section-sub {
-    @apply text-xs text-gray-500;
+    @apply text-xs text-ink-3;
   }
-  /* Status dot inside badges */
   .app-status-dot {
     @apply mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle;
   }
-  /* Errors plate */
+
+  /* ── Notices ── */
   .app-errors {
-    @apply mb-6 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-900;
+    @apply mb-4 rounded border border-dn/25 bg-dn-t px-3 py-2 text-[12.5px] text-dn;
   }
   .app-errors-title {
-    @apply mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-red-700;
+    @apply mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide;
   }
-  /* Empty state */
+  .notice {
+    @apply rounded border border-line bg-sunk px-3 py-2 text-[12.5px] text-ink-2;
+  }
+  .notice-warn {
+    @apply border-warn/25 bg-warn-t text-warn;
+  }
+  .text-err {
+    @apply text-[12.5px] text-dn;
+  }
+  .loading {
+    @apply text-[12.5px] text-ink-3;
+  }
   .app-empty {
-    @apply rounded border border-dashed border-gray-200 px-4 py-8 text-center;
+    @apply rounded border border-dashed border-line bg-pane px-4 py-8 text-center;
   }
   .app-empty-title {
-    @apply text-sm font-medium text-gray-700;
+    @apply text-[13px] font-medium text-ink-2;
   }
   .app-empty-sub {
-    @apply mt-1 text-xs text-gray-500;
+    @apply mt-1 text-xs text-ink-3;
   }
-  /* Table primitives */
+
+  /* ── Tables: dense, right-aligned mono numbers, sticky sunk head ── */
   .app-table {
-    @apply w-full border-collapse text-sm;
+    @apply w-full border-collapse text-[12.5px];
   }
   .app-table thead tr {
-    @apply border-b border-gray-200 text-left text-xs font-semibold uppercase tracking-wide text-gray-500;
+    @apply text-left;
   }
   .app-table thead th {
-    @apply py-2 font-semibold;
+    @apply whitespace-nowrap border-b border-line bg-sunk px-2.5 py-1.5 text-[11px] font-medium text-ink-3;
   }
   .app-table tbody tr {
-    @apply border-b border-gray-100 transition-colors duration-150;
+    @apply border-b border-line-soft transition-colors duration-100;
   }
   .app-table tbody tr:hover {
-    @apply bg-gray-50;
+    @apply bg-sunk;
+  }
+  .app-table tbody tr.is-selected {
+    @apply bg-acc-t/60;
   }
   .app-table tbody tr.is-hidden-row {
     @apply opacity-50;
   }
   .app-table td {
-    @apply py-2 align-middle;
+    @apply px-2.5 py-1.5 align-middle;
+  }
+  .app-table th.num,
+  .app-table td.num {
+    @apply text-right;
   }
   .app-num {
-    @apply font-mono text-[13px] tabular-nums;
+    @apply font-mono text-[12px] tabular-nums;
   }
+  /* Row actions tray: takes no column width at rest; slides over the row's end
+     when the row is pointed at, focused, open, or carries a fresh status. */
+  .row-tray {
+    @apply relative w-0 p-0;
+  }
+  .row-tray-body {
+    @apply pointer-events-none absolute inset-y-0 right-0 flex items-center gap-0.5 whitespace-nowrap border-l border-line bg-sunk pl-2 pr-2 opacity-0 transition-opacity duration-100;
+  }
+  tr:hover .row-tray-body,
+  tr:focus-within .row-tray-body,
+  tr.is-selected .row-tray-body,
+  tr.has-status .row-tray-body {
+    @apply pointer-events-auto opacity-100;
+  }
+  @media (hover: none) {
+    .row-tray {
+      @apply w-auto;
+    }
+    .row-tray-body {
+      @apply pointer-events-auto static border-0 bg-transparent opacity-100;
+    }
+  }
+  /* Joined button group: one bordered strip, segments split by 1px lines */
+  .btn-group {
+    @apply inline-flex items-center overflow-hidden rounded border border-line bg-pane;
+  }
+  .btn-group > .btn {
+    @apply rounded-none border-0 border-l border-line first:border-l-0;
+  }
+  .btn-group-label {
+    @apply flex h-7 items-center bg-sunk px-2 text-[11px] font-medium uppercase tracking-wide text-ink-3;
+  }
+  .sort-th {
+    @apply cursor-pointer select-none hover:text-ink;
+  }
+
+  /* ── Footer / update banner ── */
   .app-footer {
-    @apply mt-16 flex flex-wrap items-center justify-center gap-2 border-t border-gray-100 px-6 py-4 text-[11px] text-gray-400;
+    @apply mt-10 flex flex-wrap items-center justify-center gap-2 border-t border-line px-6 py-4 text-[11px] text-ink-3;
   }
   .app-footer a {
-    @apply text-gray-500 transition-colors duration-150 hover:text-gray-800 hover:underline;
+    @apply text-ink-3 transition-colors duration-150 hover:text-ink hover:underline;
   }
-  /* Update ticker — a newer release exists on GitHub */
   .update-banner {
-    @apply flex items-center justify-center gap-3 border-b border-blue-200 bg-blue-50 px-4 py-1.5 text-xs text-blue-800;
+    @apply flex items-center justify-center gap-3 border-b border-acc/20 bg-acc-t px-4 py-1.5 text-xs text-acc;
   }
   .update-banner a {
-    @apply font-medium underline underline-offset-2 hover:text-blue-900;
+    @apply font-medium underline underline-offset-2 hover:text-acc-deep;
   }
   .update-banner button {
-    @apply leading-none text-blue-400 transition-colors duration-150 hover:text-blue-800;
+    @apply leading-none text-acc/60 transition-colors duration-150 hover:text-acc-deep;
   }
 }
 
@@ -151,39 +397,37 @@
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
-  body {
+  html, body {
     font-size: 11px;
     background: #fff;
   }
-  /* Controls don't belong on paper */
   button,
   input,
+  .btn,
   .app-pill,
   .app-segmented,
   .app-toolbar-divider,
   .app-gsearch,
   .app-footer,
+  .app-nav,
   .update-banner {
     display: none !important;
   }
-  /* Links print as plain text */
   a {
     color: inherit !important;
     text-decoration: none !important;
   }
-  /* Let wide tables fit the page instead of horizontally scrolling */
   .overflow-x-auto {
     overflow: visible !important;
   }
-  /* Repeat table headers across pages; never split a row */
   thead {
     display: table-header-group;
   }
   .app-table tbody tr {
     break-inside: avoid;
   }
-  .app-section {
-    margin-top: 1.5rem;
+  .pane {
+    border: 0;
   }
   @page {
     margin: 12mm;

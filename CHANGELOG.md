@@ -5,6 +5,74 @@ All notable changes to this project are documented here. Format loosely follows
 
 Русская версия — [CHANGELOG.ru.md](CHANGELOG.ru.md).
 
+## [0.8.0] - 2026-09-29
+
+A new look, charts that explain themselves, and a way in for scripts and AI
+agents. Existing instances migrate on start; nothing needs to be configured.
+
+### How to update
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+The schema migrates forward at start (new tables `api_keys`, `site_events`,
+`magiclinks_purchases`; nothing is dropped). Data survives: SQLite lives in the
+mounted `./data`. Rollback is `git checkout v0.7.1 && docker compose up -d
+--build`; the extra tables are simply ignored by the older version. If a browser
+tab was open during the update, reload it once - a tab still running the old
+build can show an error page on its first click. Full details, including the
+sequence for an AI agent: [Updating](README.md#updating).
+
+### Added
+- **Charts with context.** The site page draws a full traffic chart with Google
+  ranking updates shaded in; the Sites page opens with a portfolio pulse on the
+  same bands.
+- **Site events.** Mark domain merges, migrations or anything else on a site's
+  timeline; markers show on the charts and dashboard cards, `/events` lists
+  them all.
+- **Machine API with scoped keys.** Keys are created on `/api`, shown once and
+  stored as sha256. Each key can be limited to a set of sites; everything else
+  answers `404`. Endpoints cover sites, queries, the main landing page per
+  query, geo and site events. Agent docs at `/api/v1/doc.md`.
+- **MCP server** at `/api/v1/mcp` with nine read-only tools and four agent
+  skills served as MCP prompts and files. MCP never writes and never spends
+  money. Setup: [docs/MCP-SETUP.md](docs/MCP-SETUP.md).
+- **SERP monitor integration** (optional): a real-position column and a
+  "check now" button on the site page (`SERP_MONITOR_URL`,
+  `SERP_MONITOR_TOKEN`, `SERP_API_TOKEN`).
+- **Link buying** (optional): buy posts with links to striking-distance pages
+  straight from the striking tables, through
+  [FieldLink](https://seoboost-root.info/r/flt_czhTpL1GKPqQXI2h1c463ULMS2IEzV6fjJow2hiGlMg) (referral link)
+  or Magic 369 (`magiclinks.online`, keys via Telegram
+  [@links_369](https://t.me/links_369)). The window defaults to the provider
+  with the larger balance and re-checks the price right before paying; `/magiclinks`
+  lists orders from both with progress and, for FieldLink, indexing status.
+  Striking tables mark query + URL pairs already bought.
+- **Dashboard:** site cards in the OpenGSC style and a separate **Today** that
+  is never compared with anything while it is still filling up.
+
+### Changed
+- **Redesign.** A denser, trading-terminal look across the app; Portfolio is in
+  the top menu.
+- **Search Console responses are cached in memory for up to 60 minutes.** Page
+  switches are faster and quota lasts longer; **Refresh** drops the cache and a
+  restart starts cold. Search Analytics responses are never written to disk.
+- **`.env` is optional for Docker Compose** (Compose 2.24+): a fresh checkout
+  starts straight into the setup wizard.
+
+### Fixed
+- **`pnpm dev` on a fresh clone works again.** With no `ORIGIN` configured the
+  access guard treated the dev server as exposed and answered `503` to
+  everything, the setup wizard included. The dev server now states its own
+  loopback origin; the `503` text also says what to set.
+- The period selector works on the site page tabs, and search operators
+  (`site:` and the like) no longer leak into keyword lists.
+- Privacy Blur covers dashboard site cards and metrics.
+- MCP answers with the protocol version the client asks for and hides junk
+  queries the same way the hub's screens do.
+
 ## [0.7.1] — 2026-08-26
 
 Nothing changes for a running instance. What changed is how this project gets

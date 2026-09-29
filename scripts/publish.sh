@@ -19,7 +19,15 @@ CONF="$ROOT/.publish.conf"
 . "$CONF"
 
 : "${PUBLIC_REMOTE:?}" "${PUBLIC_REPO:?}" "${PUBLIC_HOST:?}" "${PRIVATE_REMOTE:?}" "${PRIVATE_BRANCH:?}"
-: "${CHANGELOG_FILE:?}" "${CHANGELOG_ALT:?}" "${VERSION_FILE:?}"
+: "${CHANGELOG_FILE:?}" "${CHANGELOG_ALT:?}"
+# VERSION_FILE may be empty, and that is a supported configuration rather
+# than a missing one: slimTDS keeps no version in a manifest at all — the
+# image is stamped from the release tag at build time, and a hand-kept second
+# copy would be exactly the invented version its BuildInfo refuses to report.
+# `?` rather than `:?` so the key must still be PRESENT: a line deleted by
+# accident fails loudly, only a deliberate empty value opts out. The version
+# argument stays cross-checked against both CHANGELOG files either way.
+: "${VERSION_FILE?}"
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/publish.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT INT TERM
@@ -69,14 +77,19 @@ changelog_info() {
   show "$commit" "$CHANGELOG_FILE" > "$log" || die "commit has no $CHANGELOG_FILE"
   show "$commit" "$CHANGELOG_ALT" > "$alt" || die "commit has no $CHANGELOG_ALT"
 
-  local ver="$WORK/version"
-  show "$commit" "$VERSION_FILE" > "$ver" || die "commit has no $VERSION_FILE"
+  # Skipped entirely when VERSION_FILE is empty — see the note by the
+  # requirement check at the top. Nothing downstream reads the manifest, so
+  # there is no partial state to guard against here.
+  if [ -n "$VERSION_FILE" ]; then
+    local ver="$WORK/version"
+    show "$commit" "$VERSION_FILE" > "$ver" || die "commit has no $VERSION_FILE"
 
-  local manifest
-  manifest=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ver" | head -1)
-  [ -n "$manifest" ] || die "no version field in $VERSION_FILE"
-  [ "$manifest" = "$version" ] \
-    || die "manifest says $manifest, you asked for $version — run the version bump first"
+    local manifest
+    manifest=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ver" | head -1)
+    [ -n "$manifest" ] || die "no version field in $VERSION_FILE"
+    [ "$manifest" = "$version" ] \
+      || die "manifest says $manifest, you asked for $version — run the version bump first"
+  fi
 
   # Dots interpolated into a BRE match any character; escape them so
   # 0.8.0 doesn't also match 0X8X0.

@@ -3,6 +3,7 @@ import Google from '@auth/core/providers/google';
 import { env as privateEnv } from '$env/dynamic/private';
 import { db } from '$lib/server/db';
 import { upsertAccount } from '$lib/server/accounts';
+import { gscCacheInvalidate } from '$lib/server/gsc-cache';
 import { als } from '$lib/server/request-context';
 import {
   getGoogleClientId, getGoogleClientSecret, ensureAuthSecret
@@ -61,6 +62,9 @@ export const { handle, signIn, signOut } = SvelteKitAuth(async () => {
           console.error('[auth] upsertAccount failed:', err);
           return '/?error=db_error';
         }
+        // A (re)connected account may present a different site list — the cached
+        // one must not outlive the tokens it was fetched with.
+        gscCacheInvalidate(`sites:${profile.sub}`);
 
         // Возвращаем редирект-URL → Auth.js не создаёт сессию, кидает на /.
         return '/';

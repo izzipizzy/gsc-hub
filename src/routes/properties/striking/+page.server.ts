@@ -3,7 +3,11 @@ import { db } from '$lib/server/db';
 import { fetchPerSiteQueries } from '$lib/server/google';
 import { listHiddenSites } from '$lib/server/hidden';
 import { getBrandedTerms } from '$lib/server/branded';
+import { filterPatterns, queryHidden } from '$lib/server/filters';
 import { requireAdmin } from '$lib/server/guard';
+import { gscCached } from '$lib/server/gsc-cache';
+import { purchaseSummary } from '$lib/server/magiclinks-purchases';
+import { anyMagicProviderConfigured } from '$lib/server/magiclinks-providers';
 import {
   computeCannibalization,
   computeCtrBenchmark,
@@ -78,18 +82,24 @@ interface PortfolioData {
   };
 }
 
+// In the shared GSC cache rather than a private map, so the Refresh buttons'
+// /cache/clear drops the portfolio too.
 const TTL_MS = 10 * 60 * 1000;
-const cache = new Map<number, { data: PortfolioData; expires: number }>();
 
 // Portfolio-wide analytics across every non-hidden site, all from a single query+page fan-out:
 // Striking distance, Cannibalization, CTR benchmark and Branded split. (Decay is heavier — a
 // separate 2-window fan-out — and loads lazily via ./decay.)
-async function buildPortfolio(days: number): Promise<PortfolioData> {
-  const hit = cache.get(days);
-  if (hit && hit.expires > Date.now()) return hit.data;
+function buildPortfolio(days: number): Promise<PortfolioData> {
+  return gscCached(`portfolio:${days}`, () => computePortfolio(days), TTL_MS);
+}
+
+async function computePortfolio(days: number): Promise<PortfolioData> {
 
   const { entries, errors } = await fetchPerSiteQueries(db(), days);
   const hidden = new Set(listHiddenSites(db()));
+  // `site:` и прочие операторы — не ключевые слова: на странице сайтов и в
+  // экспорте они уже спрятаны, портфельные вкладки должны вести себя так же.
+  const patterns = filterPatterns(db());
 
   const striking: PortfolioData['striking'] = [];
   const cannibal: PortfolioData['cannibal'] = [];
@@ -108,7 +118,7 @@ async function buildPortfolio(days: number): Promise<PortfolioData> {
     // The fan-out splits rows by country; collapse to query+page (impression-weighted position).
     const agg = new Map<string, QueryPageRow>();
     for (const r of entry.rows) {
-      if (!r.query || !r.page) continue;
+      if (!r.query || !r.page || queryHidden(r.query, patterns)) continue;
       const k = `${r.query}\n${r.page}`;
       const cur = agg.get(k) ?? { query: r.query, page: r.page, clicks: 0, impressions: 0, ctr: 0, position: 0 };
       cur.clicks += r.clicks;
@@ -128,7 +138,7 @@ async function buildPortfolio(days: number): Promise<PortfolioData> {
     // Striking distance is country-specific (position differs by country), so keep the raw
     // per-country rows here instead of the collapsed ones.
     for (const r of entry.rows) {
-      if (!r.query || !r.page) continue;
+      if (!r.query || !r.page || queryHidden(r.query, patterns)) continue;
       if (
         r.position >= STRIKING_POS_MIN &&
         r.position <= STRIKING_POS_MAX &&
@@ -213,7 +223,6 @@ async function buildPortfolio(days: number): Promise<PortfolioData> {
     }
   };
 
-  cache.set(days, { data, expires: Date.now() + TTL_MS });
   return data;
 }
 
@@ -225,7 +234,15 @@ export const load: PageServerLoad = ({ url, locals }) => {
 
   // Return the promise UN-awaited so SvelteKit streams it: the page shell renders immediately
   // and the (cached) portfolio data fills in when ready, instead of blocking navigation.
-  return { days, initialTab, portfolio: buildPortfolio(days) };
+  // История покупок читается из своей базы и отдаётся сразу: она маленькая и не
+  // зависит от Google, поэтому таблицу она не задерживает.
+  return {
+    days,
+    initialTab,
+    portfolio: buildPortfolio(days),
+    purchases: purchaseSummary(db()),
+    magicLinksReady: anyMagicProviderConfigured(db())
+  };
 };
 
 export const prerender = false;

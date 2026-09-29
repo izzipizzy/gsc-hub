@@ -2,7 +2,28 @@
   import '../app.css';
   import { onMount } from 'svelte';
   import favicon from '$lib/assets/favicon.svg';
+  import { page } from '$app/state';
   import { RELEASES_LATEST_URL, isNewer, releaseUrl, shouldCheck } from '$lib/version';
+
+  const NAV = [
+    { href: '/dashboard', label: 'Dashboard' },
+    { href: '/properties', label: 'Sites' },
+    { href: '/properties/striking', label: 'Portfolio', title: 'Портфельная аналитика: striking distance, каннибализация, CTR, branded, decay' },
+    { href: '/events', label: 'Events', title: 'Все склейки: какой домен куда подклеен и когда' },
+    { href: '/magiclinks', label: 'MagicLinks', title: 'Задания на посты и ссылки: статусы и URL публикаций' },
+    { href: '/api', label: 'API', title: 'API-ключи и документация для агентов' },
+    { href: '/admin/users', label: 'Users' }
+  ];
+  // Longest matching prefix wins, so /properties/striking lights Portfolio, not Sites.
+  const activeHref = $derived.by(() => {
+    const path = page.url.pathname;
+    let best = '';
+    for (const { href } of NAV) {
+      if ((path === href || path.startsWith(href + '/')) && href.length > best.length) best = href;
+    }
+    return best;
+  });
+  const isActive = (href: string) => activeHref === href;
   let { children, data } = $props();
   const user = $derived(data?.user ?? null);
   const isAdmin = $derived(user?.role === 'admin');
@@ -123,28 +144,42 @@
     <a href={releaseUrl(newRelease)} target="_blank" rel="noopener noreferrer">
       Доступна {newRelease} — что нового
     </a>
-    <button type="button" aria-label="Скрыть уведомление" onclick={dismissUpdate}>×</button>
+    <button type="button" aria-label="Скрыть уведомление" onclick={dismissUpdate}><svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
   </div>
 {/if}
 
 {#if user}
-  <header class="flex items-center gap-3 border-b border-gray-200 bg-white px-4 py-2 text-sm">
-    <a href="/" class="font-semibold text-gray-900">gsc-hub</a>
+  <header class="app-nav sticky top-0 z-30 flex h-10 items-center gap-1 border-b border-line bg-pane px-3">
+    <a href="/" class="mr-2 flex shrink-0 items-center gap-2 whitespace-nowrap text-[13px] font-bold text-ink sm:mr-3">
+      <svg viewBox="0 0 16 16" class="h-4 w-4" aria-hidden="true"><rect width="16" height="16" rx="3.5" fill="rgb(var(--acc))"/><path d="M4 11l2.5-3 2 2L12 5" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      gsc-hub
+    </a>
     {#if isAdmin}
-      <nav class="flex gap-3 text-gray-600">
-        <a href="/dashboard" class="hover:underline">Dashboard</a>
-        <a href="/properties" class="hover:underline">Sites</a>
-        <a href="/admin/users" class="hover:underline">Users</a>
+      <nav class="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto pr-4 [scrollbar-width:none] max-lg:[mask-image:linear-gradient(to_right,black_calc(100%-24px),transparent)]">
+        {#each NAV as item (item.href)}
+          <a href={item.href} title={item.title} class="nav-link" class:is-active={isActive(item.href)}
+            aria-current={isActive(item.href) ? 'page' : undefined}>{item.label}</a>
+        {/each}
       </nav>
     {/if}
-    <button
-      type="button"
-      class="ml-auto rounded px-2 py-0.5 text-xs {blur ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600'} hover:opacity-80"
-      title="Blur emails, domains and metrics for screenshots"
-      onclick={() => (blur = !blur)}
-    >{blur ? '🙈 Blurred' : '👁 Blur'}</button>
-    <span class="pii text-gray-500">{user.email} · {user.role}</span>
-    <form method="POST" action="/logout"><button class="text-blue-600 hover:underline">Выйти</button></form>
+    <div class="ml-auto flex shrink-0 items-center gap-1.5">
+      <button
+        type="button"
+        class="btn btn-sm {blur ? 'bg-ink text-white hover:bg-ink-2' : 'btn-ghost'}"
+        title="Blur emails, domains and metrics for screenshots"
+        aria-pressed={blur}
+        onclick={() => (blur = !blur)}
+      >
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+          {#if blur}<path d="M2 2l12 12M6.6 6.6a2 2 0 0 0 2.8 2.8M4.3 4.4C2.8 5.4 1.8 7 1.5 8c.8 2.2 3.3 4.5 6.5 4.5 1.3 0 2.5-.4 3.5-1M7 3.6c.3 0 .7-.1 1-.1 3.2 0 5.7 2.3 6.5 4.5-.3.8-.8 1.6-1.4 2.3"/>
+          {:else}<path d="M1.5 8C2.3 5.8 4.8 3.5 8 3.5s5.7 2.3 6.5 4.5c-.8 2.2-3.3 4.5-6.5 4.5S2.3 10.2 1.5 8z"/><circle cx="8" cy="8" r="2"/>{/if}
+        </svg>
+        <span class="hidden sm:inline">Blur</span>
+      </button>
+      <span class="app-toolbar-divider hidden sm:block" aria-hidden="true"></span>
+      <span class="pii hidden text-xs text-ink-3 sm:inline">{user.email} · {user.role}</span>
+      <form method="POST" action="/logout"><button class="btn btn-ghost btn-sm">Выйти</button></form>
+    </div>
   </header>
 {/if}
 
@@ -172,3 +207,26 @@
   <span aria-hidden="true">·</span>
   <a href="https://izzyypizzy.com/" target="_blank" rel="noopener noreferrer">Сайт</a>
 </footer>
+
+<style>
+  .nav-link {
+    display: inline-flex;
+    align-items: center;
+    height: 28px;
+    padding: 0 10px;
+    border-radius: 4px;
+    font-size: 12.5px;
+    white-space: nowrap;
+    color: rgb(var(--ink-2));
+    transition: background-color 150ms, color 150ms;
+  }
+  .nav-link:hover {
+    color: rgb(var(--ink));
+    background: rgb(var(--bg));
+  }
+  .nav-link.is-active {
+    color: rgb(var(--ink));
+    font-weight: 600;
+    background: rgb(var(--bg));
+  }
+</style>

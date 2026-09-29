@@ -3,7 +3,11 @@ services:
     build: .
     container_name: gsc
     restart: unless-stopped
-    env_file: .env
+    # Optional: the setup wizard stores everything in SQLite, so a fresh
+    # checkout starts without a .env. Needs Docker Compose 2.24+.
+    env_file:
+      - path: .env
+        required: false
     environment:
       HOST: 0.0.0.0
       PORT: 3000

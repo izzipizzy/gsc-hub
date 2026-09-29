@@ -22,3 +22,22 @@ export function addQueryFilter(db: Db, pattern: string): QueryFilter {
 export function removeQueryFilter(db: Db, id: number): void {
   db.prepare('DELETE FROM query_filters WHERE id = ?').run(id);
 }
+
+/**
+ * Один способ прятать мусорные запросы на всех экранах. Раньше фильтры знала
+ * только таблица сайтов и экспорт, поэтому в striking сайта лезли `site:`-
+ * операторы — это не ключи, по ним ничего не покупают и не оптимизируют.
+ */
+export function queryHidden(query: string, patterns: string[]): boolean {
+  const q = query.toLowerCase();
+  return patterns.some((p) => q.includes(p));
+}
+
+export function filterPatterns(db: Db): string[] {
+  return listQueryFilters(db).map((f) => f.pattern.toLowerCase());
+}
+
+export function dropFilteredQueries<T>(rows: T[], patterns: string[], pick: (row: T) => string): T[] {
+  if (patterns.length === 0) return rows;
+  return rows.filter((r) => !queryHidden(pick(r), patterns));
+}
