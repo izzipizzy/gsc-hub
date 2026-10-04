@@ -260,7 +260,7 @@ export const TOOLS: McpTool[] = [
   {
     name: 'site_events',
     description:
-      'События сайтов: склейки доменов с датами. Нужны, чтобы не принять последствие склейки за просадку.',
+      'События сайтов: склейки доменов и покупки ссылок с датами. Помогают сопоставить изменения трафика с действиями на сайте.',
     inputSchema: { type: 'object', properties: { site: SITE } },
     async run(args, caller) {
       if (str(args, 'site')) {
@@ -277,7 +277,7 @@ const withDonor = (e: { id: number; siteHost: string; date: string; type: string
   site: e.siteHost,
   date: e.date,
   type: e.type,
-  donor: donorOf(e.note),
+  donor: e.type === 'merge' ? donorOf(e.note) : null,
   note: e.note
 });
 

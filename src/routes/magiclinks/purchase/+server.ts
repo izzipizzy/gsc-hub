@@ -42,7 +42,7 @@ function parseItems(raw: unknown): MagicLinksBrief[] {
 }
 
 // Шаг 1 покупки. FieldLink: сохранить задание и вернуть расчёт — деньги ещё
-// не тратятся, публикация не начинается. Magic 369: операции «расчёт» в API
+// не тратятся, публикация не начинается. 369Team: операции «расчёт» в API
 // нет, цена приходит с /balance, так что расчёт считается по ней, и заказ
 // создаётся только на следующем шаге.
 export const POST: RequestHandler = async ({ locals, request }) => {
@@ -59,7 +59,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 
   if (provider === PROVIDER_MAGIC369) {
     const client = magic369Client(db());
-    if (!client) throw error(400, 'Ключ Magic 369 не задан');
+    if (!client) throw error(400, 'Ключ 369Team не задан');
     try {
       const balance = await client.balance();
       const amountMinor = requested * balance.priceMinor;

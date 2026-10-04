@@ -9,7 +9,7 @@
     { href: '/dashboard', label: 'Dashboard' },
     { href: '/properties', label: 'Sites' },
     { href: '/properties/striking', label: 'Portfolio', title: 'Портфельная аналитика: striking distance, каннибализация, CTR, branded, decay' },
-    { href: '/events', label: 'Events', title: 'Все склейки: какой домен куда подклеен и когда' },
+    { href: '/events', label: 'Events', title: 'Склейки доменов и покупки ссылок с датами' },
     { href: '/magiclinks', label: 'MagicLinks', title: 'Задания на посты и ссылки: статусы и URL публикаций' },
     { href: '/api', label: 'API', title: 'API-ключи и документация для агентов' },
     { href: '/admin/users', label: 'Users' }

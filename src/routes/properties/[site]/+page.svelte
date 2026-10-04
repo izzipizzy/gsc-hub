@@ -820,7 +820,12 @@
               <li class="group flex items-center gap-2 px-3 py-1.5 text-[12.5px]">
                 <span class="inline-block h-2 w-2 shrink-0 rotate-45 rounded-[1px]" style:background={data.eventTypes[ev.type]?.color ?? 'rgb(var(--ink-3))'}></span>
                 <span class="app-num shrink-0 text-ink-3">{ev.date.slice(5).split('-').reverse().join('.')}</span>
-                <span class="min-w-0 flex-1 truncate font-medium pii" title={ev.note}>{ev.note}</span>
+                {#if ev.orderHref}
+                  <a class="min-w-0 flex-1 truncate font-medium hover:underline" href={ev.orderHref} title="{ev.note} · открыть заказ">{ev.note}</a>
+                {:else}
+                  <span class="min-w-0 flex-1 truncate font-medium pii" title={ev.note}>{ev.note}</span>
+                {/if}
+                {#if !ev.orderHref}
                 <button
                   type="button"
                   class="btn btn-ghost btn-sm btn-icon text-ink-4 opacity-0 hover:text-dn focus:opacity-100 group-hover:opacity-100"
@@ -828,6 +833,7 @@
                   aria-label="Delete event {ev.note}"
                   onclick={() => removeEvent(ev.id)}
                 ><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
+                {/if}
               </li>
             {/each}
           </ul>
@@ -837,7 +843,7 @@
             <input type="date" bind:value={evDate} required class="input app-num w-[8.5rem]" title="Event date" />
             <select bind:value={evType} class="input min-w-0 flex-1">
               {#each Object.entries(data.eventTypes) as [id, t] (id)}
-                <option value={id}>{t.label}</option>
+                {#if id === 'merge'}<option value={id}>{t.label}</option>{/if}
               {/each}
             </select>
           </div>
@@ -851,7 +857,7 @@
             <button type="button" onclick={addEvent} disabled={evSaving || !evNote.trim()} class="btn btn-pri">{evSaving ? '…' : 'Add'}</button>
           </div>
           {#if evError}<p class="text-err text-xs">{evError}</p>{/if}
-          <p class="text-[11px] text-ink-3">Маркеры на графике; видны также на дашборде и в portfolio pulse.</p>
+          <p class="text-[11px] text-ink-3">Покупки автоматически из <a href="/magiclinks" class="hover:underline">Magiclinks</a>, по дате заказа. Маркеры видны также на дашборде и в portfolio pulse.</p>
         </div>
       </section>
 

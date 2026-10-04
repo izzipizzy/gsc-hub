@@ -17,9 +17,11 @@
   }
 
   export interface ChartEvent {
+    id?: number;
     date: string; // ISO — drawn as a marked day
     label: string; // shown verbatim, e.g. "← donordomain.com"
     color: string;
+    typeLabel?: string;
   }
 
   let {
@@ -168,6 +170,8 @@
         x: g.x,
         count: g.items.length,
         color: g.items[0].color,
+        colors: [...new Set(g.items.map((e) => e.color))],
+        details: g.items.map((e) => `${e.date}: ${e.label}`).join('\n'),
         label,
         anchor,
         lx0: anchor === 'end' ? g.x - 12 - w : g.x,
@@ -200,6 +204,9 @@
   );
   const last = $derived(n ? points[n - 1] : null);
   const eventSwatch = $derived(events[0]?.color ?? 'rgb(19 23 34)');
+  const eventLegend = $derived([...new Map(events.map((ev) =>
+    [ev.color, { color: ev.color, label: ev.typeLabel ?? 'Events' }]
+  )).values()]);
 
   // ── hover ──
   let hoverI = $state<number | null>(null);
@@ -252,15 +259,18 @@
     {#if events.length > 0}
       <button type="button" class="legend-item" class:is-off={!showEvents} style:--c={eventSwatch}
         onclick={() => (showEvents = !showEvents)} aria-pressed={showEvents}
-        title="Site events (domain merges, migrations)">
+        title="События сайта: склейки доменов и покупки ссылок">
         <i></i>Events <span class="text-ink-3">{events.length}</span>
       </button>
+      {#each eventLegend as kind (kind.color)}
+        <span class="legend-item" style:--c={kind.color}><i></i>{kind.label}</span>
+      {/each}
     {/if}
     {#each hoverUpdates as u (u.date + u.name)}
       <span class="rounded-[3px] px-1.5 py-px text-[11px] font-medium" style:background="{UPDATE_COLORS[u.type] ?? u.color}22" style:color="rgb(var(--upd-ink))">{u.name}</span>
     {/each}
-    {#each hoverEvents as ev (ev.label)}
-      <span class="rounded-[3px] bg-ink px-1.5 py-px text-[11px] font-medium text-white">{ev.label}</span>
+    {#each hoverEvents as ev, i (i)}
+      <span class="rounded-[3px] px-1.5 py-px text-[11px] font-medium text-white" style:background={ev.color}>{ev.label}</span>
     {/each}
   </div>
 
@@ -341,14 +351,18 @@
 
       <!-- event days -->
       {#each eventMarks as ev (ev.key)}
+        <g><title>{ev.details}</title>
+        {#each ev.colors as color, i (color)}
+        {@const markX = ev.x + (i - (ev.colors.length - 1) / 2) * 12}
         <!-- solid hairline: the dashed rule belongs to the hover crosshair -->
-        <line x1={ev.x} x2={ev.x} y1="0" y2={innerH} stroke={ev.color} stroke-width="1" stroke-opacity="0.28" />
-        <g transform="translate({ev.x},{priceH - 4})">
-          <rect x={ev.count > 1 ? -6.5 : -5} y={ev.count > 1 ? -14.5 : -13} width={ev.count > 1 ? 13 : 10} height={ev.count > 1 ? 13 : 10} rx="1.5" fill={ev.color} transform="rotate(45 0 -8)" stroke="#fff" stroke-width="1.5" />
-          {#if ev.count > 1}
+        <line x1={markX} x2={markX} y1="0" y2={innerH} stroke={color} stroke-width="1" stroke-opacity="0.28" />
+        <g transform="translate({markX},{priceH - 4})">
+          <rect x={ev.count > 1 ? -6.5 : -5} y={ev.count > 1 ? -14.5 : -13} width={ev.count > 1 ? 13 : 10} height={ev.count > 1 ? 13 : 10} rx="1.5" fill={color} transform="rotate(45 0 -8)" stroke="#fff" stroke-width="1.5" />
+          {#if ev.count > 1 && i === 0}
             <text y="-5" font-size="8.5" font-weight="700" fill="#fff" text-anchor="middle" class="font-mono">{ev.count}</text>
           {/if}
         </g>
+        {/each}
         {#if labelledEvents.has(ev.key)}
         {@const tw = ev.label.length * 6.3 + 8}
         <rect x={ev.anchor === 'end' ? ev.x - 8 - tw : ev.x + 8} y={priceH - 20} width={tw} height="16" rx="2" fill="#fff" fill-opacity="0.94" stroke="rgb(228 231 236)" />
@@ -361,6 +375,7 @@
           text-anchor={ev.anchor}
         >{ev.label}</text>
         {/if}
+        </g>
       {/each}
 
       <!-- last value: dotted level + tag on the axis -->

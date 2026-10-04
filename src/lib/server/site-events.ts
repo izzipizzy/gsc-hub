@@ -1,5 +1,6 @@
 import type { Db } from './db';
 import { hostToUnicode } from './idn';
+import { listPurchases } from './magiclinks-purchases';
 
 // User-entered chart annotations for traffic events that are not Google algorithm
 // updates — domain merges (подклейка донора в сайт), migrations, anything worth a
@@ -9,7 +10,7 @@ import { hostToUnicode } from './idn';
 // Reads are live per request: a row added straight into SQLite shows up on refresh,
 // no restart needed.
 
-export type SiteEventType = 'merge';
+export type SiteEventType = 'merge' | 'link_purchase';
 
 export interface SiteEvent {
   id: number;
@@ -18,11 +19,13 @@ export interface SiteEvent {
   type: SiteEventType;
   note: string; // shown verbatim as the chart label, e.g. "← donordomain.com"
   addedAt: number; // when the row was entered, ms
+  orderHref?: string; // purchase events are derived from order history, read-only
 }
 
 /** Display config per type — chart line color + human label. */
 export const SITE_EVENT_TYPES: Record<SiteEventType, { color: string; label: string }> = {
-  merge: { color: '#131722', label: 'Merge' }
+  merge: { color: '#131722', label: 'Merge' },
+  link_purchase: { color: '#7c3aed', label: 'Покупка ссылок' }
 };
 
 /** Bare lowercase host of a GSC siteUrl ("sc-domain:Example.com", "https://www.x/").
@@ -57,7 +60,41 @@ function toEvent(r: EventRow): SiteEvent {
 
 export function listSiteEvents(db: Db): SiteEvent[] {
   const rows = db.prepare(`SELECT ${COLS} FROM site_events ORDER BY date, id`).all() as EventRow[];
-  return rows.map(toEvent);
+  return [...rows.map(toEvent), ...purchaseEvents(db)]
+    .sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
+}
+
+/** One marker per order and site. Read the same history as /magiclinks, so old
+ * orders appear immediately and refreshes/import retries cannot duplicate events.
+ * The date is the order date (UTC), not a claim that placements are already live. */
+function purchaseEvents(db: Db): SiteEvent[] {
+  const groups = new Map<string, { event: SiteEvent; quantity: number; provider: string }>();
+  for (const p of listPurchases(db)) {
+    const host = hostOfSite(p.siteHost);
+    if (!host || p.quantity <= 0 || !Number.isFinite(p.createdAt)) continue;
+    const key = JSON.stringify([host, p.provider, p.orderId]);
+    let group = groups.get(key);
+    if (!group) {
+      group = {
+        event: {
+          id: -p.id, siteHost: host, date: '', type: 'link_purchase', note: '',
+          addedAt: p.createdAt,
+          orderHref: `/magiclinks/${encodeURIComponent(p.orderId)}`
+        },
+        quantity: 0,
+        provider: p.provider === 'magic369' ? '369Team' : 'FieldLink'
+      };
+      groups.set(key, group);
+    }
+    group.quantity += p.quantity;
+    group.event.id = Math.max(group.event.id, -p.id);
+    group.event.addedAt = Math.min(group.event.addedAt, p.createdAt);
+  }
+  return [...groups.values()].map(({ event, quantity, provider }) => ({
+    ...event,
+    date: new Date(event.addedAt).toISOString().slice(0, 10),
+    note: `Покупка ссылок: ${quantity} · ${provider}`
+  }));
 }
 
 /** Events of one property, matched by host, oldest first. */
@@ -171,15 +208,19 @@ export function deleteSiteEvent(db: Db, id: number): void {
 
 /** Shape TrendChart.svelte consumes: a vertical line + label at `date`. */
 export interface ChartEvent {
+  id: number;
   date: string; // ISO YYYY-MM-DD
   label: string;
   color: string;
+  typeLabel?: string;
 }
 
 export function toChartEvents(events: SiteEvent[]): ChartEvent[] {
   return events.map((e) => ({
+    id: e.id,
     date: e.date,
     label: e.note || SITE_EVENT_TYPES[e.type]?.label || e.type,
-    color: SITE_EVENT_TYPES[e.type]?.color ?? SITE_EVENT_TYPES.merge.color
+    color: SITE_EVENT_TYPES[e.type]?.color ?? SITE_EVENT_TYPES.merge.color,
+    typeLabel: SITE_EVENT_TYPES[e.type]?.label ?? e.type
   }));
 }

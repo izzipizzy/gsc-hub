@@ -5,6 +5,35 @@ All notable changes to this project are documented here. Format loosely follows
 
 Русская версия — [CHANGELOG.ru.md](CHANGELOG.ru.md).
 
+## [0.8.1] - 2026-10-04
+
+### How to update
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+No schema changes. Existing Magiclinks purchase history appears automatically;
+SQLite data stays in the mounted volume. Reload any open browser tabs.
+
+### Added
+- **Link purchases on traffic charts.** One purple event per order and site,
+  with the ordered quantity and provider, appears on the site chart, dashboard
+  and portfolio pulse. Its date is the purchase date (UTC), not the placement
+  date. Historical purchases are included without a backfill.
+- **Events filter and order links.** `/events` can filter merges and purchases;
+  purchase descriptions and the site's event list link to the order.
+- The read-only MCP `site_events` tool includes link purchases alongside merges.
+
+### Changed
+- The Magic 369 provider is now labelled **369Team** throughout the UI and docs.
+  Provider IDs and API settings remain compatible.
+
+### Fixed
+- Nearby merge and purchase markers retain both colors on charts. Orders with
+  identical descriptions no longer collide in dashboard event keys.
+
 ## [0.8.0] - 2026-09-29
 
 A new look, charts that explain themselves, and a way in for scripts and AI
@@ -45,7 +74,7 @@ sequence for an AI agent: [Updating](README.md#updating).
 - **Link buying** (optional): buy posts with links to striking-distance pages
   straight from the striking tables, through
   [FieldLink](https://seoboost-root.info/r/flt_czhTpL1GKPqQXI2h1c463ULMS2IEzV6fjJow2hiGlMg) (referral link)
-  or Magic 369 (`magiclinks.online`, keys via Telegram
+  or 369Team (`magiclinks.online`, keys via Telegram
   [@links_369](https://t.me/links_369)). The window defaults to the provider
   with the larger balance and re-checks the price right before paying; `/magiclinks`
   lists orders from both with progress and, for FieldLink, indexing status.

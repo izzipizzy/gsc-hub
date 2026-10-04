@@ -59,7 +59,7 @@ curl -s https://your-hub.example.com/api/v1/mcp \
 | `ctr_benchmark` | CTR against the expected curve, plus under-performing queries | `site` |
 | `decay` | pages that lost clicks and impressions, recent window vs the previous one | `site` |
 | `site_countries` | per-country split for a site | `site` |
-| `site_events` | domain merges with dates, read-only | - |
+| `site_events` | domain merges and link purchases with dates, read-only | - |
 
 Every tool takes an optional `days` (1..480, default 28); list-shaped tools take
 `limit`. A tool error comes back as a result with `isError: true` rather than a

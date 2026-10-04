@@ -52,7 +52,7 @@ async function csvFieldlink(orderId: string) {
 // статьи, он покажет, о чём текст вышел на самом деле.
 async function csvMagic369(orderId: string) {
   const client = magic369Client(db());
-  if (!client) throw new Magic369Error(404, 'NO_TOKEN', 'Ключ Magic 369 не задан');
+  if (!client) throw new Magic369Error(404, 'NO_TOKEN', 'Ключ 369Team не задан');
 
   const [order, articles] = await Promise.all([client.order(orderId), client.orderArticles(orderId)]);
   const rows: Array<[string, string, string, string, string, string]> = [];

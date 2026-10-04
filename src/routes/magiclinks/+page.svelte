@@ -17,7 +17,7 @@
           ? 'badge-warn'
           : 'badge-muted';
 
-  const providerName: Record<string, string> = { fieldlink: 'FieldLink', magic369: 'Magic 369' };
+  const providerName: Record<string, string> = { fieldlink: 'FieldLink', magic369: '369Team' };
 
   const progress = (o: { completedCount: number; rowCount: number }) =>
     o.rowCount > 0 ? Math.round((o.completedCount / o.rowCount) * 100) : 0;
@@ -44,10 +44,10 @@
     <p class="notice mb-4 border-up/25 bg-up-t text-up">Ключ сохранён.</p>
   {/if}
   {#if form && 'saved369' in form && form.saved369}
-    <p class="notice mb-4 border-up/25 bg-up-t text-up">Ключ Magic 369 сохранён.</p>
+    <p class="notice mb-4 border-up/25 bg-up-t text-up">Ключ 369Team сохранён.</p>
   {/if}
   {#if form && 'cleared369' in form && form.cleared369}
-    <p class="notice mb-4 border-warn/25 bg-warn-t text-warn">Ключ Magic 369 убран из базы.</p>
+    <p class="notice mb-4 border-warn/25 bg-warn-t text-warn">Ключ 369Team убран из базы.</p>
   {/if}
   {#if form && 'imported' in form && form.imported}
     <p class="notice mb-4 border-up/25 bg-up-t text-up">
@@ -133,8 +133,8 @@
 
         <p class="text-xs text-ink-3">
           Статус <code class="font-mono">queued</code> и <code class="font-mono">processing</code> - это очередь, а не публикация.
-          У FieldLink списываются только проверенные выполненные платные позиции, бонусные бесплатны; у Magic 369 деньги списываются при создании заказа.
-          Индексацию FieldLink запускает сам, когда опубликованы все позиции заказа; у Magic 369 индексации в API нет.
+          У FieldLink списываются только проверенные выполненные платные позиции, бонусные бесплатны; у 369Team деньги списываются при создании заказа.
+          Индексацию FieldLink запускает сам, когда опубликованы все позиции заказа; у 369Team индексации в API нет.
         </p>
       {/if}
     </div>
@@ -228,7 +228,7 @@
       </section>
 
       <section class="pane">
-        <div class="pane-head">Magic 369 · второй провайдер
+        <div class="pane-head">369Team · второй провайдер
           {#if data.m369.configured && data.m369.balance}
             <span class="aside text-ink-2">Баланс <b class="app-num text-ink">{credits(data.m369.balance.balanceMinor)}</b> ток.</span>
           {/if}
@@ -267,7 +267,7 @@
                   required
                   autocomplete="off"
                   placeholder="sk_…"
-                  aria-label="ключ Magic 369"
+                  aria-label="ключ 369Team"
                   class="input min-w-0 flex-1 font-mono"
                 />
                 <button class="btn btn-pri">Сохранить</button>
@@ -277,7 +277,7 @@
                   method="POST"
                   action="?/clear369Token"
                   class="mt-3"
-                  onsubmit={(e) => { if (!confirm('Убрать ключ Magic 369 из базы? Покупки пойдут только через FieldLink.')) e.preventDefault(); }}
+                  onsubmit={(e) => { if (!confirm('Убрать ключ 369Team из базы? Покупки пойдут только через FieldLink.')) e.preventDefault(); }}
                 >
                   <button class="btn btn-danger btn-sm">Убрать ключ</button>
                 </form>
@@ -291,7 +291,7 @@
               <a class="text-acc hover:underline" href={MAGIC369_CONTACT.url} target="_blank" rel="noopener">{MAGIC369_CONTACT.handle}</a> on Telegram.</span>
             </p>
             <p>
-              Ключ выдаётся в сервисе Magic 369 (magiclinks.online). Хаб хранит его
+              Ключ выдаётся в сервисе 369Team (magiclinks.online). Хаб хранит его
               в своей базе и шлёт только на
               <code class="pii break-all font-mono text-[12px] text-ink">{data.m369.base}</code>.
               Без ключа покупки идут только через FieldLink.
@@ -303,7 +303,7 @@
                 required
                 autocomplete="off"
                 placeholder="sk_…"
-                aria-label="ключ Magic 369"
+                aria-label="ключ 369Team"
                 class="input min-w-0 flex-1 font-mono"
               />
               <button class="btn btn-pri">Сохранить ключ</button>

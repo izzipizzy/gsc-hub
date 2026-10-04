@@ -2,7 +2,7 @@ import type { Db } from './db';
 import { getConfigValue, configSource, setConfigValue, clearConfigValue } from './config';
 import { languageLabel } from '$lib/utils/lang';
 
-// Единственный модуль, знающий второй провайдер покупок — Magic 369
+// Единственный модуль, знающий второй провайдер покупок — 369Team
 // (https://magiclinks.online, «API размещения статей», swagger 1.0).
 // В отличие от FieldLink заказ тут одношаговый: POST /orders сразу списывает
 // деньги, отдельной операции «расчёт» в API нет — цена приходит с /balance.
@@ -141,7 +141,7 @@ export class Magic369Client {
         signal: AbortSignal.timeout(20000)
       });
       if (res.status >= 300 && res.status < 400) {
-        throw new Magic369Error(res.status, 'REDIRECT', 'Magic 369 ответил редиректом на другой адрес');
+        throw new Magic369Error(res.status, 'REDIRECT', '369Team ответил редиректом на другой адрес');
       }
 
       const ct = res.headers.get('content-type') ?? '';
@@ -164,7 +164,7 @@ export class Magic369Client {
       throw new Magic369Error(
         res.status,
         obj.error?.code ?? obj.code,
-        obj.error?.message ?? obj.message ?? `HTTP ${res.status} от Magic 369`
+        obj.error?.message ?? obj.message ?? `HTTP ${res.status} от 369Team`
       );
     }
   }

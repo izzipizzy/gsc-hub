@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { openDb, type Db } from '../src/lib/server/db';
-import { addGluedDomain, normalizeDomain, listSiteEvents, GluedError, addSiteEvent, donorOf } from '../src/lib/server/site-events';
+import { addGluedDomain, normalizeDomain, listSiteEvents, GluedError, addSiteEvent, donorOf, listSiteEventsForSite, toChartEvents, SITE_EVENT_TYPES } from '../src/lib/server/site-events';
+
+import { recordPurchases } from '../src/lib/server/magiclinks-purchases';
 
 let db: Db;
 beforeEach(() => { db = openDb(':memory:'); });
@@ -86,5 +88,52 @@ describe('addGluedDomain and events entered by the site form', () => {
     const res = addGluedDomain(db, { site: 'casino.com', donor: 'https://donor.com/', date: '2026-09-18' });
     expect(res.created).toBe(false);
     expect(res.event.id).toBe(fromForm!.id);
+  });
+});
+
+
+describe('purchase timeline events', () => {
+  const purchase = {
+    siteHost: 'www.casino.com', targetUrl: 'https://casino.com/a', query: 'casino',
+    language: 'en', quantity: 3, taskId: 'task', orderId: 'order/1'
+  };
+  const at = Date.parse('2026-09-18T23:45:00Z');
+
+  it('aggregates an order per normalized site and keeps orders/providers distinct', () => {
+    recordPurchases(db, [purchase, { ...purchase, siteHost: 'casino.com', query: 'bonus', quantity: 2 },
+      { ...purchase, siteHost: 'other.com', targetUrl: 'https://other.com/', quantity: 4 }], at);
+    recordPurchases(db, [{ ...purchase, orderId: 'order2', provider: 'magic369' }], at);
+    const events = listSiteEventsForSite(db, 'sc-domain:casino.com');
+    expect(events).toHaveLength(2);
+    expect(events.find((e) => e.note.includes('FieldLink'))).toMatchObject({
+      siteHost: 'casino.com', type: 'link_purchase', date: '2026-09-18',
+      addedAt: at, note: 'Покупка ссылок: 5 · FieldLink', orderHref: '/magiclinks/order%2F1'
+    });
+    expect(events.some((e) => e.note === 'Покупка ссылок: 3 · 369Team')).toBe(true);
+    expect(listSiteEventsForSite(db, 'https://www.other.com/')).toHaveLength(1);
+    expect(new Set(listSiteEvents(db).map((e) => e.id)).size).toBe(3);
+  });
+
+  it('shows historical purchases without a backfill and does not duplicate on retry/refresh', () => {
+    recordPurchases(db, [purchase], at);
+    const before = listSiteEvents(db);
+    recordPurchases(db, [purchase], at + 86400000);
+    expect(listSiteEvents(db)).toEqual(before);
+    expect(listSiteEvents(db)).toHaveLength(1);
+    expect(db.prepare('SELECT COUNT(*) n FROM site_events').get()).toEqual({ n: 0 });
+  });
+
+  it('keeps merges and purchases on the same day with distinct chart colors', () => {
+    recordPurchases(db, [purchase], at);
+    addGluedDomain(db, { site: 'casino.com', donor: 'donor.com', date: '2026-09-18' });
+    const events = listSiteEventsForSite(db, 'casino.com');
+    expect(events).toHaveLength(2);
+    expect(events.find((e) => e.type === 'merge')?.id).toBeGreaterThan(0);
+    expect(events.find((e) => e.type === 'link_purchase')?.id).toBeLessThan(0);
+    const markers = toChartEvents(events);
+    expect(new Set(markers.map((e) => e.color)).size).toBe(2);
+    expect(markers.find((e) => e.typeLabel === 'Покупка ссылок')?.color)
+      .toBe(SITE_EVENT_TYPES.link_purchase.color);
+    expect(listSiteEventsForSite(db, 'unrelated.com')).toEqual([]);
   });
 });

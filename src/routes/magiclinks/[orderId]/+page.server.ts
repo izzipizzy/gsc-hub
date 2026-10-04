@@ -77,7 +77,7 @@ interface Magic369OrderContent {
 
 // Позиции одного заказа: что уже опубликовано, где, и что с индексацией.
 // Провайдер заказа берём из истории покупок; заказ, сделанный мимо хаба,
-// пробуем читать сначала у FieldLink, потом у Magic 369. Ошибки провайдеров
+// пробуем читать сначала у FieldLink, потом у 369Team. Ошибки провайдеров
 // доходят сюда сырыми: только здесь 404 одного превращается в попытку у
 // другого, а всё остальное — в понятный HttpError.
 export const load: PageServerLoad = async ({ locals, params, url }) => {
@@ -162,7 +162,7 @@ async function loadFieldlink(orderId: string, url: URL) {
 
 async function loadMagic369(orderId: string, url: URL) {
   const client = magic369Client(db());
-  if (!client) throw new Magic369Error(404, 'NO_TOKEN', 'Ключ Magic 369 не задан');
+  if (!client) throw new Magic369Error(404, 'NO_TOKEN', 'Ключ 369Team не задан');
 
   try {
     // Живьём оба вызова: статус и уже размещённые статьи.
@@ -213,6 +213,6 @@ async function loadMagic369(orderId: string, url: URL) {
     };
   } catch (e) {
     if (e instanceof Magic369Error) throw e;
-    throw new Magic369Error(502, 'UNREACHABLE', 'Magic 369 не ответил');
+    throw new Magic369Error(502, 'UNREACHABLE', '369Team не ответил');
   }
 }

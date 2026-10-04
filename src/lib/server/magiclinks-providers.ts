@@ -80,7 +80,7 @@ export async function magicProviderInfos(db: Db): Promise<MagicProviderInfo[]> {
     },
     {
       id: PROVIDER_MAGIC369,
-      name: 'Magic 369',
+      name: '369Team',
       unit: 'ток.',
       configured: m.configured,
       balanceMinor: m.balanceMinor,

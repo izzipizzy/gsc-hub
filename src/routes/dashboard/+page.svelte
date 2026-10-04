@@ -286,7 +286,7 @@
         <path d={seriesPath(e.current, 'impressions')} fill="none" stroke={SERIES.impr} stroke-width="1" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke" />
         <path d={areaPath(e.current, 'clicks')} fill="url(#gc-{uid})" />
         <path d={seriesPath(e.current, 'clicks')} fill="none" stroke={SERIES.clicks} stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke" />
-        {#each e.events as ev (ev.date + ev.label)}
+        {#each e.events as ev (ev.id)}
           {@const ex = eventX(e.current, ev.date)}
           {#if ex !== null}
             <line x1={ex} x2={ex} y1="1" y2={CHART_H - 1} stroke={ev.color} stroke-width="1.25" stroke-opacity="0.85" vector-effect="non-scaling-stroke">

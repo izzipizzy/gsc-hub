@@ -30,12 +30,12 @@ export const POST: RequestHandler = async ({ locals, request }) => {
   return submitFieldlink(String(body?.taskId ?? ''), expectedMinor);
 };
 
-// Magic 369: заказ одношаговый, деньги списывает сам POST /orders. Идемпотентности
+// 369Team: заказ одношаговый, деньги списывает сам POST /orders. Идемпотентности
 // в API нет, поэтому цена перепроверяется прямо перед отправкой: если она
 // уехала от суммы с кнопки — заказ не создаём, оператор считает заново.
 async function submitMagic369(raw: unknown[], expectedMinor: number) {
   const client = magic369Client(db());
-  if (!client) throw error(400, 'Ключ Magic 369 не задан');
+  if (!client) throw error(400, 'Ключ 369Team не задан');
   if (!Array.isArray(raw) || raw.length === 0) throw error(400, 'Пустое выделение');
   if (!Number.isInteger(expectedMinor) || expectedMinor < 0) throw error(400, 'Нет ожидаемой суммы');
 
@@ -82,7 +82,7 @@ async function submitMagic369(raw: unknown[], expectedMinor: number) {
       // идемпотентности нет. Повтор вслепую - второй заказ, так что говорим прямо.
       throw error(
         504,
-        'Magic 369 не ответил на создание заказа. Заказ мог создаться - проверь баланс, прежде чем платить снова.'
+        '369Team не ответил на создание заказа. Заказ мог создаться - проверь баланс, прежде чем платить снова.'
       );
     }
 

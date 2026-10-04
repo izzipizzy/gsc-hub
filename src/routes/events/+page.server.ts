@@ -1,7 +1,7 @@
 import type { PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { requireAdmin } from '$lib/server/guard';
-import { listSiteEvents, hostOfSite, donorOf } from '$lib/server/site-events';
+import { listSiteEvents, hostOfSite, donorOf, SITE_EVENT_TYPES } from '$lib/server/site-events';
 import { hostToUnicode } from '$lib/server/idn';
 import { listSitesForAllAccounts } from '$lib/server/google';
 
@@ -31,7 +31,7 @@ export const load: PageServerLoad = async ({ locals }) => {
   return {
     rows: events.map((e) => {
       // Подпись с формы сайта — голый домен, с сида и API — «← домен»: донор один.
-      const donor = donorOf(e.note);
+      const donor = e.type === 'merge' ? donorOf(e.note) : null;
       const glued = donor ? hostToUnicode(donor) : '';
       const p = props.get(e.siteHost);
       return {
@@ -40,6 +40,9 @@ export const load: PageServerLoad = async ({ locals }) => {
         donor: glued,
         note: glued ? '' : e.note,
         type: e.type,
+        color: SITE_EVENT_TYPES[e.type]?.color,
+        typeLabel: SITE_EVENT_TYPES[e.type]?.label ?? e.type,
+        orderHref: e.orderHref ?? null,
         date: e.date,
         addedAt: e.addedAt,
         href: p ? `/properties/${encodeURIComponent(p.siteUrl)}?acc=${encodeURIComponent(p.accountId)}` : null

@@ -38,7 +38,7 @@ function hostOfUrl(url: string): string {
 
 // Страница сервиса: настройки ключей обоих провайдеров + все задания с их
 // статусами. Ничего не кешируем — списки и счётчики читаются живьём при каждом
-// заходе. Задания показывает только FieldLink: у Magic 369 списка заказов в API
+// заходе. Задания показывает только FieldLink: у 369Team списка заказов в API
 // нет, его покупки видны в истории и по прямой ссылке.
 export const load: PageServerLoad = async ({ locals }) => {
   requireAdmin(locals);
@@ -65,11 +65,11 @@ export const load: PageServerLoad = async ({ locals }) => {
       m369.error =
         e instanceof Magic369Error
           ? `${e.message}${e.status === 401 ? ' (проверь ключ)' : ''}`
-          : 'Magic 369 не ответил';
+          : '369Team не ответил';
     }
   }
 
-  // Строки таблицы заказов: задания FieldLink и заказы Magic 369 одним списком,
+  // Строки таблицы заказов: задания FieldLink и заказы 369Team одним списком,
   // у каждой строки свой провайдер.
   const orders: OrderRow[] = [];
   let balance: MagicLinksBalance | null = null;
@@ -131,7 +131,7 @@ export const load: PageServerLoad = async ({ locals }) => {
     );
   }
 
-  // Заказы Magic 369: списка в их API нет, так что берём id из истории покупок
+  // Заказы 369Team: списка в их API нет, так что берём id из истории покупок
   // хаба, а статус читаем живьём по каждому.
   const purchases = listPurchases(database);
   const client369 = magic369Client(database);
@@ -171,7 +171,7 @@ export const load: PageServerLoad = async ({ locals }) => {
             trashed: false
           }
         : { id, status: client369 ? 'нет ответа' : 'нет ключа', rowCount: 0, completedCount: 0, failedCount: 0, held: false, trashed: false },
-      // Индексации в API Magic 369 нет.
+      // Индексации в API 369Team нет.
       indexing: null
     });
   });
@@ -248,8 +248,8 @@ export const actions: Actions = {
   save369Token: async ({ request, locals }) => {
     requireAdmin(locals);
     const token = String((await request.formData()).get('token') ?? '').trim();
-    if (!token) return fail(400, { error: 'Пустой ключ Magic 369' });
-    if (token.length < 16 || /\s/.test(token)) return fail(400, { error: 'Это не похоже на ключ Magic 369' });
+    if (!token) return fail(400, { error: 'Пустой ключ 369Team' });
+    if (token.length < 16 || /\s/.test(token)) return fail(400, { error: 'Это не похоже на ключ 369Team' });
     setMagic369Token(db(), token);
     return { saved369: true };
   },

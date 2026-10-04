@@ -19,6 +19,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
   const date = body?.date?.trim() ?? '';
   const note = body?.note?.trim() ?? '';
   const type = (body?.type?.trim() || 'merge') as SiteEventType;
+  if (type !== 'merge') throw error(400, 'only merge events can be added manually');
   if (!site) throw error(400, 'site required');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw error(400, 'date must be YYYY-MM-DD');
   if (!note) throw error(400, 'note required');

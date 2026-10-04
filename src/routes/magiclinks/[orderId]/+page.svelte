@@ -12,7 +12,7 @@
         ? 'badge-bad'
         : 'badge-muted';
 
-  // Статусы заказа Magic 369: завершённые — цветом, остальное — очередь.
+  // Статусы заказа 369Team: завершённые — цветом, остальное — очередь.
   const badge369 = (status: string) =>
     status === 'completed'
       ? 'badge-ok'
@@ -39,7 +39,7 @@
   };
   const fmt = (iso: string | null) => (iso ? iso.replace('T', ' ').slice(0, 16) : '—');
 
-  // Позиции есть только у заказов FieldLink; у Magic 369 другие таблицы.
+  // Позиции есть только у заказов FieldLink; у 369Team другие таблицы.
   const filtered = $derived(
     data.content.kind === 'fieldlink'
       ? data.filter && filterOn
@@ -63,7 +63,7 @@
       <nav class="app-breadcrumbs"><a href="/magiclinks">MagicLinks</a><span aria-hidden="true">/</span><span class="text-ink-2">Заказ</span></nav>
       <h1 class="app-pagetitle">
         Заказ <span class="font-mono text-[15px]">{data.content.order.id}</span>
-        {#if data.content.kind === 'magic369'}<span class="badge badge-muted ml-2 align-middle">Magic 369</span>{/if}
+        {#if data.content.kind === 'magic369'}<span class="badge badge-muted ml-2 align-middle">369Team</span>{/if}
       </h1>
     </div>
     <div class="app-toolbar-right">
