@@ -5,6 +5,50 @@ All notable changes to this project are documented here. Format loosely follows
 
 Русская версия — [CHANGELOG.ru.md](CHANGELOG.ru.md).
 
+## [0.9.0] - 2026-10-06
+
+### How to update
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+New SQLite tables are created automatically on startup; existing data stays in
+the mounted volume. Reload open browser tabs. Configure the optional backlink
+proxy and indexing API key in Settings. No indexing purchases are automatic.
+
+### Added
+- **Domain URL filters.** Save URL exclusions per site and filter the Striking
+  Distance table by URL fragments, including “contains” and “does not contain”.
+- **Custom page purchases.** Buy links for a path on the current domain with
+  custom link text, using the shared purchase dialog and purchase events.
+- **Backlink monitoring.** Weekly and manual checks show link availability,
+  anchor changes and rel attributes. Missing links require a second observation
+  at least a day later. Optional authenticated SOCKS4/5 proxy; checks use a
+  Googlebot user agent and inspect HTML without JavaScript.
+- **Provider pulse.** Compare backlink counts and percentages across providers
+  and view recorded history of live, missing and unknown links.
+- **Indexers settings and domain submissions.** Configure NeuralIndexer, submit
+  pages or recursive sitemaps, and review URL counts, cost and balance before
+  sending. Submission history records accepted URLs and charges; retries reuse
+  the same request ID. Acceptance by the service does not confirm indexing.
+- **Video demo.** A 90-second walkthrough with synthetic data, Russian narration
+  and subtitles is linked from both READMEs.
+
+### Changed
+- Striking Distance columns can be sorted. Site pages remember geography and
+  date range preferences.
+- Provider status and placement reads are cached; manual refresh is available.
+  Progress polling runs while a backlink check is active.
+
+### Fixed
+- Backlink checks no longer flag an anchor mismatch when the purchase brief
+  has no expected anchor text. Rel warnings remain independent.
+- Malformed indexing JSON returns a client error instead of a server error.
+- URL wildcard filters avoid exponential regular-expression backtracking.
+- Indexing and sitemap request user agents read the version from the manifest.
+
 ## [0.8.1] - 2026-10-04
 
 ### How to update

@@ -11,3 +11,6 @@ tests
 *.md
 DESIGN.json
 ecosystem.config.cjs
+
+# Video editing project is separate from the deployed app.
+videos

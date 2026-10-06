@@ -8,12 +8,14 @@ import { magic369Client, type Magic369Error } from './magic369';
 export const PROVIDER_FIELDLINK = 'fieldlink';
 export const PROVIDER_MAGIC369 = 'magic369';
 
-export type MagicProviderId = typeof PROVIDER_FIELDLINK | typeof PROVIDER_MAGIC369;
-
-export const MAGIC_PROVIDER_IDS: MagicProviderId[] = [PROVIDER_FIELDLINK, PROVIDER_MAGIC369];
-
+export const MAGIC_PROVIDERS = [
+  { id: PROVIDER_FIELDLINK, name: 'FieldLink' },
+  { id: PROVIDER_MAGIC369, name: '369Team' }
+] as const;
+export type MagicProviderId = (typeof MAGIC_PROVIDERS)[number]['id'];
+export const MAGIC_PROVIDER_IDS: MagicProviderId[] = MAGIC_PROVIDERS.map((p) => p.id);
 export function isMagicProviderId(v: unknown): v is MagicProviderId {
-  return v === PROVIDER_FIELDLINK || v === PROVIDER_MAGIC369;
+  return MAGIC_PROVIDER_IDS.includes(v as MagicProviderId);
 }
 
 export interface MagicProviderInfo {

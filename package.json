@@ -1,7 +1,7 @@
 {
 	"name": "gsc-hub",
 	"private": true,
-	"version": "0.8.1",
+	"version": "0.9.0",
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
@@ -34,6 +34,9 @@
 		"@auth/sveltekit": "^1.11.2",
 		"@node-rs/argon2": "^2.0.2",
 		"better-sqlite3": "^12.9.0",
+		"htmlparser2": "^12.0.0",
+		"ipaddr.js": "^2.5.0",
+		"socks-proxy-agent": "^10.1.0",
 		"tldts": "7.4.10"
 	}
 }

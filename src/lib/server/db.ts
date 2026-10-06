@@ -49,6 +49,76 @@ CREATE TABLE IF NOT EXISTS query_filters (
   added_at  INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS site_url_exclusions (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  site_host TEXT NOT NULL,
+  pattern   TEXT NOT NULL,
+  kind      TEXT NOT NULL CHECK (kind IN ('exact', 'mask', 'not_contains')),
+  UNIQUE (site_host, pattern, kind)
+);
+
+CREATE TABLE IF NOT EXISTS site_view_settings (
+  site_host TEXT PRIMARY KEY,
+  settings  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS backlink_placements (
+  provider TEXT NOT NULL,
+  order_id TEXT NOT NULL,
+  placement_id TEXT NOT NULL,
+  source_url TEXT NOT NULL,
+  target_url TEXT NOT NULL,
+  expected_anchor TEXT NOT NULL,
+  active INTEGER NOT NULL DEFAULT 1,
+  result TEXT,
+  checked_at INTEGER,
+  next_check_at INTEGER NOT NULL DEFAULT 0,
+  missing_count INTEGER NOT NULL DEFAULT 0,
+  last_job_id INTEGER,
+  PRIMARY KEY (provider, order_id, placement_id)
+);
+CREATE INDEX IF NOT EXISTS idx_backlink_due ON backlink_placements (active, next_check_at);
+CREATE TABLE IF NOT EXISTS backlink_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  provider TEXT NOT NULL,
+  order_id TEXT NOT NULL,
+  placement_id TEXT NOT NULL,
+  checked_at INTEGER NOT NULL,
+  result TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_backlink_history ON backlink_history (provider, order_id, placement_id, id);
+CREATE TABLE IF NOT EXISTS backlink_jobs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  provider TEXT,
+  order_id TEXT,
+  placement_id TEXT,
+  automatic INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'queued',
+  created_at INTEGER NOT NULL,
+  finished_at INTEGER,
+  lease_until INTEGER,
+  total INTEGER NOT NULL DEFAULT 0,
+  checked INTEGER NOT NULL DEFAULT 0,
+  errors TEXT NOT NULL DEFAULT '[]'
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_backlink_one_job ON backlink_jobs ((1)) WHERE status IN ('queued', 'running');
+
+CREATE TABLE IF NOT EXISTS backlink_snapshots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  job_id INTEGER UNIQUE,
+  captured_at INTEGER NOT NULL,
+  payload TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS magiclinks_read_cache (
+  cache_key TEXT PRIMARY KEY,
+  payload TEXT,
+  fetched_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  retry_after INTEGER NOT NULL DEFAULT 0,
+  error TEXT
+);
+
 CREATE TABLE IF NOT EXISTS indexnow_keys (
   host      TEXT PRIMARY KEY,
   key       TEXT NOT NULL,
@@ -80,6 +150,20 @@ CREATE TABLE IF NOT EXISTS site_health (
   data       TEXT NOT NULL,
   checked_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS indexing_requests (
+  id TEXT PRIMARY KEY,
+  site TEXT NOT NULL,
+  token_hash TEXT NOT NULL,
+  queue TEXT NOT NULL,
+  urls TEXT NOT NULL,
+  price REAL NOT NULL,
+  created_at INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'quoted',
+  result TEXT,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS indexing_requests_site ON indexing_requests(site, created_at);
 
 CREATE TABLE IF NOT EXISTS app_config (
   key        TEXT PRIMARY KEY,

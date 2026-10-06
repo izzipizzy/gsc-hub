@@ -12,6 +12,9 @@ import {
 import { listSiteEventsForSite, toChartEvents, SITE_EVENT_TYPES } from '$lib/server/site-events';
 import { purchaseSummary } from '$lib/server/magiclinks-purchases';
 import { anyMagicProviderConfigured } from '$lib/server/magiclinks-providers';
+import { listUrlExclusions } from '$lib/server/site-url-exclusions';
+import { siteHostname } from '$lib/utils/url-filters';
+import { getSiteViewSettings, saveSiteViewSettings } from '$lib/server/site-view-settings';
 
 // Free-form day range, capped at GSC's 16-month window (480 days). Defaults to 28.
 function parseDays(raw: string | null): number {
@@ -28,7 +31,10 @@ export const load: PageServerLoad = async ({ params, url, locals }) => {
   if (!acc) throw error(404, 'account not found');
 
   const siteUrl = params.site;
-  const days = parseDays(url.searchParams.get('days'));
+  const savedView = getSiteViewSettings(db(), siteUrl);
+  const days = url.searchParams.has('days') ? parseDays(url.searchParams.get('days')) : savedView.days;
+  // An explicit period in a link wins; entering from Sites/Dashboard restores the saved one.
+  if (days !== savedView.days) saveSiteViewSettings(db(), siteUrl, { days });
   let daily = null;
   let dailyError: string | null = null;
   try {
@@ -58,6 +64,7 @@ export const load: PageServerLoad = async ({ params, url, locals }) => {
     siteUrl,
     accId,
     days,
+    viewSettings: { ...savedView, days },
     account: { email: acc.email, label: acc.label },
     daily,
     dailyError,
@@ -67,9 +74,10 @@ export const load: PageServerLoad = async ({ params, url, locals }) => {
     eventRows,
     eventTypes: SITE_EVENT_TYPES,
     brandedTerms: getBrandedTerms(db(), siteUrl),
+    urlExclusions: listUrlExclusions(db(), siteUrl),
     // Покупки MagicLinks этого сайта: хост берём из property, чтобы sc-domain:
     // и https://host/ давали одну и ту же историю.
-    purchases: purchaseSummary(db(), siteUrl.replace(/^sc-domain:/, '').replace(/^https?:\/\//, '').replace(/\/$/, '').replace(/^www\./, '')),
+    purchases: purchaseSummary(db(), siteHostname(siteUrl)),
     magicLinksReady: anyMagicProviderConfigured(db())
   };
 };

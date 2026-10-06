@@ -1,10 +1,14 @@
+import { cachedMagicLinksClient, cachedMagic369Client, cachedProviderRead, providerCacheState, invalidateProviderCache } from '$lib/server/magiclinks-cache';
+import { readBacklinkDashboard } from '$lib/server/backlink-snapshots';
+import { backlinkSettings, validateProxy } from '$lib/server/backlink-fetch';
+import { setConfigValue, clearConfigValue } from '$lib/server/config';
+import { readChecks, checkSummary, latestJob, providerCheckTotals } from '$lib/server/backlink-monitor';
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { requireAdmin } from '$lib/server/guard';
 import { importOrderHistory, listPurchases } from '$lib/server/magiclinks-purchases';
 import {
-  magicLinksClient,
   magicLinksTokenSource,
   getMagicLinksToken,
   getMagicLinksBase,
@@ -18,7 +22,6 @@ import {
 } from '$lib/server/magiclinks';
 import { PROVIDER_FIELDLINK, PROVIDER_MAGIC369, type MagicProviderId } from '$lib/server/magiclinks-providers';
 import {
-  magic369Client,
   magic369TokenSource,
   getMagic369Token,
   getMagic369Base,
@@ -37,8 +40,8 @@ function hostOfUrl(url: string): string {
 }
 
 // Страница сервиса: настройки ключей обоих провайдеров + все задания с их
-// статусами. Ничего не кешируем — списки и счётчики читаются живьём при каждом
-// заходе. Задания показывает только FieldLink: у 369Team списка заказов в API
+// статусами. Читающие ответы сохраняются в SQLite; повторный заход в пределах
+// TTL не обращается к провайдерам. Задания показывает только FieldLink: у 369Team списка заказов в API
 // нет, его покупки видны в истории и по прямой ссылке.
 export const load: PageServerLoad = async ({ locals }) => {
   requireAdmin(locals);
@@ -60,7 +63,7 @@ export const load: PageServerLoad = async ({ locals }) => {
   };
   if (token369) {
     try {
-      m369.balance = await magic369Client(database)!.balance();
+      m369.balance = await cachedMagic369Client(database)!.balance();
     } catch (e) {
       m369.error =
         e instanceof Magic369Error
@@ -76,7 +79,7 @@ export const load: PageServerLoad = async ({ locals }) => {
   let error: string | null = null;
 
   if (token) {
-    const client = magicLinksClient(database)!;
+    const client = cachedMagicLinksClient(database)!;
     let tasks: MagicLinksTask[] = [];
     try {
       // Параллельно: оба вызова читающие, бюджет аккаунта это выдерживает.
@@ -86,7 +89,7 @@ export const load: PageServerLoad = async ({ locals }) => {
       // из CLI или из кабинета сервиса, и тогда таблицы striking о нём не знают.
       // Запросы идут только по заказам, которых ещё нет в истории, поэтому на
       // второй заход это бесплатно.
-      await importOrderHistory(database, client, hostOfUrl);
+      await cachedProviderRead(database, 'fieldlink:history-import', () => importOrderHistory(database, client, hostOfUrl), 15*60_000);
     } catch (e) {
       // Сервис недоступен или ключ отозван - страница всё равно открывается,
       // иначе ключ будет нечем заменить.
@@ -134,7 +137,7 @@ export const load: PageServerLoad = async ({ locals }) => {
   // Заказы 369Team: списка в их API нет, так что берём id из истории покупок
   // хаба, а статус читаем живьём по каждому.
   const purchases = listPurchases(database);
-  const client369 = magic369Client(database);
+  const client369 = cachedMagic369Client(database);
   const by369 = new Map<string, { createdAt: number; hosts: Set<string>; briefs: number }>();
   for (const p of purchases) {
     if (p.provider !== PROVIDER_MAGIC369) continue;
@@ -182,6 +185,7 @@ export const load: PageServerLoad = async ({ locals }) => {
   // показывают «куплено» ещё до открытия заказа.
   const purchasedOrders = new Set(purchases.map((p) => p.orderId)).size;
 
+  const checks = readChecks(database);
   return {
     configured: !!token,
     source,
@@ -191,7 +195,12 @@ export const load: PageServerLoad = async ({ locals }) => {
     error,
     purchasedOrders,
     m369,
-    orders
+    orders: orders.map((o) => ({ ...o, backlinks: checkSummary(checks.filter((c) => c.provider === o.provider && c.orderId === o.order?.id)) })),
+    backlinkSettings: backlinkSettings(database),
+    checkJob: latestJob(database),
+    checkSummary: checkSummary(checks),
+    checkDashboard: readBacklinkDashboard(database, providerCheckTotals(checks)),
+    providerCache: providerCacheState(database)
   };
 };
 
@@ -237,12 +246,32 @@ function indexingSummary(rows: MagicLinksRow[]): IndexingSummary {
 }
 
 export const actions: Actions = {
+  refreshProviders: async ({ locals }) => {
+    requireAdmin(locals);
+    invalidateProviderCache(db());
+    return { providersRefreshed: true };
+  },
+  saveBacklinkSettings: async ({ locals, request }) => {
+    requireAdmin(locals);
+    const form = await request.formData();
+    const proxy = String(form.get('proxy') ?? '').trim();
+    if (proxy.length > 1000) return fail(400, { error: 'Прокси URL слишком длинный' });
+    try { if (proxy) validateProxy(proxy); } catch (e) { return fail(400, { error: (e as Error).message }); }
+    const database = db();
+    database.transaction(() => {
+      if (proxy) setConfigValue(database, 'BACKLINK_PROXY_URL', proxy);
+      if (form.has('clearProxy')) clearConfigValue(database, 'BACKLINK_PROXY_URL');
+      setConfigValue(database, 'BACKLINK_AUTO_ENABLED', form.has('automatic') ? '1' : '0');
+    })();
+    return { backlinkSaved: true };
+  },
   saveToken: async ({ request, locals }) => {
     requireAdmin(locals);
     const token = String((await request.formData()).get('token') ?? '').trim();
     if (!token) return fail(400, { error: 'Пустой ключ' });
     if (token.length < 16 || /\s/.test(token)) return fail(400, { error: 'Это не похоже на ключ MagicLinks' });
     setMagicLinksToken(db(), token);
+    invalidateProviderCache(db());
     return { saved: true };
   },
   save369Token: async ({ request, locals }) => {
@@ -251,15 +280,16 @@ export const actions: Actions = {
     if (!token) return fail(400, { error: 'Пустой ключ 369Team' });
     if (token.length < 16 || /\s/.test(token)) return fail(400, { error: 'Это не похоже на ключ 369Team' });
     setMagic369Token(db(), token);
+    invalidateProviderCache(db());
     return { saved369: true };
   },
   /** Заказы из CLI, кабинета сервиса или сделанные до появления истории. */
   importHistory: async ({ locals }) => {
     requireAdmin(locals);
-    const client = magicLinksClient(db());
+    const client = cachedMagicLinksClient(db());
     if (!client) return fail(400, { error: 'Ключ MagicLinks не задан' });
     try {
-      const res = await importOrderHistory(db(), client, hostOfUrl);
+      const res = await cachedProviderRead(db(), 'fieldlink:history-import', () => importOrderHistory(db(), client, hostOfUrl), 15*60_000, true);
       return { imported: res };
     } catch (e) {
       return fail(502, { error: e instanceof MagicLinksError ? e.message : 'Сервис не ответил' });
@@ -268,11 +298,13 @@ export const actions: Actions = {
   clearToken: async ({ locals }) => {
     requireAdmin(locals);
     clearMagicLinksToken(db());
+    invalidateProviderCache(db());
     return { cleared: true };
   },
   clear369Token: async ({ locals }) => {
     requireAdmin(locals);
     clearMagic369Token(db());
+    invalidateProviderCache(db());
     return { cleared369: true };
   }
 };

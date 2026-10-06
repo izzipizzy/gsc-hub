@@ -5,6 +5,11 @@
   import { SHORT_TERM_MAX } from '$lib/utils/branded';
   import TrendChart from '$lib/components/TrendChart.svelte';
   import BuyLinks from '$lib/components/BuyLinks.svelte';
+  import IndexingModal from '$lib/components/IndexingModal.svelte';
+  let indexingOpen = $state(false);
+  import SortCaret from '$lib/components/SortCaret.svelte';
+  import { sortStriking, type StrikingSortKey, type SortDirection } from '$lib/utils/striking-sort';
+  import { siteHostname, urlExcluded, urlMatchesMask, type UrlExclusion } from '$lib/utils/url-filters';
 
   let { data }: { data: PageData } = $props();
 
@@ -24,7 +29,31 @@
     { id: 'decay', label: 'Decay' },
     { id: 'health', label: 'Health' }
   ];
-  let tab = $state<Tab>('overview');
+  let tab = $state<Tab>(untrack(() => data.viewSettings.tab as Tab));
+  let strikingSort = $state<StrikingSortKey>(untrack(() => data.viewSettings.sort));
+  let strikingDir = $state<SortDirection>(untrack(() => data.viewSettings.dir));
+  let viewSaveError = $state('');
+  let viewWrites = Promise.resolve();
+  function saveView(patch: Record<string, unknown>) {
+    const endpoint = `${base}/view-settings`;
+    viewWrites = viewWrites.then(async () => {
+      try {
+        const res = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        viewSaveError = '';
+      } catch (e) { viewSaveError = `Не удалось сохранить настройки: ${(e as Error).message}`; }
+    });
+  }
+  function sortBy(key: StrikingSortKey) {
+    if (strikingSort === key) strikingDir = strikingDir === 'asc' ? 'desc' : 'asc';
+    else {
+      strikingSort = key;
+      strikingDir = ['query', 'page', 'position', 'serp'].includes(key) ? 'asc' : 'desc';
+    }
+    saveView({ sort: strikingSort, dir: strikingDir });
+  }
+  const sortArrow = (key: StrikingSortKey): SortDirection | '' => strikingSort === key ? strikingDir : '';
+  const sortAria = (key: StrikingSortKey): 'ascending' | 'descending' | 'none' => strikingSort !== key ? 'none' : strikingDir === 'asc' ? 'ascending' : 'descending';
 
   // ── MagicLinks: покупка ссылок на пару «запрос + страница» ──
   type PurchaseSummary = {
@@ -35,9 +64,7 @@
     orders: { orderId: string; quantity: number; createdAt: number }[];
   };
   const pairKey = (page: string, query: string) => `${page}\n${query}`;
-  const siteHost = $derived(
-    data.siteUrl.replace(/^sc-domain:/, '').replace(/^https?:\/\//, '').replace(/\/$/, '').replace(/^www\./, '')
-  );
+  const siteHost = $derived(siteHostname(data.siteUrl));
 
   let purchases = $state<Record<string, PurchaseSummary>>({});
   // Своя копия истории: после покупки обновляем её на месте, а при смене
@@ -93,7 +120,62 @@
     }
     purchases = next;
     selectedPairs = new Set();
+    void invalidateAll(); // Refresh the purchase marker and order history immediately.
   }
+
+  let analytics = $state<any>(null);
+  let serpPositions = $state<Map<string, number | null>>(new Map());
+  let serpAsked = $state<Set<string>>(new Set());
+  let urlMask = $state('');
+  let urlMode = $state('contains');
+  let appliedMask = $state('');
+  let appliedMode = $state('contains');
+  let exclusionInput = $state('');
+  let exclusionKind = $state<'mask' | 'not_contains'>('mask');
+  let exclusions = $state<UrlExclusion[]>([]);
+  let exclusionBusy = $state(false);
+  let exclusionError = $state('');
+  $effect(() => { exclusions = [...data.urlExclusions]; });
+  const filteredStrikingRows = $derived((analytics?.striking ?? []).filter((r: { page: string }) =>
+    !urlExcluded(r.page, exclusions) && (!appliedMask ||
+      (appliedMode === 'contains' ? urlMatchesMask(r.page, appliedMask) : !urlMatchesMask(r.page, appliedMask)))
+  ));
+  const strikingRows = $derived(sortStriking(filteredStrikingRows, strikingSort, strikingDir,
+    (query) => serpAsked.has(query) ? serpPositions.get(query) ?? null : null,
+    (page, query) => boughtFor(page, query)?.quantity ?? 0
+  ));
+  const selectedVisible = $derived(strikingRows.filter((r: { page: string; query: string }) => selectedPairs.has(pairKey(r.page, r.query))).length);
+
+  async function filterUrls() {
+    if (analyticsLoading) return;
+    appliedMask = urlMask.trim();
+    appliedMode = urlMode;
+    selectedPairs = new Set();
+    analytics = null;
+    await loadAnalytics();
+  }
+
+  async function updateExclusions(method: 'POST' | 'DELETE', body: unknown) {
+    if (exclusionBusy) return;
+    exclusionBusy = true;
+    exclusionError = '';
+    try {
+      const res = await fetch(`${base}/url-exclusions`, {
+        method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.message ?? `HTTP ${res.status}`);
+      exclusions = result.exclusions;
+      exclusionInput = '';
+      selectedPairs = new Set();
+      analytics = null;
+      await loadAnalytics();
+      await invalidateAll();
+    } catch (e) { exclusionError = (e as Error).message; }
+    finally { exclusionBusy = false; }
+  }
+
+  let customOpen = $state(false);
 
   // ── formatting helpers ──
   const nf = new Intl.NumberFormat('en-US');
@@ -126,7 +208,7 @@
   }
 
   function tabCount(t: Tab): number | null {
-    if (t === 'keywords') return analytics?.striking?.length ?? null;
+    if (t === 'keywords') return analytics ? strikingRows.length : null;
     if (t === 'cannibal') return analytics?.cannibalization?.length ?? null;
     if (t === 'ctr') return analytics?.ctr?.opportunities?.length ?? null;
     if (t === 'decay') return decay?.decay?.length ?? null;
@@ -189,7 +271,6 @@
   type SerpBinding = { geo: string; project_id: number; name: string; keywords: number; checked_at: string | null };
   let serpBindings = $state<SerpBinding[]>([]);
   let serpGeo = $state('');
-  let serpPositions = $state<Map<string, number | null>>(new Map());
   let serpCheckedAt = $state<string | null>(null);
   let serpNote = $state('');
   // off — интеграция не настроена, absent — спросили и сайта нет,
@@ -199,12 +280,14 @@
   // Запросы, которые мы РЕАЛЬНО спросили у серпмонитора. Остальные строки
   // обязаны говорить «не спрашивали», а не показывать прочерк: прочерк
   // читается как «позиции нет», и это разные вещи.
-  let serpAsked = $state<Set<string>>(new Set());
 
   // A configured monitor with bindings earns the top of the rail; otherwise it sinks.
   const serpActive = $derived(serpState === 'ok' && serpBindings.length > 0);
 
+  let serpRequest = 0;
   async function loadSerp(geo = '') {
+    const requestId = ++serpRequest;
+    serpPositions = new Map();
     const params = new URLSearchParams();
     if (geo) params.set('geo', geo);
     // Просим позиции для показанных запросов. Потолок тот же, что у клиента
@@ -216,12 +299,14 @@
     serpAsked = new Set(asked);
     for (const q of asked) params.append('q', q);
     const res = await fetch(`${base}/serp?${params.toString()}`);
+    if (requestId !== serpRequest) return;
     if (!res.ok) {
       serpState = 'error';
       serpReason = `HTTP ${res.status}`;
       return;
     }
     const data = await res.json();
+    if (requestId !== serpRequest) return;
     serpState = data.state ?? 'error';
     serpReason = data.reason ?? null;
     serpBindings = data.bindings ?? [];
@@ -253,7 +338,6 @@
   });
 
   // ── shared analytics payload (one GSC fetch feeds 4 tabs) ──
-  let analytics = $state<any>(null);
   let analyticsErr = $state<string | null>(null);
   let analyticsLoading = $state(false);
   async function loadAnalytics() {
@@ -261,7 +345,7 @@
     analyticsLoading = true;
     analyticsErr = null;
     try {
-      const r = await fetch(`${base}/analytics?${accQ}&days=${data.days}`);
+      const r = await fetch(`${base}/analytics?${accQ}&days=${data.days}&urlMask=${encodeURIComponent(appliedMask)}&urlMode=${appliedMode}`);
       if (!r.ok) throw new Error(`${r.status}: ${await r.text()}`);
       analytics = await r.json();
       brandInput = (analytics.brandedTerms ?? []).join(', ');
@@ -278,8 +362,17 @@
 
   // Смена периода наверху страницы — это навигация по тому же роуту: компонент
   // остаётся, и без сброса вкладки продолжали бы показывать прежние 28 дней.
+  let lastSite = untrack(() => `${data.siteUrl}|${data.accId}`);
   let lastDays = untrack(() => data.days);
   $effect(() => {
+    if (`${data.siteUrl}|${data.accId}` !== lastSite) {
+      lastSite = `${data.siteUrl}|${data.accId}`;
+      tab = data.viewSettings.tab as Tab; strikingSort = data.viewSettings.sort; strikingDir = data.viewSettings.dir; viewSaveError = '';
+      urlMask = ''; appliedMask = ''; urlMode = 'contains'; appliedMode = 'contains';
+      exclusionInput = ''; exclusionError = '';
+      customOpen = false; selectedPairs = new Set(); buyRows = null;
+      lastDays = -1;
+    }
     if (data.days === lastDays) return;
     lastDays = data.days;
     analytics = null;
@@ -341,6 +434,7 @@
 
   function openTab(t: Tab) {
     tab = t;
+    saveView({ tab: t });
     if (t === 'decay') loadDecay();
     if (t === 'health') loadHealth();
   }
@@ -458,6 +552,8 @@
             </div>
           {/if}
           <div class="ml-auto flex items-center gap-2">
+            <button class="btn btn-sec" onclick={() => indexingOpen = true}>Индексация</button>
+            <button class="btn btn-pri" onclick={() => { buyRows = null; customOpen = true; }}>Купить на свой URL</button>
             <a class="btn btn-ghost" href={siteUrl.startsWith('sc-domain:') ? `https://${siteHost}/` : siteUrl} target="_blank" rel="noopener noreferrer" title="Открыть сайт">
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6.5 3.5h-3v9h9v-3M9 3.5h3.5V7M12.5 3.5 7 9"/></svg>Open
             </a>
@@ -504,16 +600,16 @@
               <div class="bg-pane p-3">
                 <div class="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-3">Top striking queries</div>
                 {#if analyticsLoading}<p class="loading">Loading…</p>
-                {:else if analytics?.striking?.length}
+                {:else if strikingRows.length}
                   <table class="app-table">
                     <thead><tr><th>Query</th><th class="num">Pos</th><th class="num">Impr</th></tr></thead>
                     <tbody>
-                      {#each analytics.striking.slice(0, 6) as r (r.query + r.page)}
+                      {#each strikingRows.slice(0, 6) as r (r.query + r.page)}
                         <tr><td><span class="pii">{r.query}</span></td><td class="num app-num">{pos(r.position)}</td><td class="num app-num pii">{fmt(r.impressions)}</td></tr>
                       {/each}
                     </tbody>
                   </table>
-                  <button class="btn btn-ghost btn-sm mt-1.5 -ml-2" onclick={() => openTab('keywords')}>All {analytics.striking.length} <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></button>
+                  <button class="btn btn-ghost btn-sm mt-1.5 -ml-2" onclick={() => openTab('keywords')}>All {strikingRows.length} <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></button>
                 {:else}<p class="loading">No striking-distance keywords.</p>{/if}
               </div>
               <div class="flex flex-col bg-pane p-3">
@@ -636,23 +732,55 @@
             {#if analyticsErr}<p class="text-err p-3">{analyticsErr}</p>{/if}
             {#if analytics}
               {#if tab === 'keywords'}
-                {#if analytics.striking.length === 0}
-                  <p class="loading p-3">No striking-distance keywords.</p>
+                <div class="border-b border-line p-3 space-y-3">
+                  <form class="flex flex-wrap items-center gap-2" onsubmit={(e) => { e.preventDefault(); filterUrls(); }}>
+                    <select class="input" bind:value={urlMode} aria-label="Условие фильтра URL"><option value="contains">URL содержит</option><option value="not_contains">URL не содержит</option></select>
+                    <input class="input min-w-0 flex-1" bind:value={urlMask} maxlength="2000" placeholder="Часть URL: /b/ или маска */b/*" aria-label="Фильтр URL" />
+                    <button class="btn btn-sec" type="submit" disabled={analyticsLoading}>Применить</button>
+                    <button class="btn btn-ghost" type="button" onclick={() => { urlMask = ''; filterUrls(); }} disabled={analyticsLoading}>Сбросить</button>
+                    <span class="text-xs text-ink-3">Показано {strikingRows.length}</span>
+                  </form>
+                  {#if viewSaveError}<p class="text-err text-xs" role="alert">{viewSaveError}</p>{/if}
+                  <details>
+                    <summary class="cursor-pointer text-xs font-medium">Исключения домена ({exclusions.length})</summary>
+                    <p class="mt-2 text-xs text-ink-3">Сохраняются для {siteHost}, для всех периодов и Google-аккаунтов. URL, подходящие хотя бы под одно правило исключения, скрываются в Striking Distance. * — любой текст, ? — один символ.</p>
+                    <form class="mt-2 flex gap-2" onsubmit={(e) => { e.preventDefault(); updateExclusions('POST', { pattern: exclusionInput, kind: exclusionKind }); }}>
+                      <select class="input" bind:value={exclusionKind} aria-label="Условие исключения"><option value="mask">URL содержит</option><option value="not_contains">URL не содержит</option></select>
+                      <input class="input min-w-0 flex-1" bind:value={exclusionInput} placeholder="Не показывать URL, содержащие /b/" maxlength="2000" aria-label="Исключаемая часть URL" required />
+                      <button class="btn btn-sec" type="submit" disabled={exclusionBusy || !exclusionInput.trim()}>Исключить</button>
+                    </form>
+                    {#each exclusions as ex (ex.id)}
+                      <div class="mt-1 flex items-center gap-2 text-xs"><span class="min-w-0 flex-1 break-all">{ex.kind === 'exact' ? 'Точный URL' : ex.kind === 'not_contains' ? 'URL не содержит' : 'URL содержит'}: {ex.pattern}</span><button class="btn btn-ghost btn-sm" disabled={exclusionBusy} onclick={() => updateExclusions('DELETE', { id: ex.id })}>Удалить</button></div>
+                    {/each}
+                  </details>
+                  {#if exclusionError}<p class="text-err text-xs" role="alert">{exclusionError}</p>{/if}
+                </div>
+                {#if strikingRows.length === 0}
+                  <p class="loading p-3">Нет запросов с учётом фильтра и исключений.</p>
                 {:else}
                   <div class="overflow-x-auto">
                     <table class="app-table">
                       <thead>
-                        <tr><th class="w-8"></th><th>Query</th><th>Page</th><th class="num">Pos</th><th class="num" title="Реальная позиция из SERP-монитора">SERP</th><th class="num">Impr</th><th class="num">Clicks</th><th class="num">CTR</th><th class="num" title="Куплено ссылок MagicLinks на связку «страница + запрос»">Куплено</th><th class="num w-20"></th></tr>
+                        <tr><th class="w-8"></th>
+                          <th class="sort-th" aria-sort={sortAria('query')}><button type="button" class="hover:text-ink" onclick={() => sortBy('query')}>Query<SortCaret dir={sortArrow('query')} /></button></th>
+                          <th class="sort-th" aria-sort={sortAria('page')}><button type="button" class="hover:text-ink" onclick={() => sortBy('page')}>Page<SortCaret dir={sortArrow('page')} /></button></th>
+                          <th class="sort-th num" aria-sort={sortAria('position')}><button type="button" class="hover:text-ink" onclick={() => sortBy('position')}>Pos<SortCaret dir={sortArrow('position')} /></button></th>
+                          <th class="sort-th num" aria-sort={sortAria('serp')}><button type="button" class="hover:text-ink" onclick={() => sortBy('serp')}>SERP<SortCaret dir={sortArrow('serp')} /></button></th>
+                          <th class="sort-th num" aria-sort={sortAria('impressions')}><button type="button" class="hover:text-ink" onclick={() => sortBy('impressions')}>Impr<SortCaret dir={sortArrow('impressions')} /></button></th>
+                          <th class="sort-th num" aria-sort={sortAria('clicks')}><button type="button" class="hover:text-ink" onclick={() => sortBy('clicks')}>Clicks<SortCaret dir={sortArrow('clicks')} /></button></th>
+                          <th class="sort-th num" aria-sort={sortAria('ctr')}><button type="button" class="hover:text-ink" onclick={() => sortBy('ctr')}>CTR<SortCaret dir={sortArrow('ctr')} /></button></th>
+                          <th class="sort-th num" aria-sort={sortAria('bought')}><button type="button" class="hover:text-ink" onclick={() => sortBy('bought')}>Куплено<SortCaret dir={sortArrow('bought')} /></button></th>
+                          <th class="num w-20"></th></tr>
                       </thead>
                       <tbody>
-                        {#each analytics.striking as r (r.query + r.page)}
+                        {#each strikingRows as r (r.query + r.page)}
                           {@const k = pairKey(r.page, r.query)}
                           <tr class:is-selected={selectedPairs.has(k)}>
                             <td>
                               <input type="checkbox" checked={selectedPairs.has(k)} onchange={() => togglePair(r.page, r.query)} aria-label="Выделить строку" />
                             </td>
                             <td class="font-medium"><span class="pii">{r.query}</span></td>
-                            <td class="max-w-xs truncate text-ink-3"><span class="pii">{shortUrl(r.page)}</span></td>
+                            <td class="max-w-xs text-ink-3"><div class="flex items-center gap-1"><span class="pii min-w-0 truncate" title={r.page}>{shortUrl(r.page)}</span><button class="btn btn-ghost btn-sm shrink-0" title="Исключить этот URL для домена" aria-label="Исключить {r.page}" disabled={exclusionBusy} onclick={() => updateExclusions('POST', { pattern: r.page, kind: 'exact' })}>×</button></div></td>
                             <td class="num app-num">{pos(r.position)}</td>
                             {@render serpCell(r.query)}
                             <td class="num app-num pii">{fmt(r.impressions)}</td>
@@ -693,14 +821,14 @@
                       </tbody>
                     </table>
                   </div>
-                  {#if selectedPairs.size > 0}
+                  {#if selectedVisible > 0}
                     <div class="sticky bottom-3 z-20 m-3 flex flex-wrap items-center gap-3 rounded border border-acc/30 bg-pane px-3 py-2 shadow-[0_6px_20px_-6px_rgb(19_23_34/0.25)]">
-                      <span class="text-[12.5px]">Выбрано пар: <b class="app-num">{selectedPairs.size}</b></span>
+                      <span class="text-[12.5px]">Выбрано пар: <b class="app-num">{selectedVisible}</b></span>
                       <span class="text-xs text-ink-3">одним заданием; провайдер выбирается в окне покупки</span>
                       <span class="flex-1"></span>
                       <button class="btn btn-ghost" onclick={() => (selectedPairs = new Set())}>Снять выделение</button>
                       {#if data.magicLinksReady}
-                        <button class="btn btn-pri" onclick={() => buySelected(analytics.striking)}>Купить ссылки</button>
+                        <button class="btn btn-pri" onclick={() => buySelected(strikingRows)}>Купить ссылки</button>
                       {:else}
                         <a class="btn btn-sec" href="/magiclinks">Сначала введи ключ провайдера на MagicLinks</a>
                       {/if}
@@ -882,7 +1010,9 @@
     </aside>
   </div>
 
-  {#if buyRows}
-    <BuyLinks rows={buyRows} onclose={() => (buyRows = null)} onbought={applyBought} />
+  {#if buyRows || customOpen}
+    <BuyLinks rows={buyRows ?? []} customSite={customOpen ? siteUrl : undefined} onclose={() => { buyRows = null; customOpen = false; }} onbought={applyBought} />
   {/if}
 </main>
+
+{#if indexingOpen}<IndexingModal site={data.siteUrl} onclose={() => indexingOpen = false} />{/if}

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { FIELDLINK_SIGNUP_URL, MAGIC369_CONTACT } from '$lib/utils/magiclinks-signup';
+  import { customPurchaseUrl, siteHostname } from '$lib/utils/url-filters';
   import { untrack } from 'svelte';
   import { LANGUAGE_OPTIONS, defaultLanguageForHost } from '$lib/utils/lang';
 
@@ -24,15 +25,29 @@
 
   let {
     rows,
+    customSite,
     onclose,
     onbought
   }: {
     rows: BuyRow[];
+    customSite?: string;
     onclose: () => void;
     onbought: (e: BoughtEvent) => void;
   } = $props();
 
-  const hosts = $derived([...new Set(rows.map((r) => r.siteHost))].sort());
+  let path = $state('');
+  let customText = $state('');
+  const customOrigin = $derived(customSite ? new URL(customSite.startsWith('sc-domain:') ? `https://${customSite.slice(10)}/` : customSite).origin : '');
+  const hosts = $derived(customSite ? [siteHostname(customSite)] : [...new Set(rows.map((r) => r.siteHost))].sort());
+  let quotedRows = $state<BuyRow[]>([]);
+
+  function purchaseRows(): BuyRow[] {
+    if (!customSite) return rows;
+    const targetUrl = customPurchaseUrl(path, customSite);
+    const query = customText.trim();
+    if (!query || query.length > 300) throw new Error('Текст ссылки должен содержать от 1 до 300 символов');
+    return [{ targetUrl, query, siteHost: siteHostname(customSite) }];
+  }
 
   // Язык на каждый сайт: гео из Search Console языком не является, поэтому
   // домен только подсказывает, а неоднозначный (.com и прочие) оператор
@@ -43,14 +58,14 @@
   let langs = $state<Record<string, string>>(
     untrack(() =>
       Object.fromEntries(
-        [...new Set(rows.map((r) => r.siteHost))].map((h) => [h, defaultLanguageForHost(h)])
+        hosts.map((h) => [h, defaultLanguageForHost(h)])
       )
     )
   );
 
   let count = $state(5);
   const missingLang = $derived(hosts.filter((h) => !langs[h]));
-  const requested = $derived(rows.length * count);
+  const requested = $derived((customSite ? 1 : rows.length) * count);
   const estimateBonus = $derived(Math.ceil(requested / 4));
 
   type Quote = {
@@ -138,15 +153,17 @@
     busy = true;
     err = null;
     try {
+      const items = purchaseRows();
       const data = await post('/magiclinks/purchase', {
         provider: providerId,
-        items: rows.map((r) => ({
+        items: items.map((r) => ({
           targetUrl: r.targetUrl,
           query: r.query,
           language: langs[r.siteHost],
           count
         }))
       });
+      quotedRows = items;
       taskId = data.taskId ?? null;
       quote = data.quote;
       step = 'quote';
@@ -170,7 +187,7 @@
         expectedMinor: quote.amountMinor,
         items:
           providerId === 'magic369'
-            ? rows.map((r) => ({
+            ? quotedRows.map((r) => ({
                 targetUrl: r.targetUrl,
                 query: r.query,
                 language: langs[r.siteHost],
@@ -182,7 +199,7 @@
       step = 'done';
       onbought({
         orderId: data.orderId,
-        items: rows.map((r) => ({ targetUrl: r.targetUrl, query: r.query, quantity: count }))
+        items: quotedRows.map((r) => ({ targetUrl: r.targetUrl, query: r.query, quantity: count }))
       });
     } catch (e) {
       err = (e as Error).message;
@@ -223,10 +240,22 @@
         <a class="btn btn-pri ml-auto" href="/magiclinks/{orderId}">Смотреть заказ <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></a>
       </div>
     {:else}
-      <p class="text-ink-2">
-        Выбрано строк: <b class="app-num text-ink">{rows.length}</b>. Анкор и ключевые слова для статьи - сам запрос,
-        акцептор - URL страницы из строки.
-      </p>
+      {#if customSite}
+        <label class="flex flex-col gap-1">
+          <span class="text-[11px] text-ink-3">Путь страницы</span>
+          <span class="pii break-all text-ink-2">{customOrigin}</span>
+          <input class="input w-full disabled:bg-sunk disabled:text-ink-3" bind:value={path} placeholder="/page/" maxlength="2000" disabled={step === 'quote' || busy} />
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="text-[11px] text-ink-3">Текст ссылки / ключевые слова статьи</span>
+          <input class="input w-full disabled:bg-sunk disabled:text-ink-3" bind:value={customText} placeholder="Текст для ссылки" maxlength="300" disabled={step === 'quote' || busy} />
+        </label>
+      {:else}
+        <p class="text-ink-2">
+          Выбрано строк: <b class="app-num text-ink">{rows.length}</b>. Анкор и ключевые слова для статьи - сам запрос,
+          акцептор - URL страницы из строки.
+        </p>
+      {/if}
 
       <div class="flex flex-col gap-1">
         <span class="text-[11px] text-ink-3">Провайдер</span>
@@ -267,6 +296,7 @@
         {/if}
       </div>
 
+      {#if !customSite}
       <div class="flex flex-col gap-1">
         <span class="text-[11px] text-ink-3">Позиции</span>
         <div class="max-h-40 overflow-y-auto rounded border border-line">
@@ -286,6 +316,8 @@
         </div>
       </div>
 
+      {/if}
+
       <label class="flex flex-col gap-1">
         <span class="text-[11px] text-ink-3">Ссылок на строку</span>
         <input
@@ -293,7 +325,7 @@
           min="1"
           max="250"
           bind:value={count}
-          disabled={step === 'quote'}
+          disabled={step === 'quote' || busy}
           class="input app-num w-24 disabled:bg-sunk disabled:text-ink-3"
         />
       </label>
@@ -304,7 +336,7 @@
           {#each hosts as h (h)}
             <label class="flex items-center justify-between gap-2 px-2 py-1">
               <span class="pii min-w-0 truncate text-ink">{h}</span>
-              <select bind:value={langs[h]} disabled={step === 'quote'} class="input h-6 text-xs disabled:bg-sunk disabled:text-ink-3">
+              <select bind:value={langs[h]} disabled={step === 'quote' || busy} class="input h-6 text-xs disabled:bg-sunk disabled:text-ink-3">
                 <option value="">выбери</option>
                 {#each LANGUAGE_OPTIONS as l (l.code)}
                   <option value={l.code}>{l.label}</option>
@@ -355,7 +387,7 @@
           <button
             type="button"
             class="btn btn-sec w-full"
-            disabled={busy || rows.length === 0 || count < 1 || missingLang.length > 0 || !providerId}
+            disabled={busy || (!customSite && rows.length === 0) || count < 1 || missingLang.length > 0 || !providerId}
             onclick={getQuote}
           >{busy ? 'Считаю…' : 'Посчитать цену'}</button>
         {:else if quote}

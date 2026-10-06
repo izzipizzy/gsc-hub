@@ -1,9 +1,11 @@
+import { cachedMagicLinksClient, cachedMagic369Client } from '$lib/server/magiclinks-cache';
+import { syncPlacements, readChecks, latestJob, checkSummary } from '$lib/server/backlink-monitor';
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { requireAdmin } from '$lib/server/guard';
-import { magicLinksClient, MagicLinksError, type MagicLinksBilling } from '$lib/server/magiclinks';
-import { magic369Client, Magic369Error, type Magic369Progress } from '$lib/server/magic369';
+import { MagicLinksError, type MagicLinksBilling } from '$lib/server/magiclinks';
+import { Magic369Error, type Magic369Progress } from '$lib/server/magic369';
 import { orderProvider } from '$lib/server/magiclinks-purchases';
 import { PROVIDER_FIELDLINK, PROVIDER_MAGIC369 } from '$lib/server/magiclinks-providers';
 
@@ -105,7 +107,7 @@ function finalize(e: unknown): never {
 }
 
 async function loadFieldlink(orderId: string, url: URL) {
-  const client = magicLinksClient(db());
+  const client = cachedMagicLinksClient(db());
   if (!client) throw new MagicLinksError(404, 'NO_TOKEN', 'Ключ MagicLinks не задан');
 
   try {
@@ -150,9 +152,11 @@ async function loadFieldlink(orderId: string, url: URL) {
         error: r.error ?? null
       }))
     };
+    syncPlacements(db(), 'fieldlink', orderId, content.rows.map((r) => ({ provider: 'fieldlink', orderId, placementId: r.id, sourceUrl: r.url, targetUrl: r.targetUrl, expectedAnchor: r.anchor })));
+    const checks = readChecks(db(), 'fieldlink', orderId);
     return {
       filter: filter.targetUrl || filter.query ? filter : null,
-      content
+      content, checks: Object.fromEntries(checks.map((c) => [c.placementId, c])), checkSummary: checkSummary(checks), checkJob: latestJob(db())
     };
   } catch (e) {
     if (e instanceof MagicLinksError) throw e;
@@ -161,7 +165,7 @@ async function loadFieldlink(orderId: string, url: URL) {
 }
 
 async function loadMagic369(orderId: string, url: URL) {
-  const client = magic369Client(db());
+  const client = cachedMagic369Client(db());
   if (!client) throw new Magic369Error(404, 'NO_TOKEN', 'Ключ 369Team не задан');
 
   try {
@@ -207,9 +211,11 @@ async function loadMagic369(orderId: string, url: URL) {
         publishedAt: a.publishedAt
       }))
     };
+    syncPlacements(db(), 'magic369', orderId, articles.map((a) => ({ provider: 'magic369', orderId, placementId: String(a.id), sourceUrl: a.publishedUrl, targetUrl: a.url, expectedAnchor: a.anchor })));
+    const checks = readChecks(db(), 'magic369', orderId);
     return {
       filter: filter.targetUrl || filter.query ? filter : null,
-      content
+      content, checks: Object.fromEntries(checks.map((c) => [c.placementId, c])), checkSummary: checkSummary(checks), checkJob: latestJob(db())
     };
   } catch (e) {
     if (e instanceof Magic369Error) throw e;

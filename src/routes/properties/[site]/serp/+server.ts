@@ -2,6 +2,8 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { requireAdmin } from '$lib/server/guard';
 import { fetchBindings, fetchPositions, requestCheck } from '$lib/server/serp-monitor';
+import { db } from '$lib/server/db';
+import { chooseGeo, getSiteViewSettings, saveSiteViewSettings } from '$lib/server/site-view-settings';
 
 /**
  * Связки и позиции сайта из серпмонитора. Гео берём у него же, не гадаем.
@@ -13,7 +15,10 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
   requireAdmin(locals);
   const site = params.site;
   const b = await fetchBindings(site);
-  const geo = url.searchParams.get('geo') || b.bindings[0]?.geo || '';
+  const requested = url.searchParams.get('geo') ?? '';
+  const saved = getSiteViewSettings(db(), site).geo;
+  const geo = chooseGeo(requested, saved, b.bindings);
+  if (b.state === 'ok' && geo && geo !== saved) saveSiteViewSettings(db(), site, { geo });
   // Спрашиваем позиции только для запросов, которые показаны на экране.
   const queries = url.searchParams.getAll('q');
   const p = geo

@@ -9,7 +9,10 @@ export type ConfigKey =
   | 'MAGICLINKS_API_TOKEN'
   | 'MAGICLINKS_API_BASE'
   | 'MAGIC369_API_TOKEN'
-  | 'MAGIC369_API_BASE';
+  | 'MAGIC369_API_BASE'
+  | 'BACKLINK_PROXY_URL'
+  | 'BACKLINK_AUTO_ENABLED'
+  | 'NEURALINDEXER_API_TOKEN';
 
 function envVal(key: ConfigKey): string | undefined {
   const v = process.env[key];

@@ -1,4 +1,7 @@
 <script lang="ts">
+  import BacklinkRunner from '$lib/components/BacklinkRunner.svelte';
+  import BacklinkStatus from '$lib/components/BacklinkStatus.svelte';
+  import BacklinkSummary from '$lib/components/BacklinkSummary.svelte';
   import type { PageData } from './$types';
   let { data }: { data: PageData } = $props();
 
@@ -63,7 +66,12 @@
       <nav class="app-breadcrumbs"><a href="/magiclinks">MagicLinks</a><span aria-hidden="true">/</span><span class="text-ink-2">Заказ</span></nav>
       <h1 class="app-pagetitle">
         Заказ <span class="font-mono text-[15px]">{data.content.order.id}</span>
-        {#if data.content.kind === 'magic369'}<span class="badge badge-muted ml-2 align-middle">369Team</span>{/if}
+        <section class="pane mb-3">
+    <div class="pane-head">Проверка ссылок</div>
+    <div class="pane-body flex flex-col gap-2"><BacklinkSummary summary={data.checkSummary} /><BacklinkRunner job={data.checkJob} provider={data.content.kind} orderId={data.content.order.id} /></div>
+  </section>
+
+  {#if data.content.kind === 'magic369'}<span class="badge badge-muted ml-2 align-middle">369Team</span>{/if}
       </h1>
     </div>
     <div class="app-toolbar-right">
@@ -141,7 +149,7 @@
         <div class="overflow-x-auto">
           <table class="app-table">
             <thead>
-              <tr><th>опубликовано</th><th>заголовок</th><th>анкор</th><th>акцептор</th><th>статья</th></tr>
+              <tr><th>опубликовано</th><th>заголовок</th><th>анкор</th><th>акцептор</th><th>статья</th><th>проверка ссылки</th><th></th></tr>
             </thead>
             <tbody>
               {#each data.content.articles as a (a.id)}
@@ -155,6 +163,8 @@
                       {host(a.publishedUrl)}
                     </a>
                   </td>
+                  <td><BacklinkStatus check={data.checks[String(a.id)]} /></td>
+                  <td><BacklinkRunner job={data.checkJob} provider="magic369" orderId={data.content.order.id} placementId={String(a.id)} compact /></td>
                 </tr>
               {/each}
             </tbody>
@@ -217,7 +227,7 @@
           <thead>
             <tr>
               <th class="num">#</th><th>акцептор</th><th>анкор</th><th>язык</th>
-              <th>статус</th><th>публикация</th><th>индексация</th>
+              <th>статус</th><th>публикация</th><th>индексация</th><th>проверка ссылки</th><th></th>
             </tr>
           </thead>
           <tbody>
@@ -242,6 +252,8 @@
                   {/if}
                 </td>
                 <td class="text-ink-2">{r.indexing ? (indexingLabel[r.indexing] ?? r.indexing) : '—'}</td>
+                <td>{#if r.url}<BacklinkStatus check={data.checks[r.id]} />{:else}<span class="text-ink-3">ждёт публикации</span>{/if}</td>
+                <td>{#if r.url}<BacklinkRunner job={data.checkJob} provider="fieldlink" orderId={data.content.order.id} placementId={r.id} compact />{/if}</td>
               </tr>
             {/each}
           </tbody>

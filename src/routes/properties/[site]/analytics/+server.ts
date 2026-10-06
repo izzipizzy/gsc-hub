@@ -6,6 +6,8 @@ import { fetchSiteQueryPages } from '$lib/server/google';
 import { getBrandedTerms } from '$lib/server/branded';
 import { requireAdmin } from '$lib/server/guard';
 import { dropFilteredQueries, filterPatterns } from '$lib/server/filters';
+import { listUrlExclusions } from '$lib/server/site-url-exclusions';
+import { urlExcluded, urlMatchesMask } from '$lib/utils/url-filters';
 import {
   rowToQueryPage,
   computeStriking,
@@ -34,12 +36,17 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
   // `site:` — оператор поиска, а не ключ.
   const qp = dropFilteredQueries(rows.map(rowToQueryPage), filterPatterns(db()), (r) => r.query);
   const terms = getBrandedTerms(db(), siteUrl);
+  const exclusions = listUrlExclusions(db(), siteUrl);
+  const mask = url.searchParams.get('urlMask') ?? '';
+  const include = url.searchParams.get('urlMode') !== 'not_contains';
+  if (mask.length > 2000) throw error(400, 'URL mask is too long');
+  const strikingRows = qp.filter((r) => !urlExcluded(r.page, exclusions) && (!mask || (include ? urlMatchesMask(r.page, mask) : !urlMatchesMask(r.page, mask))));
 
   // Потолок на один сайт выше дефолтного: за 60-480 дней в striking легко
   // набирается больше сотни запросов, и обрезать их молча — врать о картине.
   return json({
     days,
-    striking: computeStriking(qp, 300),
+    striking: computeStriking(strikingRows, 300),
     cannibalization: computeCannibalization(qp, 200),
     ctr: computeCtrBenchmark(qp, 200),
     branded: splitBranded(aggregateByQuery(qp), terms),

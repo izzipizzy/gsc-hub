@@ -1,7 +1,14 @@
 <script lang="ts">
+  import BacklinkPulse from '$lib/components/BacklinkPulse.svelte';
+  import type { BacklinkDashboard } from '$lib/server/backlink-snapshots';
+  import BacklinkRunner from '$lib/components/BacklinkRunner.svelte';
+  import BacklinkSummary from '$lib/components/BacklinkSummary.svelte';
   import { FIELDLINK_SIGNUP_URL, MAGIC369_CONTACT } from '$lib/utils/magiclinks-signup';
   import type { PageData, ActionData } from './$types';
   let { data, form }: { data: PageData; form: ActionData } = $props();
+
+  let liveDashboard = $state<BacklinkDashboard | null>(null);
+  $effect(() => { data.checkDashboard; liveDashboard = null; });
 
   const credits = (minor: number | null | undefined) =>
     minor === null || minor === undefined ? '—' : (minor / 100).toFixed(2);
@@ -17,7 +24,7 @@
           ? 'badge-warn'
           : 'badge-muted';
 
-  const providerName: Record<string, string> = { fieldlink: 'FieldLink', magic369: '369Team' };
+  const providerName = $derived(Object.fromEntries(data.checkDashboard.providers.map((p) => [p.id, p.name])));
 
   const progress = (o: { completedCount: number; rowCount: number }) =>
     o.rowCount > 0 ? Math.round((o.completedCount / o.rowCount) * 100) : 0;
@@ -31,11 +38,23 @@
       <nav class="app-breadcrumbs"><a href="/properties">Properties</a><span aria-hidden="true">/</span><span class="text-ink-2">MagicLinks</span></nav>
       <h1 class="app-pagetitle">MagicLinks</h1>
       <p class="text-xs text-ink-3">
-        Задания на посты и ссылки, их статусы и URL публикаций. Хаб ничего не кеширует:
-        всё читается из MagicLinks при каждом открытии страницы.
+        Задания на посты и ссылки, их статусы и URL публикаций. Статусы заказов и публикации кешируются; результаты проверки ссылок сохраняются в хабе.
       </p>
     </div>
+    <div class="app-toolbar-right flex flex-col items-end gap-1">
+      <form method="POST" action="?/refreshProviders"><button class="btn btn-sec btn-sm">Обновить данные поставщиков</button></form>
+      {#if data.providerCache.updatedAt}<span class="text-xs text-ink-3">Кеш: {fmt(new Date(data.providerCache.updatedAt).toISOString())} UTC{data.providerCache.stale ? ' · есть ошибки обновления' : ''}</span>{/if}
+    </div>
   </header>
+
+  <section class="pane mb-3">
+    <div class="pane-head">Проверка купленных ссылок</div>
+    <div class="pane-body flex flex-col gap-2">
+      <BacklinkPulse dashboard={liveDashboard ?? data.checkDashboard} />
+      <BacklinkRunner job={data.checkJob} onprogress={(dashboard) => (liveDashboard = dashboard)} />
+      <p class="text-xs text-ink-3">Автопроверка раз в неделю. Можно проверить все ссылки, отдельный заказ или публикацию вручную. Проверяем HTML без JavaScript.</p>
+    </div>
+  </section>
 
   {#if form && 'error' in form && form.error}
     <p class="app-errors">{form.error}</p>
@@ -71,7 +90,7 @@
                 <thead>
                   <tr>
                     <th>задание</th><th>провайдер</th><th>тип</th><th class="num">брифов</th><th class="num">заказано</th>
-                    <th>заказ</th><th>готово</th><th>индексация</th><th>создано</th><th></th>
+                    <th>заказ</th><th>готово</th><th>индексация</th><th>проверка ссылок</th><th>создано</th><th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -117,6 +136,7 @@
                           <span class="text-ink-4">-</span>
                         {/if}
                       </td>
+                      <td><BacklinkSummary summary={t.backlinks} /></td>
                       <td class="app-num whitespace-nowrap text-ink-3">{fmt(t.createdAt)}</td>
                       <td class="text-right">
                         {#if t.order}
@@ -140,6 +160,21 @@
     </div>
 
     <aside class="order-first flex min-w-0 flex-col gap-3 lg:order-none">
+      <section class="pane">
+        <div class="pane-head">Настройки проверки ссылок</div>
+        <div class="pane-body flex flex-col gap-3 text-xs">
+          {#if form && 'backlinkSaved' in form && form.backlinkSaved}<p class="text-up">Настройки проверки сохранены.</p>{/if}
+          <p class="text-ink-3">{data.backlinkSettings.proxyConfigured ? `Прокси: ${data.backlinkSettings.proxyLabel} (${data.backlinkSettings.source}).` : 'Прокси не задан: проверка с IP сервера.'}</p>
+          <form method="POST" action="?/saveBacklinkSettings" class="flex flex-col gap-2">
+            <label class="flex flex-col gap-1">SOCKS-прокси (опционально)<input class="input" name="proxy" type="password" autocomplete="new-password" placeholder="socks5://user:pass@host:port" maxlength="1000" /></label>
+            <p class="text-ink-3">SOCKS5 — логин и пароль, SOCKS4 — только User ID: socks4://user@host:port. Пустое поле сохраняет текущий прокси.</p>
+            {#if data.backlinkSettings.source === 'env'}<p class="text-ink-3">Прокси задан BACKLINK_PROXY_URL в окружении; изменение — там.</p>{:else if data.backlinkSettings.proxyConfigured}<label class="flex items-center gap-2"><input type="checkbox" name="clearProxy" />Убрать сохранённый прокси</label>{/if}
+            <label class="flex items-center gap-2"><input type="checkbox" name="automatic" checked={data.backlinkSettings.automatic} />Автопроверка раз в неделю</label>
+            <p class="break-all text-ink-3">User-Agent: {data.backlinkSettings.userAgent}</p>
+            <button class="btn btn-sec">Сохранить</button>
+          </form>
+        </div>
+      </section>
       <section class="pane">
         <div class="pane-head">Ключ доступа
           {#if data.configured && data.balance}

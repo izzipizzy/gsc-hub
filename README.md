@@ -2,6 +2,14 @@
 
 > [Русская версия](README.ru.md)
 
+## Video demo
+
+[![GSC Hub — 90-second demo](docs/videos/gsc-hub-demo-poster.png)](docs/videos/gsc-hub-demo.mp4)
+
+[Watch / download MP4](docs/videos/gsc-hub-demo.mp4) · [Russian subtitles](docs/videos/gsc-hub-demo.ru.srt)
+
+90 seconds, Full HD, Russian narration. All domains, accounts and metrics are synthetic.
+
 ## Screenshots
 
 ![Portfolio analytics — striking distance, cannibalization, CTR, branded & decay across all sites](docs/screenshots/portfolio.png)
@@ -12,7 +20,7 @@
 
 ![Top queries](docs/screenshots/queries.png)
 
-Local self-hosted multi-account hub for **Google Search Console**. Connect several Google accounts via OAuth, view all Search Console sites in a single table, aggregate queries and pages across accounts, see per-site dashboards with sparklines and period-over-period deltas, drill into 16-month query history with one click. Since 0.6.0 it also ships a full **SEO analytics suite** — per-site deep-dives (striking distance, cannibalization, CTR benchmark, content decay, branded split, site health) and a portfolio-wide view across all sites — plus Bing/IndexNow and optional multi-user login. Since 0.8.0: traffic charts annotated with Google updates and your own site events, a site-scoped machine API with a built-in **MCP server** for AI agents, and optional link buying straight from striking-distance tables. No external service: Search Console data stays on your machine (the one exception is link buying - the query and URL you choose go to the provider you pay). SQLite holds OAuth tokens, your settings and a few caches, never Search Analytics metrics; analytics are fetched live, with a short in-memory cache.
+Local self-hosted multi-account hub for **Google Search Console**. Connect several Google accounts via OAuth, view all Search Console sites in a single table, aggregate queries and pages across accounts, see per-site dashboards with sparklines and period-over-period deltas, drill into 16-month query history with one click. Since 0.6.0 it also ships a full **SEO analytics suite** — per-site deep-dives (striking distance, cannibalization, CTR benchmark, content decay, branded split, site health) and a portfolio-wide view across all sites — plus Bing/IndexNow and optional multi-user login. Since 0.8.0: traffic charts annotated with Google updates and your own site events, a site-scoped machine API with a built-in **MCP server** for AI agents, and optional link buying straight from striking-distance tables. Since 0.9.0: saved URL exclusions and filters, sorting and remembered site preferences, purchases on a custom page path, weekly backlink monitoring with provider pulse history, and page/sitemap submissions through NeuralIndexer. The [video walkthrough](docs/videos/gsc-hub-demo.mp4) uses synthetic data. Search Analytics metrics stay on your machine, fetched live with a short in-memory cache. Optional link buying and indexing send selected queries or URLs to the configured provider; backlink checks request donor pages. SQLite stores tokens, settings and operational records described under [Privacy](#privacy-and-data-handling).
 
 The interface is Russian-first: navigation and table headers are English, many buttons and messages are Russian.
 
@@ -141,7 +149,7 @@ claude mcp add --transport http gsc-hub https://your-hub.example.com/api/v1/mcp 
 - All numbers in tables are tabular-nums for vertical alignment.
 - Light hover affordance on rows. Sortable headers show ↑ / ↓.
 - **Short in-memory cache.** Search Console responses are kept in process memory for up to 60 minutes, so page switches are fast and quota lasts; **Refresh** drops the cache, and a restart starts cold. Search Analytics responses never reach the database; the disk exceptions (URL Inspection cache, bought query + URL pairs) are listed under [Privacy](#privacy-and-data-handling).
-- No background jobs, no cron, no queues, no email.
+- Purchased backlinks are checked in a persistent background queue, weekly by default, once link-buying providers are configured. Disable automatic checks in MagicLinks settings or set `BACKLINK_AUTO_ENABLED=0`; manual checks remain available. No email notifications.
 
 ## Quickstart
 
@@ -323,14 +331,14 @@ gsc-hub/
 
 ## Tests
 
-`pnpm test` runs the Vitest suite (~480 tests): SQLite migrations, the GSC client (token refresh, revocation, fan-out, date windows in Search Console's timezone), the pure SEO analytics, CSV and the export, auth and the access guard, the machine API and MCP tools (including a check that MCP stays read-only), both link-buying clients and the release/publish scripts. Routes are covered through their server modules, the Google and vendor APIs through a mocked `fetch`.
+`pnpm test` runs the Vitest suite (550+ tests): SQLite migrations, the GSC client (token refresh, revocation, fan-out, date windows in Search Console's timezone), the pure SEO analytics, CSV and the export, auth and the access guard, the machine API and MCP tools (including a check that MCP stays read-only), both link-buying clients and the release/publish scripts. Routes are covered through their server modules, the Google and vendor APIs through a mocked `fetch`.
 
 ## Privacy and data handling
 
 - Search Analytics responses (queries, clicks, impressions, positions) are never written to disk: they live in process memory for up to 60 minutes and vanish on restart.
 - Two things from Search Console do reach SQLite: URL Inspection results (cached for 12 hours to spare the daily quota) and, if you buy links, the query + URL pairs you bought (so striking tables can mark them). A purchase also sends those queries and URLs to the provider you chose.
-- On disk you have OAuth tokens and your own settings - see the table list in [Architecture](#architecture). The SQLite file lives in `./data/` (gitignored); delete it to wipe everything.
-- Outbound calls go to Google's APIs, plus only what you switch on: Bing Webmaster and IndexNow (`BING_API_KEY`), the SERP monitor (`SERP_MONITOR_URL`), link-buying services (their keys), and the GitHub Releases check from the browser (`UPDATE_CHECK=off` stops it). No analytics, no telemetry.
+- SQLite also stores OAuth tokens and settings, saved URL exclusions and site preferences, purchased placements and check results/history, queued check jobs and pulse snapshots, cached provider responses, and indexing requests (URL lists, quotes, results and charges). Provider cache lifetimes depend on the operation: balances 1 minute, lists/statuses 5 minutes, articles 1 hour and final orders 6 hours; failures retry after 1 minute while retaining the last good response. The SQLite file lives in `./data/` (gitignored); delete it to wipe everything.
+- Outbound calls go to Google APIs and configured services: Bing Webmaster/IndexNow (`BING_API_KEY`), the SERP monitor (`SERP_MONITOR_URL`), link-buying providers and NeuralIndexer (`inderixingbot.com`). Explicit indexing calculations request your balance; paid submissions send the selected page URLs. Sitemap calculations download the specified maps. Purchased-link checks request donor pages using a Googlebot user agent, directly or through the optional SOCKS proxy. Without a proxy, donor sites see the server's IP; changing the user agent does not hide it. Weekly checks are enabled by default and can be disabled with `BACKLINK_AUTO_ENABLED=0`. The browser checks GitHub Releases unless `UPDATE_CHECK=off`. No telemetry.
 - Tokens and service keys are stored in plaintext. That is acceptable for a local single-user tool; encrypt at rest if you ever expose this beyond `127.0.0.1`. Machine API keys are the exception: only their sha256 is stored.
 
 ## Deploying with Docker Compose + OrbStack
@@ -356,9 +364,9 @@ docker compose down            # stop (data in ./data persists)
 
 ### How you find out there is a new version
 
-The footer prints the version this instance is running — `v0.8.0`, linked to the
+The footer prints the version this instance is running — `v0.9.0`, linked to the
 release notes for that tag. On a dev host the working tree's commit is shown
-beside it (`v0.8.0 · 3af8529`); inside a container there is no git, so only the
+beside it (`v0.9.0 · <commit>`); inside a container there is no git, so only the
 tag appears.
 
 Once every 12 hours the browser asks the GitHub Releases API for the newest
@@ -470,3 +478,19 @@ Analytics stay live-fetched with only the short in-memory cache; a persistent st
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+### NeuralIndexer / Inderixing
+
+Configure the shared NeuralIndexer API key under **Indexers**. The **Indexing**
+button on a domain opens page/path or XML sitemap submission, including child
+maps. The quote shows unique URLs, queue, estimated cost and balance before a
+paid submission. Quotes do not submit pages; request history and actual charges
+are stored per domain.
+
+API v2: [Inderixing documentation](https://inderixingbot.com/docs).
+Retries reuse the same `external_id` to avoid duplicate charges. Service
+acceptance does not confirm Google indexing. Split maps exceeding 50,000 URLs
+or 200 sitemap files; failed children never produce a partial quote. URLs must
+use the selected domain host (including its www variant); other subdomains
+are rejected even for `sc-domain:` properties. The token may alternatively be
+set with `NEURALINDEXER_API_TOKEN`; it is never returned to the browser.

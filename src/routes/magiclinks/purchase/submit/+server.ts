@@ -1,3 +1,4 @@
+import { invalidateProviderCache } from '$lib/server/magiclinks-cache';
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
@@ -103,6 +104,7 @@ async function submitMagic369(raw: unknown[], expectedMinor: number) {
       }))
     );
 
+    invalidateProviderCache(db());
     return json({
       provider: PROVIDER_MAGIC369,
       orderId: created.orderId,
@@ -154,6 +156,7 @@ async function submitFieldlink(taskId: string, expectedMinor: number) {
       recordPurchases(db(), rows);
     }
 
+    invalidateProviderCache(db());
     return json({
       provider: PROVIDER_FIELDLINK,
       orderId: order.id,
