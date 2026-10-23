@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { fieldlinkTierLabel } from '$lib/utils/fieldlink';
   import BacklinkRunner from '$lib/components/BacklinkRunner.svelte';
   import BacklinkStatus from '$lib/components/BacklinkStatus.svelte';
   import BacklinkSummary from '$lib/components/BacklinkSummary.svelte';
@@ -174,11 +175,13 @@
     </section>
   {:else}
     {@const order = data.content.order}
+    {@const isLinks = order.type === 'links'}
     <section class="pane mb-3">
       <div class="pane-body flex flex-col gap-2 text-[12.5px] text-ink-2">
         <p class="flex flex-wrap items-center gap-x-1.5 gap-y-1">
           <span class="badge {badge(order.status)}">{order.status}</span>
-          <span>· заказано <span class="app-num text-ink">{order.requestedCount ?? '—'}</span> + бонус <span class="app-num text-ink">{order.bonusCount ?? 0}</span>
+          <span class="badge badge-muted">{isLinks ? 'Ссылки с главных' : 'Посты'}</span>
+          <span>· заказано <span class="app-num text-ink">{order.requestedCount ?? '—'}</span>{#if !isLinks} + бонус <span class="app-num text-ink">{order.bonusCount ?? 0}</span>{/if}
           = <span class="app-num text-ink">{order.rowCount}</span> позиций</span>
           <span>· выполнено <span class="app-num text-ink">{order.completedCount}</span>{#if order.failedCount > 0}, <span class="text-dn">ошибок <span class="app-num">{order.failedCount}</span></span>{/if}</span>
           {#if data.filter && filterOn}
@@ -227,7 +230,7 @@
           <thead>
             <tr>
               <th class="num">#</th><th>акцептор</th><th>анкор</th><th>язык</th>
-              <th>статус</th><th>публикация</th><th>индексация</th><th>проверка ссылки</th><th></th>
+              <th>статус</th><th>{isLinks ? 'донор' : 'публикация'}</th>{#if isLinks}<th>тариф</th><th>тема</th><th>текст размещения</th>{:else}<th>индексация</th>{/if}<th>проверка ссылки</th><th></th>
             </tr>
           </thead>
           <tbody>
@@ -251,7 +254,13 @@
                     <span class="text-ink-4">—</span>
                   {/if}
                 </td>
-                <td class="text-ink-2">{r.indexing ? (indexingLabel[r.indexing] ?? r.indexing) : '—'}</td>
+                {#if isLinks}
+                  <td class="whitespace-nowrap text-ink-2">{r.tier ? fieldlinkTierLabel(r.tier) : '—'}</td>
+                  <td class="pii max-w-xs whitespace-normal text-ink-2">{r.contentHint || '—'}</td>
+                  <td class="pii max-w-sm whitespace-normal text-ink-2">{r.text || '—'}</td>
+                {:else}
+                  <td class="text-ink-2">{r.indexing ? (indexingLabel[r.indexing] ?? r.indexing) : '—'}</td>
+                {/if}
                 <td>{#if r.url}<BacklinkStatus check={data.checks[r.id]} />{:else}<span class="text-ink-3">ждёт публикации</span>{/if}</td>
                 <td>{#if r.url}<BacklinkRunner job={data.checkJob} provider="fieldlink" orderId={data.content.order.id} placementId={r.id} compact />{/if}</td>
               </tr>
@@ -261,9 +270,9 @@
       </div>
     </section>
 
-    <p class="mt-3 text-xs text-ink-3">
+    {#if !isLinks}<p class="mt-3 text-xs text-ink-3">
       Индексация идёт отдельно от публикации: «передано» не доказывает появление в поиске,
       и занять это может несколько дней. Отдельной команды на переотправку нет.
-    </p>
+    </p>{/if}
   {/if}
 </main>

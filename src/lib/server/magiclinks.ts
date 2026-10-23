@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
 import type { Db } from './db';
 import { LANGUAGE_CODES } from '$lib/utils/lang';
+import { isFieldlinkTier, fieldlinkAdmissionMessage, type FieldlinkTier } from '$lib/utils/fieldlink';
 import { getConfigValue, configSource, setConfigValue, clearConfigValue } from './config';
 
-// Единственный модуль, знающий MagicLinks Customer API (контракт 1.14.0).
+// Единственный модуль, знающий MagicLinks Customer API (контракт 1.19.0).
 // Роуты дёргают только его, как и в случае с google.ts. Данные сервиса нигде
 // не кешируются: задачи, заказы и статусы всегда читаются живьём, в базе лежит
 // только токен доступа — ровно как с GSC.
@@ -75,6 +76,7 @@ export interface MagicLinksRow {
     language: string;
     quantity?: number;
     tier?: string;
+    contentHint?: string;
   };
   // Посты возвращают destination (URL публикации), ссылки — donor + text.
   result: { destination?: string; source?: string; donor?: string; text?: string } | null;
@@ -98,6 +100,7 @@ export interface MagicLinksQuote {
   balanceMinor: number;
   shortfallMinor: number;
   canSubmit: boolean;
+  admissionCode?: string;
   billed: boolean;
   priceVersion?: string;
   billingMode?: string;
@@ -114,12 +117,33 @@ export interface MagicLinksBrief {
   quantity?: number;
 }
 
-/** Цена поста в minor units за одно заказанное размещение (0.2 кредита). */
-export const POST_UNIT_MINOR = 20;
+export type MagicLinksTaskBrief = Omit<MagicLinksBrief, 'titleKeyword'> & { titleKeyword?: string; tier?: string; contentHint?: string };
 
-/** Бонус сервиса: 25% сверху, общий по заказу, с округлением вверх. */
+export interface MagicLinksLinkBrief extends Omit<MagicLinksBrief, 'titleKeyword'> {
+  tier: FieldlinkTier;
+  contentHint?: string;
+}
+
+/** Shares URL/anchor/language/count checks with posts, without sending post-only fields. */
+export function validateLinkBrief(b: MagicLinksLinkBrief, index = 0): MagicLinksLinkBrief {
+  const base = validateBrief({ ...b, titleKeyword: 'link' }, index);
+  if (!isFieldlinkTier(b.tier)) throw new Error(`строка ${index + 1}: выбери тариф ссылки 1, 2 или 5 кредитов`);
+  const contentHint = String(b.contentHint ?? '').trim();
+  if (contentHint.length > 300 || /[<>\x00-\x1f]|https?:\/\/|www\.|[{}]/i.test(contentHint)) {
+    throw new Error(`строка ${index + 1}: тема — до 300 символов, без URL, HTML и спинтакса`);
+  }
+  const { titleKeyword: _, ...brief } = base;
+  return { ...brief, tier: b.tier, ...(contentHint ? { contentHint } : {}) };
+}
+
+export function magicLinksErrorMessage(e: MagicLinksError): string {
+  return ['LINK_TRAFFIC_TIER_REQUIRED', 'LINK_TIER_COMING_SOON', 'LINK_EDITOR_UNAVAILABLE', 'OTHER_POST_TOPIC_DISABLED'].includes(e.code ?? '')
+    ? fieldlinkAdmissionMessage(e.code) : e.message;
+}
+
+/** Бонус сервиса: 25% сверху, общий по заказу, с округлением вниз. */
 export function bonusFor(requested: number): number {
-  return Math.ceil(requested / 4);
+  return Math.floor(requested / 4);
 }
 
 export const MAX_COUNT_PER_BRIEF = 250;
@@ -299,27 +323,40 @@ export class MagicLinksClient {
   }
 
   async listOrders(limit = 100): Promise<MagicLinksOrderSummary[]> {
-    const page = await this.request<{ orders?: MagicLinksOrderSummary[] }>('GET', '/orders', {
-      query: { offset: 0, limit }
-    });
-    return page.orders ?? [];
+    const orders = new Map<string, MagicLinksOrderSummary>();
+    let offset: number | null = 0;
+    const visited = new Set<number>();
+    while (offset !== null && !visited.has(offset)) {
+      visited.add(offset);
+      const page: { orders?: MagicLinksOrderSummary[]; nextOffset?: number | null } = await this.request('GET', '/orders', { query: { offset, limit } });
+      for (const order of page.orders ?? []) orders.set(order.id, order);
+      offset = page.nextOffset ?? null;
+    }
+    return [...orders.values()];
   }
 
   /** Сохраняет задачу. Публикация при этом НЕ начинается и деньги не тратятся. */
-  createPosts(payload: { name?: string; topic: string; items: MagicLinksBrief[] }, idempotencyKey: string) {
+  createPosts(payload: { name?: string; topic?: string; topicHint?: string; items: MagicLinksBrief[] }, idempotencyKey: string) {
     return this.request<{ taskId?: string; task?: { id: string }; replayed?: boolean }>('POST', '/posts', {
       body: payload,
       idempotencyKey
     });
   }
 
+  /** Homepage links have no post keywords, topic mode or bonus. */
+  createLinks(payload: { name?: string; items: MagicLinksLinkBrief[] }, idempotencyKey: string) {
+    return this.request<{ taskId?: string; task?: { id: string }; replayed?: boolean }>('POST', '/links', {
+      body: payload, idempotencyKey
+    });
+  }
+
   /** Исходные брифы задачи: по ним пишется история покупок. */
-  async taskRows(taskId: string, pageSize = 100): Promise<MagicLinksBrief[]> {
-    const out: MagicLinksBrief[] = [];
+  async taskRows(taskId: string, pageSize = 100): Promise<MagicLinksTaskBrief[]> {
+    const out: MagicLinksTaskBrief[] = [];
     let page = 0;
     for (;;) {
       const data = await this.request<{
-        task?: { rows?: MagicLinksBrief[] };
+        task?: { rows?: MagicLinksTaskBrief[] };
         pagination?: { totalPages?: number };
       }>('GET', `/tasks/${encodeURIComponent(taskId)}/rows`, { query: { page, pageSize } });
       out.push(...(data.task?.rows ?? []));

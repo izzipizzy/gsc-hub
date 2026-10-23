@@ -1,5 +1,6 @@
 <script lang="ts">
   import { FIELDLINK_SIGNUP_URL, MAGIC369_CONTACT } from '$lib/utils/magiclinks-signup';
+  import { fieldlinkAdmissionMessage } from '$lib/utils/fieldlink';
   import { customPurchaseUrl, siteHostname } from '$lib/utils/url-filters';
   import { untrack } from 'svelte';
   import { LANGUAGE_OPTIONS, defaultLanguageForHost } from '$lib/utils/lang';
@@ -21,6 +22,8 @@
     balanceMinor: number | null;
     priceMinor: number | null;
     error: string | null;
+    services: ('posts' | 'links')[];
+    linkTiers?: { id: string; traffic: string; priceMinor: number | null }[];
   }
 
   let {
@@ -63,10 +66,14 @@
     )
   );
 
+  let service = $state<'posts' | 'links'>('posts');
+  let tier = $state('');
+  let contentHint = $state('');
+  let requestId = $state('');
   let count = $state(5);
   const missingLang = $derived(hosts.filter((h) => !langs[h]));
   const requested = $derived((customSite ? 1 : rows.length) * count);
-  const estimateBonus = $derived(Math.ceil(requested / 4));
+  const estimateBonus = $derived(Math.floor(requested / 4));
 
   type Quote = {
     placementCount: number;
@@ -77,6 +84,7 @@
     shortfallMinor: number;
     canSubmit: boolean;
     indexingIncluded?: boolean;
+    admissionCode?: string;
   };
 
   // Провайдеры читаются живьём при открытии окна; по умолчанию выбирается тот,
@@ -88,7 +96,9 @@
   const provider = $derived(providers.find((p) => p.id === providerId) ?? null);
   const configuredProviders = $derived(providers.filter((p) => p.configured));
   const unit = $derived(provider?.unit ?? 'кр.');
-  const priceMinor = $derived(provider?.priceMinor ?? null);
+  const selectedTier = $derived(provider?.linkTiers?.find((t) => t.id === tier));
+  const priceMinor = $derived(service === 'links' ? selectedTier?.priceMinor ?? null : provider?.priceMinor ?? null);
+  const supportedServices = $derived(provider?.services ?? ['posts']);
   const estimateMinor = $derived(priceMinor !== null ? requested * priceMinor : null);
 
   $effect(() => {
@@ -124,7 +134,14 @@
   const credits = (minor: number) => (minor / 100).toFixed(2);
 
   function changeProvider() {
-    // Смена провайдера обнуляет расчёт: суммы у них разные.
+    if (!supportedServices.includes(service)) service = 'posts';
+    tier = '';
+    resetQuote();
+  }
+
+  function resetQuote() {
+    requestId = '';
+    // A changed form is a new campaign; a network retry keeps its attempt ID.
     step = 'form';
     quote = null;
     taskId = null;
@@ -149,18 +166,25 @@
   }
 
   async function getQuote() {
-    if (busy || missingLang.length > 0 || !providerId) return;
+    if (busy || missingLang.length > 0 || !providerId || (service === 'links' && !selectedTier)) return;
     busy = true;
     err = null;
     try {
       const items = purchaseRows();
+      if (!requestId) {
+        // getRandomValues also works on plain-HTTP LAN installations.
+        requestId = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
+      }
       const data = await post('/magiclinks/purchase', {
         provider: providerId,
+        service,
+        requestId,
         items: items.map((r) => ({
           targetUrl: r.targetUrl,
           query: r.query,
           language: langs[r.siteHost],
-          count
+          count,
+          ...(service === 'links' ? { tier, contentHint } : {})
         }))
       });
       quotedRows = items;
@@ -219,7 +243,7 @@
 >
   <div class="mt-10 w-full max-w-xl rounded border border-line bg-pane text-[12.5px] shadow-[0_12px_40px_-12px_rgb(19_23_34/0.35)]" role="dialog" aria-modal="true" aria-labelledby="buylinks-title">
     <div class="pane-head">
-      <h2 id="buylinks-title">Купить ссылки</h2>
+      <h2 id="buylinks-title">Купить размещения</h2>
       <div class="flex items-center gap-2">
         {#if quote}
           <span class="aside text-ink-2">Баланс <b class="app-num text-ink">{credits(quote.balanceMinor)}</b> {unit}</span>
@@ -244,16 +268,16 @@
         <label class="flex flex-col gap-1">
           <span class="text-[11px] text-ink-3">Путь страницы</span>
           <span class="pii break-all text-ink-2">{customOrigin}</span>
-          <input class="input w-full disabled:bg-sunk disabled:text-ink-3" bind:value={path} placeholder="/page/" maxlength="2000" disabled={step === 'quote' || busy} />
+          <input class="input w-full disabled:bg-sunk disabled:text-ink-3" bind:value={path} oninput={resetQuote} placeholder="/page/" maxlength="2000" disabled={step === 'quote' || busy} />
         </label>
         <label class="flex flex-col gap-1">
-          <span class="text-[11px] text-ink-3">Текст ссылки / ключевые слова статьи</span>
-          <input class="input w-full disabled:bg-sunk disabled:text-ink-3" bind:value={customText} placeholder="Текст для ссылки" maxlength="300" disabled={step === 'quote' || busy} />
+          <span class="text-[11px] text-ink-3">{service === 'links' ? 'Анкор ссылки' : 'Текст ссылки / ключевые слова статьи'}</span>
+          <input class="input w-full disabled:bg-sunk disabled:text-ink-3" bind:value={customText} oninput={resetQuote} placeholder="Текст для ссылки" maxlength="300" disabled={step === 'quote' || busy} />
         </label>
       {:else}
         <p class="text-ink-2">
-          Выбрано строк: <b class="app-num text-ink">{rows.length}</b>. Анкор и ключевые слова для статьи - сам запрос,
-          акцептор - URL страницы из строки.
+          Выбрано строк: <b class="app-num text-ink">{rows.length}</b>.
+          {service === 'links' ? 'Анкор — запрос, акцептор — URL страницы из строки.' : 'Анкор и ключевые слова статьи — запрос, акцептор — URL страницы из строки.'}
         </p>
       {/if}
 
@@ -262,7 +286,7 @@
         <select
           bind:value={providerId}
           disabled={step === 'quote' || busy}
-          onchange={changeProvider}
+          onchange={(e) => { providerId = e.currentTarget.value; changeProvider(); }}
           class="input h-7 text-xs disabled:bg-sunk disabled:text-ink-3"
         >
           {#if providers.length === 0}
@@ -296,6 +320,33 @@
         {/if}
       </div>
 
+      <label class="flex flex-col gap-1">
+        <span class="text-[11px] text-ink-3">Тип размещения</span>
+        <select class="input w-full disabled:bg-sunk disabled:text-ink-3" bind:value={service} disabled={step === 'quote' || busy} onchange={resetQuote}>
+          <option value="posts">Посты со ссылкой</option>
+          <option value="links" disabled={!supportedServices.includes('links')}>Ссылки с главных (морды){supportedServices.includes('links') ? '' : ' — пока недоступны'}</option>
+        </select>
+      </label>
+      {#if service === 'links'}
+        <label class="flex flex-col gap-1">
+          <span class="text-[11px] text-ink-3">Тариф по трафику донора</span>
+          <select class="input w-full disabled:bg-sunk disabled:text-ink-3" bind:value={tier} disabled={step === 'quote' || busy} onchange={resetQuote}>
+            <option value="">Выбери тариф</option>
+            {#each provider?.linkTiers ?? [] as t (t.id)}
+              <option value={t.id}>{t.priceMinor !== null ? `${credits(t.priceMinor)} ${unit}` : 'Цена по расчёту'} · T {t.traffic}</option>
+            {/each}
+          </select>
+          <span class="text-[11px] text-ink-3">Донор подбирается автоматически. Язык относится к тексту, а не к стране площадки. Бонусных ссылок нет.</span>
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="text-[11px] text-ink-3">Тема текста для всех строк · необязательно</span>
+          <input class="input w-full disabled:bg-sunk disabled:text-ink-3" bind:value={contentHint} placeholder="Например: аренда квартир" maxlength="300" disabled={step === 'quote' || busy} oninput={resetQuote} />
+          <span class="text-[11px] text-ink-3">В двух словах, без URL и HTML. Анкор останется точным текстом ссылки.</span>
+        </label>
+      {:else if providerId === 'fieldlink'}
+        <p class="text-[11px] text-ink-3">Тема каждой статьи определяется автоматически по URL, анкору и ключевым словам.</p>
+      {/if}
+
       {#if !customSite}
       <div class="flex flex-col gap-1">
         <span class="text-[11px] text-ink-3">Позиции</span>
@@ -319,24 +370,25 @@
       {/if}
 
       <label class="flex flex-col gap-1">
-        <span class="text-[11px] text-ink-3">Ссылок на строку</span>
+        <span class="text-[11px] text-ink-3">{service === 'links' ? 'Ссылок на строку' : 'Постов на строку'}</span>
         <input
           type="number"
           min="1"
           max="250"
           bind:value={count}
+          oninput={resetQuote}
           disabled={step === 'quote' || busy}
           class="input app-num w-24 disabled:bg-sunk disabled:text-ink-3"
         />
       </label>
 
       <div class="flex flex-col gap-1">
-        <span class="text-[11px] text-ink-3">Язык статьи по сайтам</span>
+        <span class="text-[11px] text-ink-3">{service === 'links' ? 'Язык текста по сайтам' : 'Язык статьи по сайтам'}</span>
         <div class="flex flex-col divide-y divide-line-soft rounded border border-line">
           {#each hosts as h (h)}
             <label class="flex items-center justify-between gap-2 px-2 py-1">
               <span class="pii min-w-0 truncate text-ink">{h}</span>
-              <select bind:value={langs[h]} disabled={step === 'quote' || busy} class="input h-6 text-xs disabled:bg-sunk disabled:text-ink-3">
+              <select bind:value={langs[h]} onchange={resetQuote} disabled={step === 'quote' || busy} class="input h-6 text-xs disabled:bg-sunk disabled:text-ink-3">
                 <option value="">выбери</option>
                 {#each LANGUAGE_OPTIONS as l (l.code)}
                   <option value={l.code}>{l.label}</option>
@@ -367,7 +419,10 @@
           {#if quote.shortfallMinor > 0}
             <div class="flex justify-between py-[3px] text-dn"><span>Не хватает</span><span class="app-num">{credits(quote.shortfallMinor)} {unit}</span></div>
           {/if}
-          <div class="mt-1 flex justify-between border-t border-line pt-2 font-bold text-ink"><span>К списанию</span><span class="app-num text-[12.5px]">{credits(quote.amountMinor)} {unit}</span></div>
+          <div class="mt-1 flex justify-between border-t border-line pt-2 font-bold text-ink"><span>Стоимость</span><span class="app-num text-[12.5px]">{credits(quote.amountMinor)} {unit}</span></div>
+          {#if !quote.canSubmit && quote.shortfallMinor <= 0}
+            <p class="notice notice-warn mt-2 text-xs">{fieldlinkAdmissionMessage(quote.admissionCode)}</p>
+          {/if}
           {#if quote.indexingIncluded}
             <p class="notice notice-warn mt-2 text-xs">
               Индексация включена: отправленный заказ нельзя отменить или убрать в корзину.
@@ -375,7 +430,7 @@
           {/if}
         {:else}
           <div class="flex justify-between py-[3px]"><span>Заказано</span><span class="app-num">{requested}</span></div>
-          {#if providerId === 'fieldlink'}
+          {#if providerId === 'fieldlink' && service === 'posts'}
             <div class="flex justify-between py-[3px] text-up"><span>Бонус</span><span class="app-num">+{estimateBonus}</span></div>
           {/if}
           <div class="mt-1 flex justify-between border-t border-line pt-2 font-bold text-ink"><span>Примерно</span><span class="app-num text-[12.5px]">{estimateMinor !== null ? `${credits(estimateMinor)} ${unit}` : '—'}</span></div>
@@ -387,7 +442,7 @@
           <button
             type="button"
             class="btn btn-sec w-full"
-            disabled={busy || (!customSite && rows.length === 0) || count < 1 || missingLang.length > 0 || !providerId}
+            disabled={busy || (!customSite && rows.length === 0) || !Number.isInteger(count) || count < 1 || count > 250 || missingLang.length > 0 || !providerId || (service === 'links' && !selectedTier)}
             onclick={getQuote}
           >{busy ? 'Считаю…' : 'Посчитать цену'}</button>
         {:else if quote}
@@ -418,13 +473,13 @@
             в момент создания, отменить нельзя.
           {:else}
             Денег не тратит: сохраняет задание в сервисе и показывает точную сумму от него.
-            Списание - только на следующем шаге, по кнопке с суммой.
+            Запуск и оплата — на следующем шаге, по кнопке с суммой.
           {/if}
         {:else if providerId === 'magic369'}
           Вот это уже платит: заказ уходит сразу, токены списываются в момент создания.
         {:else}
-          Вот это уже платит: резервирует сумму и запускает размещение.
-          Списываются только проверенные выполненные позиции, бонусные бесплатны.
+          Запускает размещение по подтверждённой стоимости.
+          Сервис применит схему оплаты этого заказа; состояние оплаты видно в его деталях.
         {/if}
       </p>
     {/if}

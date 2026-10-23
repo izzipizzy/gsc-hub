@@ -3,7 +3,7 @@ import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { requireAdmin } from '$lib/server/guard';
-import { magicLinksClient, MagicLinksError, validateBrief, type MagicLinksBrief } from '$lib/server/magiclinks';
+import { magicLinksClient, MagicLinksError, magicLinksErrorMessage, validateBrief, type MagicLinksBrief } from '$lib/server/magiclinks';
 import { magic369Client, languageNameFor, Magic369Error } from '$lib/server/magic369';
 import { recordPurchases, orderRecorded, type PurchaseInput } from '$lib/server/magiclinks-purchases';
 import { PROVIDER_FIELDLINK, PROVIDER_MAGIC369, isMagicProviderId } from '$lib/server/magiclinks-providers';
@@ -169,7 +169,7 @@ async function submitFieldlink(taskId: string, expectedMinor: number) {
         throw error(409, 'Цена изменилась, пока шло подтверждение. Посчитай заново.');
       }
       if (e.status === 402) throw error(402, 'Не хватает доступных кредитов, заказ не создан');
-      throw error(e.status >= 400 && e.status < 500 ? e.status : 502, e.message);
+      throw error(e.status >= 400 && e.status < 500 ? e.status : 502, magicLinksErrorMessage(e));
     }
     throw e;
   }

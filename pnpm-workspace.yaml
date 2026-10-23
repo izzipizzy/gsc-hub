@@ -3,3 +3,8 @@ allowBuilds:
 onlyBuiltDependencies:
   - esbuild
   - better-sqlite3
+overrides:
+  # GHSA-pxg6-pf52-xh8x: SvelteKit 2 still requests vulnerable cookie ^0.6.0.
+  '@sveltejs/kit>cookie': 0.7.2
+  # GHSA-rj75-hqrm-r3gf: Tailwind 3 and postcss-nested request parser 6.
+  'postcss-selector-parser@<7.1.6': 7.1.6

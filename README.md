@@ -123,7 +123,8 @@ claude mcp add --transport http gsc-hub https://your-hub.example.com/api/v1/mcp 
 ### Link buying (MagicLinks, optional)
 - Buy posts with links to pages that sit in striking distance, straight from the striking tables (portfolio and per site): tick rows, get a quote, pay. Two providers are supported, and the purchase window picks the one with the larger balance by default:
   - **FieldLink** - two-step purchase (task → quote → order), the quoted amount is re-checked when the order is sent. [Sign up](https://seoboost-root.info/r/flt_czhTpL1GKPqQXI2h1c463ULMS2IEzV6fjJow2hiGlMg) (referral link), then create an API key in the dashboard.
-  - **369Team** (`magiclinks.online`) - one-step purchase, charged when the order is created; the price is re-checked right before. For an account and an API key, message [@links_369](https://t.me/links_369) on Telegram.
+  - **369Team** (`magiclinks.online`) - one-step purchase, charged when the order is created; the price is re-checked right before. For an account and an API key, message [@marketplace369_bot](https://t.me/marketplace369_bot?start=ref_84ej8qrt) on Telegram.
+- **Homepage links (FieldLink).** Choose “Ссылки с главных (морды)” in the purchase window, pick a traffic tier (1, 2 or 5 credits) and optionally describe the text subject. Donors are matched automatically. Links have no bonus. Confirm the actual quote before starting; CSV includes donor, placement text and subject when supplied. Post topics default to automatic, estimates use account prices. 369Team currently supports posts in the hub.
 - `/magiclinks` holds both keys, balances and every order with its provider, progress and (for FieldLink) search-indexing status; each order opens to its positions and published URLs, with a CSV export.
 - Service data is never cached: orders and statuses are read live. The hub keeps only the keys and a purchase trail (which query/URL pairs were already bought), so striking tables can mark them.
 - Nothing here is on by default - without a key the feature stays out of the way.
@@ -223,7 +224,7 @@ The `webmasters` scope is a "sensitive scope" in Google's classification, but Go
 | `SERP_MONITOR_URL` | optional | Base URL of the SERP monitor (e.g. `https://serp.example.com`). Enables the real-position column and the "check now" button on a site page. |
 | `SERP_MONITOR_TOKEN` | optional | Token this hub presents to the SERP monitor. Without it the site page says the integration is off rather than claiming the site is not monitored. |
 | `MAGICLINKS_API_TOKEN` | optional | FieldLink key for link buying. Usually entered on `/magiclinks` instead; the env var wins over the stored one. |
-| `MAGIC369_API_TOKEN` | optional | 369Team key for link buying, same rules. Keys are issued via [@links_369](https://t.me/links_369). |
+| `MAGIC369_API_TOKEN` | optional | 369Team key for link buying, same rules. Keys are issued via [@marketplace369_bot](https://t.me/marketplace369_bot?start=ref_84ej8qrt). |
 | `GSC_CONCURRENCY` | optional | Concurrent Search Console calls per fan-out. Defaults to `8`. Guards the local socket pool — unbounded, a ~200-site account times out the whole batch. Lower it if you still see connect timeouts. |
 | `GSC_INSPECT_CONCURRENCY` | optional | Concurrent URL Inspection calls. Defaults to `4` — lower on purpose, since inspection is capped by quota (2000/day and 600/min per property), not by sockets. |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | optional | Set both to enable multi-user login/roles (seeds an admin on first start). Leave unset for the default single-user, loopback-only mode. |

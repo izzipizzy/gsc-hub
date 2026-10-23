@@ -16,6 +16,7 @@ interface FieldlinkOrderContent {
   order: {
     id: string;
     taskId: string | null;
+    type: string;
     status: string;
     rowCount: number;
     requestedCount: number | null;
@@ -37,6 +38,9 @@ interface FieldlinkOrderContent {
     targetUrl: string;
     anchor: string;
     titleKeyword: string;
+    tier: string;
+    contentHint: string;
+    text: string;
     language: string;
     url: string;
     indexing: string | null;
@@ -123,6 +127,7 @@ async function loadFieldlink(orderId: string, url: URL) {
       order: {
         id: order.id,
         taskId: order.taskId ?? null,
+        type: order.type ?? (rows.some((r) => r.input?.tier || r.result?.donor) ? 'links' : 'posts'),
         status: order.status,
         rowCount: order.rowCount,
         requestedCount: order.requestedCount ?? null,
@@ -144,6 +149,9 @@ async function loadFieldlink(orderId: string, url: URL) {
         targetUrl: r.input?.targetUrl ?? '',
         anchor: r.input?.anchor ?? '',
         titleKeyword: r.input?.titleKeyword ?? '',
+        tier: r.input?.tier ?? '',
+        contentHint: r.input?.contentHint ?? '',
+        text: r.result?.text ?? '',
         language: r.input?.language ?? '',
         // Пост возвращает destination, ссылка — donor. Синтезировать URL нельзя,
         // показываем ровно то, что пришло.

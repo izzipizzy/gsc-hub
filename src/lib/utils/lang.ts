@@ -14,6 +14,7 @@ export const LANGUAGE_OPTIONS: { code: string; label: string }[] = [
   { code: 'de', label: 'Deutsch' },
   { code: 'fr', label: 'Français' },
   { code: 'fr-ca', label: 'Français (CA)' },
+  { code: 'sv', label: 'Svenska' },
   { code: 'kk', label: 'Қазақша' }
 ];
 
@@ -27,6 +28,7 @@ export function languageLabel(code: string): string {
 // Только те TLD, где язык страны однозначен. .com/.net/.org сюда не входят:
 // на них с равным успехом живут испанский, португальский и английский сайты.
 const TLD_LANGUAGE: Record<string, string> = {
+  se: 'sv',
   es: 'es',
   fr: 'fr',
   de: 'de',

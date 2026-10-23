@@ -101,7 +101,7 @@
                         <div class="app-num text-[11px] text-ink-3">{t.code ?? t.id.slice(0, 8)}</div>
                       </td>
                       <td class="whitespace-nowrap text-ink-2">{providerName[t.provider] ?? t.provider}</td>
-                      <td class="text-ink-2">{t.type}</td>
+                      <td class="text-ink-2">{t.type === 'links' ? 'Ссылки с главных' : t.type === 'posts' ? 'Посты' : t.type}</td>
                       <td class="num app-num">{t.rowCount}</td>
                       <td class="num app-num">{t.placementCount}</td>
                       <td class="whitespace-nowrap">

@@ -242,11 +242,11 @@ describe('validateBrief', () => {
 });
 
 describe('bonusFor', () => {
-  it('25% с округлением вверх, как в доке сервиса', () => {
+  it('25% с округлением вниз, как в контракте 1.19', () => {
     expect(bonusFor(100)).toBe(25);
-    expect(bonusFor(50)).toBe(13);
-    expect(bonusFor(25)).toBe(7);
-    expect(bonusFor(1)).toBe(1);
+    expect(bonusFor(50)).toBe(12);
+    expect(bonusFor(25)).toBe(6);
+    expect(bonusFor(1)).toBe(0);
   });
 });
 

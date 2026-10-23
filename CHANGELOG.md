@@ -5,6 +5,42 @@ All notable changes to this project are documented here. Format loosely follows
 
 Русская версия — [CHANGELOG.ru.md](CHANGELOG.ru.md).
 
+## [0.9.1] - 2026-10-23
+
+### How to update
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+No database schema changes. Existing data stays in the mounted volume. Reload
+open browser tabs. Homepage-link purchases require a FieldLink API key with
+`links:write`; obtain a quote and confirm its amount before starting an order.
+
+### Added
+- **FieldLink homepage links.** Choose posts or homepage links in the purchase
+  window. Homepage links support traffic tiers priced at 1, 2 and 5 credits,
+  automatic donor matching and an optional text subject. There is no link bonus.
+- **Homepage-link results.** Order details and CSV include the donor, traffic
+  tier, placement text and the content subject when supplied.
+- **Provider services.** Available placement types and link tiers are declared
+  per provider. 369Team continues to support posts in the hub.
+- Swedish (`sv`) in the purchase language selector.
+
+### Fixed
+- New FieldLink posts use automatic topic selection instead of a forced casino
+  topic. Estimates use account prices; the post bonus rounds down. The actual
+  quote remains authoritative for payment.
+- Purchase retries reuse their attempt ID; a later identical campaign can create
+  a new task. FieldLink admission errors explain how to recover.
+- External order history follows all pages instead of stopping at 100 orders.
+
+### Changed
+- Updated application dependencies and patched vulnerable transitive cookie and
+  CSS selector packages. Major framework migrations remain separate.
+- 369Team registration links now open its referral-enabled Telegram bot.
+
 ## [0.9.0] - 2026-10-06
 
 ### How to update

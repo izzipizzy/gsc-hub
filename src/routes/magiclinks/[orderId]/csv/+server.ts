@@ -6,6 +6,7 @@ import { magicLinksClient, MagicLinksError } from '$lib/server/magiclinks';
 import { magic369Client, Magic369Error, type Magic369Article } from '$lib/server/magic369';
 import { orderProvider } from '$lib/server/magiclinks-purchases';
 import { PROVIDER_FIELDLINK, PROVIDER_MAGIC369 } from '$lib/server/magiclinks-providers';
+import { fieldlinkCsv } from '$lib/server/fieldlink-csv';
 import { rowsToCsv } from '$lib/server/csv';
 
 // Шесть колонок контракта, одна позиция — одна строка. Экранирование и защита
@@ -32,19 +33,11 @@ async function csvFieldlink(orderId: string) {
   const client = magicLinksClient(db());
   if (!client) throw new MagicLinksError(404, 'NO_TOKEN', 'Ключ MagicLinks не задан');
 
-  const { rows } = await client.order(orderId);
-  return csvResponse(
-    orderId,
-    ['URL акцептора', 'Анкор', 'Ключевые слова для статьи', 'Язык', 'Статус', 'URL публикации'],
-    rows.map((r) => [
-      r.input?.targetUrl ?? '',
-      r.input?.anchor ?? '',
-      r.input?.titleKeyword ?? '',
-      r.input?.language ?? '',
-      r.status,
-      r.result?.destination ?? r.result?.source ?? ''
-    ])
-  );
+  const { order, rows } = await client.order(orderId);
+  return new Response(fieldlinkCsv(order.type, rows), { headers: {
+    'Content-Type': 'text/csv; charset=utf-8',
+    'Content-Disposition': `attachment; filename="magiclinks-${orderId}.csv"`
+  } });
 }
 
 // У 369 позиции вычисляются: статья = выполненная позиция, а недостающие до
