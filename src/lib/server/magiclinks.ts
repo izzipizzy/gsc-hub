@@ -129,6 +129,7 @@ export function validateLinkBrief(b: MagicLinksLinkBrief, index = 0): MagicLinks
   const base = validateBrief({ ...b, titleKeyword: 'link' }, index);
   if (!isFieldlinkTier(b.tier)) throw new Error(`строка ${index + 1}: выбери тариф ссылки 1, 2 или 5 кредитов`);
   const contentHint = String(b.contentHint ?? '').trim();
+  if (!contentHint) throw new Error(`строка ${index + 1}: укажи тему текста ссылки`);
   if (contentHint.length > 300 || /[<>\x00-\x1f]|https?:\/\/|www\.|[{}]/i.test(contentHint)) {
     throw new Error(`строка ${index + 1}: тема — до 300 символов, без URL, HTML и спинтакса`);
   }

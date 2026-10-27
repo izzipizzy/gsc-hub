@@ -166,7 +166,7 @@
   }
 
   async function getQuote() {
-    if (busy || missingLang.length > 0 || !providerId || (service === 'links' && !selectedTier)) return;
+    if (busy || missingLang.length > 0 || !providerId || (service === 'links' && (!selectedTier || !contentHint.trim()))) return;
     busy = true;
     err = null;
     try {
@@ -339,8 +339,8 @@
           <span class="text-[11px] text-ink-3">Донор подбирается автоматически. Язык относится к тексту, а не к стране площадки. Бонусных ссылок нет.</span>
         </label>
         <label class="flex flex-col gap-1">
-          <span class="text-[11px] text-ink-3">Тема текста для всех строк · необязательно</span>
-          <input class="input w-full disabled:bg-sunk disabled:text-ink-3" bind:value={contentHint} placeholder="Например: аренда квартир" maxlength="300" disabled={step === 'quote' || busy} oninput={resetQuote} />
+          <span class="text-[11px] text-ink-3">Тема текста для всех строк · обязательно</span>
+          <input class="input w-full disabled:bg-sunk disabled:text-ink-3" bind:value={contentHint} required placeholder="Например: аренда квартир" maxlength="300" disabled={step === 'quote' || busy} oninput={resetQuote} />
           <span class="text-[11px] text-ink-3">В двух словах, без URL и HTML. Анкор останется точным текстом ссылки.</span>
         </label>
       {:else if providerId === 'fieldlink'}
@@ -442,7 +442,7 @@
           <button
             type="button"
             class="btn btn-sec w-full"
-            disabled={busy || (!customSite && rows.length === 0) || !Number.isInteger(count) || count < 1 || count > 250 || missingLang.length > 0 || !providerId || (service === 'links' && !selectedTier)}
+            disabled={busy || (!customSite && rows.length === 0) || !Number.isInteger(count) || count < 1 || count > 250 || missingLang.length > 0 || !providerId || (service === 'links' && (!selectedTier || !contentHint.trim()))}
             onclick={getQuote}
           >{busy ? 'Считаю…' : 'Посчитать цену'}</button>
         {:else if quote}

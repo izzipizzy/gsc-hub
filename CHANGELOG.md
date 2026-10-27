@@ -5,6 +5,12 @@ All notable changes to this project are documented here. Format loosely follows
 
 Русская версия — [CHANGELOG.ru.md](CHANGELOG.ru.md).
 
+## [0.9.2] - 2026-10-27
+
+### Fixed
+- Require a text subject when buying FieldLink homepage links. The purchase
+  dialog and server now reject an empty subject before submitting the order.
+
 ## [0.9.1] - 2026-10-23
 
 ### How to update

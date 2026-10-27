@@ -26,6 +26,12 @@ it.each(['traffic_0_1', 'traffic_2_24', 'traffic_25_249'] as const)('sends curre
 it.each(['', 'traffic_0', 'traffic_1_49', 'traffic_250_9999', 'traffic_10000_29999', 'traffic_30000_plus'])('rejects missing, historical or coming-soon tier %s', (tier) => {
   expect(() => validateLinkBrief({ ...brief, tier } as any)).toThrow(/тариф/);
 });
+it.each([undefined, null, '', '   ', '\t\n'])('requires a nonblank link subject before contacting the provider', async (contentHint) => {
+  expect(() => validateLinkBrief({ ...brief, contentHint } as any)).toThrow(/тему текста/);
+  const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
+  await expect(quote(event({ service: 'links', items: [{ ...item, contentHint }] }))).rejects.toMatchObject({ status: 400 });
+  expect(fetch).not.toHaveBeenCalled();
+});
 it.each(['https://example.test', '<b>topic</b>', '{rental|apartments}', 'a'.repeat(301)])('rejects invalid content subject', (contentHint) => {
   expect(() => validateLinkBrief({ ...brief, contentHint })).toThrow(/тема/);
 });
