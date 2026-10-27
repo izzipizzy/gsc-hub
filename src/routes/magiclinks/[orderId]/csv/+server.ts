@@ -4,7 +4,7 @@ import { db } from '$lib/server/db';
 import { requireAdmin } from '$lib/server/guard';
 import { magicLinksClient, MagicLinksError } from '$lib/server/magiclinks';
 import { magic369Client, Magic369Error, type Magic369Article } from '$lib/server/magic369';
-import { orderProvider } from '$lib/server/magiclinks-purchases';
+import { orderProvider, orderService } from '$lib/server/magiclinks-purchases';
 import { PROVIDER_FIELDLINK, PROVIDER_MAGIC369 } from '$lib/server/magiclinks-providers';
 import { fieldlinkCsv } from '$lib/server/fieldlink-csv';
 import { rowsToCsv } from '$lib/server/csv';
@@ -47,7 +47,16 @@ async function csvMagic369(orderId: string) {
   const client = magic369Client(db());
   if (!client) throw new Magic369Error(404, 'NO_TOKEN', 'Ключ 369Team не задан');
 
-  const [order, articles] = await Promise.all([client.order(orderId), client.orderArticles(orderId)]);
+  const order = await client.order(orderId, orderService(db(), orderId));
+  const articles = order.service === 'links' ? await client.orderLinks(orderId) : await client.orderArticles(orderId);
+  if (order.service === 'links') {
+    const rows: string[][] = articles.map((a) => [a.url, a.anchor, a.text ?? '', 'completed', a.publishedUrl]);
+    for (const item of order.items) {
+      for (let i = 0; i < item.failed; i++) rows.push([item.url, item.anchor, item.text ?? '', 'failed', '']);
+      for (let i = 0; i < item.inProgress; i++) rows.push([item.url, item.anchor, item.text ?? '', 'in_progress', '']);
+    }
+    return csvResponse(orderId, ['URL акцептора', 'Анкор', 'Околоссылочный текст', 'Статус', 'URL донора'], rows);
+  }
   const rows: Array<[string, string, string, string, string, string]> = [];
   for (const item of order.items) {
     const mine = articles.filter(

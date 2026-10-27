@@ -5,6 +5,31 @@ All notable changes to this project are documented here. Format loosely follows
 
 Русская версия — [CHANGELOG.ru.md](CHANGELOG.ru.md).
 
+## [0.9.3] - 2026-10-27
+
+### How to update
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+The purchase history gains a service column automatically; existing data stays
+in the mounted volume. Reload open browser tabs.
+
+### Added
+- **369Team homepage links.** Choose homepage links in the purchase window.
+  The quote uses the account's link price, with a 30% per-row bonus rounded down.
+  Place a bare link or supply surrounding text containing `$LINK` exactly once.
+  Language and FieldLink traffic tiers are not required.
+- Homepage order details, donor URLs, CSV export and backlink monitoring.
+- Separate post and homepage-link prices in the 369Team settings card.
+
+### Changed
+- The purchase history stores the placement service so results and background
+  checks use the correct provider endpoints. Payment re-checks the quoted price;
+  paid order requests are never retried automatically.
+
 ## [0.9.2] - 2026-10-27
 
 ### Fixed

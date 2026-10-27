@@ -85,9 +85,11 @@
 
   {#if data.content.kind === 'magic369'}
     {@const order = data.content.order}
+    {@const isLinks = order.service === 'links'}
     <section class="pane mb-3">
       <div class="pane-body flex flex-col gap-2 text-[12.5px] text-ink-2">
         <p class="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+          <span class="badge badge-muted">{isLinks ? 'Морды' : 'Посты'}</span>
           <span class="badge {badge369(order.status)}">{order.status}</span>
           <span>· размещено <span class="app-num text-ink">{order.progress.published}</span> из <span class="app-num text-ink">{order.progress.total}</span></span>
           {#if order.progress.inProgress > 0}<span>· в работе <span class="app-num text-ink">{order.progress.inProgress}</span></span>{/if}
@@ -106,7 +108,7 @@
         {#if data.filter}
           <p class="flex flex-wrap items-center gap-2">
             <span class="rounded border border-acc/25 bg-acc-t px-2 py-1 text-xs text-ink-2">
-              {#if filterOn}Показаны статьи связки{:else}Фильтр снят, показан весь заказ{/if}:
+              {#if filterOn}Показаны размещения связки{:else}Фильтр снят, показан весь заказ{/if}:
               <b class="pii text-ink">{data.filter.query}</b>
               <span class="pii text-ink-3">{data.filter.targetUrl.replace(/^https?:\/\//, '')}</span>
             </span>
@@ -123,14 +125,14 @@
       <div class="overflow-x-auto">
         <table class="app-table">
           <thead>
-            <tr><th>акцептор</th><th>анкор</th><th>язык</th><th class="num">заказано</th><th class="num">размещено</th><th class="num">в работе</th><th class="num">ошибок</th></tr>
+            <tr><th>акцептор</th><th>анкор</th><th>{isLinks ? 'текст' : 'язык'}</th><th class="num">заказано</th><th class="num">размещено</th><th class="num">в работе</th><th class="num">ошибок</th></tr>
           </thead>
           <tbody>
             {#each data.content.lines as l (l.url + l.anchor)}
               <tr>
                 <td class="pii max-w-xs truncate" title={l.url}>{l.url}</td>
                 <td class="pii max-w-xs truncate font-medium text-ink" title={l.anchor}>{l.anchor}</td>
-                <td class="text-ink-2">{l.language}</td>
+                <td class="text-ink-2">{isLinks ? l.text || '—' : l.language}</td>
                 <td class="num app-num">{l.count}</td>
                 <td class="num app-num text-up">{l.published}</td>
                 <td class="num app-num">{l.inProgress + l.awaitingContent}</td>
@@ -150,7 +152,7 @@
         <div class="overflow-x-auto">
           <table class="app-table">
             <thead>
-              <tr><th>опубликовано</th><th>заголовок</th><th>анкор</th><th>акцептор</th><th>статья</th><th>проверка ссылки</th><th></th></tr>
+              <tr><th>опубликовано</th><th>{isLinks ? 'текст' : 'заголовок'}</th><th>анкор</th><th>акцептор</th><th>{isLinks ? 'донор' : 'статья'}</th><th>проверка ссылки</th><th></th></tr>
             </thead>
             <tbody>
               {#each data.content.articles as a (a.id)}

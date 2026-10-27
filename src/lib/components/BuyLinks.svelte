@@ -21,6 +21,7 @@
     configured: boolean;
     balanceMinor: number | null;
     priceMinor: number | null;
+    linkPriceMinor?: number | null;
     error: string | null;
     services: ('posts' | 'links')[];
     linkTiers?: { id: string; traffic: string; priceMinor: number | null }[];
@@ -66,14 +67,18 @@
     )
   );
 
+  let providerId = $state('');
   let service = $state<'posts' | 'links'>('posts');
   let tier = $state('');
   let contentHint = $state('');
+  let linkText = $state('');
+  const is369Links = $derived(providerId === 'magic369' && service === 'links');
+  const needsLanguage = $derived(!is369Links);
   let requestId = $state('');
   let count = $state(5);
-  const missingLang = $derived(hosts.filter((h) => !langs[h]));
+  const missingLang = $derived(needsLanguage ? hosts.filter((h) => !langs[h]) : []);
   const requested = $derived((customSite ? 1 : rows.length) * count);
-  const estimateBonus = $derived(Math.floor(requested / 4));
+  const estimateBonus = $derived(is369Links ? (customSite ? 1 : rows.length) * Math.floor(count * 30 / 100) : Math.floor(requested / 4));
 
   type Quote = {
     placementCount: number;
@@ -91,13 +96,13 @@
   // у кого больше денег. Пока список не приехал, выбора нет — кнопка расчёта
   // заблокирована.
   let providers = $state<ProviderInfo[]>([]);
-  let providerId = $state('');
   let providersFailed = $state(false);
   const provider = $derived(providers.find((p) => p.id === providerId) ?? null);
   const configuredProviders = $derived(providers.filter((p) => p.configured));
   const unit = $derived(provider?.unit ?? 'кр.');
   const selectedTier = $derived(provider?.linkTiers?.find((t) => t.id === tier));
-  const priceMinor = $derived(service === 'links' ? selectedTier?.priceMinor ?? null : provider?.priceMinor ?? null);
+  const linkFieldsMissing = $derived(service === 'links' && !is369Links && (!selectedTier || !contentHint.trim()));
+  const priceMinor = $derived(service === 'links' ? (is369Links ? provider?.linkPriceMinor ?? null : selectedTier?.priceMinor ?? null) : provider?.priceMinor ?? null);
   const supportedServices = $derived(provider?.services ?? ['posts']);
   const estimateMinor = $derived(priceMinor !== null ? requested * priceMinor : null);
 
@@ -166,7 +171,7 @@
   }
 
   async function getQuote() {
-    if (busy || missingLang.length > 0 || !providerId || (service === 'links' && (!selectedTier || !contentHint.trim()))) return;
+    if (busy || missingLang.length > 0 || !providerId || linkFieldsMissing) return;
     busy = true;
     err = null;
     try {
@@ -184,7 +189,7 @@
           query: r.query,
           language: langs[r.siteHost],
           count,
-          ...(service === 'links' ? { tier, contentHint } : {})
+          ...(is369Links ? { text: linkText } : service === 'links' ? { tier, contentHint } : {})
         }))
       });
       quotedRows = items;
@@ -207,6 +212,7 @@
       // строки уходят заново, цену он перепроверяет перед созданием заказа.
       const data = await post('/magiclinks/purchase/submit', {
         provider: providerId,
+        service,
         taskId,
         expectedMinor: quote.amountMinor,
         items:
@@ -215,7 +221,8 @@
                 targetUrl: r.targetUrl,
                 query: r.query,
                 language: langs[r.siteHost],
-                count
+                count,
+                ...(is369Links ? { text: linkText } : {})
               }))
             : undefined
       });
@@ -327,7 +334,14 @@
           <option value="links" disabled={!supportedServices.includes('links')}>Ссылки с главных (морды){supportedServices.includes('links') ? '' : ' — пока недоступны'}</option>
         </select>
       </label>
-      {#if service === 'links'}
+      {#if is369Links}
+        <label class="flex flex-col gap-1">
+          <span class="text-[11px] text-ink-3">Околоссылочный текст для всех строк · необязательно</span>
+          <input class="input w-full disabled:bg-sunk disabled:text-ink-3" bind:value={linkText} placeholder="Подробнее: $LINK" maxlength="1000" disabled={step === 'quote' || busy} oninput={resetQuote} />
+          <span class="text-[11px] text-ink-3">Оставь пустым для размещения только ссылки. В своём тексте укажи $LINK ровно один раз — на его место встанет ссылка с анкором из строки. Без HTML и переносов строк.</span>
+        </label>
+        <p class="text-[11px] text-ink-3">Морды на разных сайтах, единая цена. Бонус +30% по каждой строке с округлением вниз. Язык не требуется.</p>
+      {:else if service === 'links'}
         <label class="flex flex-col gap-1">
           <span class="text-[11px] text-ink-3">Тариф по трафику донора</span>
           <select class="input w-full disabled:bg-sunk disabled:text-ink-3" bind:value={tier} disabled={step === 'quote' || busy} onchange={resetQuote}>
@@ -382,6 +396,7 @@
         />
       </label>
 
+      {#if needsLanguage}
       <div class="flex flex-col gap-1">
         <span class="text-[11px] text-ink-3">{service === 'links' ? 'Язык текста по сайтам' : 'Язык статьи по сайтам'}</span>
         <div class="flex flex-col divide-y divide-line-soft rounded border border-line">
@@ -403,6 +418,8 @@
           </p>
         {/if}
       </div>
+
+      {/if}
 
       {#if err}
         <p class="app-errors mb-0">{err}</p>
@@ -430,7 +447,7 @@
           {/if}
         {:else}
           <div class="flex justify-between py-[3px]"><span>Заказано</span><span class="app-num">{requested}</span></div>
-          {#if providerId === 'fieldlink' && service === 'posts'}
+          {#if (providerId === 'fieldlink' && service === 'posts') || is369Links}
             <div class="flex justify-between py-[3px] text-up"><span>Бонус</span><span class="app-num">+{estimateBonus}</span></div>
           {/if}
           <div class="mt-1 flex justify-between border-t border-line pt-2 font-bold text-ink"><span>Примерно</span><span class="app-num text-[12.5px]">{estimateMinor !== null ? `${credits(estimateMinor)} ${unit}` : '—'}</span></div>
@@ -442,7 +459,7 @@
           <button
             type="button"
             class="btn btn-sec w-full"
-            disabled={busy || (!customSite && rows.length === 0) || !Number.isInteger(count) || count < 1 || count > 250 || missingLang.length > 0 || !providerId || (service === 'links' && (!selectedTier || !contentHint.trim()))}
+            disabled={busy || (!customSite && rows.length === 0) || !Number.isInteger(count) || count < 1 || count > 250 || missingLang.length > 0 || !providerId || linkFieldsMissing}
             onclick={getQuote}
           >{busy ? 'Считаю…' : 'Посчитать цену'}</button>
         {:else if quote}

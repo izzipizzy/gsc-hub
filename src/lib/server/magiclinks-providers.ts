@@ -11,7 +11,7 @@ export const PROVIDER_MAGIC369 = 'magic369';
 
 export const MAGIC_PROVIDERS = [
   { id: PROVIDER_FIELDLINK, name: 'FieldLink', services: ['posts', 'links'] },
-  { id: PROVIDER_MAGIC369, name: '369Team', services: ['posts'] }
+  { id: PROVIDER_MAGIC369, name: '369Team', services: ['posts', 'links'] }
 ] as const;
 export type MagicProviderId = (typeof MAGIC_PROVIDERS)[number]['id'];
 export const MAGIC_PROVIDER_IDS: MagicProviderId[] = MAGIC_PROVIDERS.map((p) => p.id);
@@ -34,6 +34,7 @@ export interface MagicProviderInfo {
   /** Текущая цена одного размещения, minor units; null, если не узнали. */
   priceMinor: number | null;
   error: string | null;
+  linkPriceMinor?: number | null;
   linkTiers?: { id: string; traffic: string; priceMinor: number | null }[];
 }
 
@@ -67,6 +68,7 @@ export async function magicProviderInfos(db: Db): Promise<MagicProviderInfo[]> {
             configured: true,
             balanceMinor: b.balanceMinor as number | null,
             priceMinor: b.priceMinor as number | null,
+            linkPriceMinor: b.linkPriceMinor,
             error: null as string | null
           }))
           .catch((e: Magic369Error) => ({
@@ -102,6 +104,7 @@ export async function magicProviderInfos(db: Db): Promise<MagicProviderInfo[]> {
       configured: m.configured,
       balanceMinor: m.balanceMinor,
       priceMinor: m.priceMinor,
+      linkPriceMinor: 'linkPriceMinor' in m ? m.linkPriceMinor : null,
       error: m.error
     }
   ];

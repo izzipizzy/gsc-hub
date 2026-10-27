@@ -58,7 +58,7 @@ it('uses auto for posts and separates idempotency by service and attempt', async
   expect(keys[0]).toBe(keys[1]);
   expect(new Set(keys).size).toBe(3);
 });
-it('rejects unsupported provider/service before calling any provider', async () => {
+it('rejects missing provider token and unknown service before calling any provider', async () => {
   const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
   await expect(quote(event({ provider: 'magic369', service: 'links', items: [item] }))).rejects.toMatchObject({ status: 400 });
   await expect(quote(event({ service: 'unknown', items: [item] }))).rejects.toMatchObject({ status: 400 });
@@ -91,7 +91,7 @@ it('loads personal post and link prices and declares service capabilities per pr
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(reply({ balanceMinor: 5000, prices: { post: 35, traffic_0_1: 100, traffic_2_24: 200, traffic_25_249: 500 } })));
   const [field, second] = await magicProviderInfos(database);
   expect(field).toMatchObject({ priceMinor: 35, services: ['posts', 'links'], linkTiers: [ { priceMinor: 100 }, { priceMinor: 200 }, { priceMinor: 500 }] });
-  expect(second.services).toEqual(['posts']);
+  expect(second.services).toEqual(['posts', 'links']);
 });
 it('does not fabricate estimates when prices are unavailable', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(reply({ balanceMinor: 5000 })));

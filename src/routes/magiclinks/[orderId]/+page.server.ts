@@ -6,7 +6,7 @@ import { db } from '$lib/server/db';
 import { requireAdmin } from '$lib/server/guard';
 import { MagicLinksError, type MagicLinksBilling } from '$lib/server/magiclinks';
 import { Magic369Error, type Magic369Progress } from '$lib/server/magic369';
-import { orderProvider } from '$lib/server/magiclinks-purchases';
+import { orderProvider, orderService } from '$lib/server/magiclinks-purchases';
 import { PROVIDER_FIELDLINK, PROVIDER_MAGIC369 } from '$lib/server/magiclinks-providers';
 
 // Литеры провайдера в kind обязаны остаться литерами: по ним шаблон выбирает,
@@ -51,6 +51,7 @@ interface FieldlinkOrderContent {
 interface Magic369OrderContent {
   kind: 'magic369';
   order: {
+    service: 'posts' | 'links';
     id: string;
     status: string;
     createdAt: string | null;
@@ -64,6 +65,7 @@ interface Magic369OrderContent {
     url: string;
     anchor: string;
     language: string;
+    text?: string;
     count: number;
     published: number;
     inProgress: number;
@@ -178,7 +180,8 @@ async function loadMagic369(orderId: string, url: URL) {
 
   try {
     // Живьём оба вызова: статус и уже размещённые статьи.
-    const [order, articles] = await Promise.all([client.order(orderId), client.orderArticles(orderId)]);
+    const order = await client.order(orderId, orderService(db(), orderId));
+    const articles = order.service === 'links' ? await client.orderLinks(orderId) : await client.orderArticles(orderId);
 
     // Язык строки заказа доезжает до статьи через связку «URL + анкор».
     const lang = new Map(order.items.map((it) => [`${it.url}\n${it.anchor}`, it.language]));
@@ -199,6 +202,7 @@ async function loadMagic369(orderId: string, url: URL) {
     const content: Magic369OrderContent = {
       kind: PROVIDER_MAGIC369,
       order: {
+        service: order.service ?? 'posts',
         id: order.id,
         status: order.status,
         createdAt: order.createdAt,
@@ -213,7 +217,7 @@ async function loadMagic369(orderId: string, url: URL) {
         id: a.id,
         targetUrl: a.url,
         anchor: a.anchor,
-        title: a.title,
+        title: order.service === 'links' ? a.text ?? '' : a.title,
         language: lang.get(`${a.url}\n${a.anchor}`) ?? '',
         publishedUrl: a.publishedUrl,
         publishedAt: a.publishedAt

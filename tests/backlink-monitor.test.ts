@@ -1,7 +1,8 @@
 import { it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { recordPurchases } from '../src/lib/server/magiclinks-purchases';
 import { setConfigValue } from '../src/lib/server/config';
 import { openDb, type Db } from '../src/lib/server/db';
-const { field, magic } = vi.hoisted(() => ({ field: { listTasks: vi.fn(), order: vi.fn() }, magic: { orderArticles: vi.fn() } }));
+const { field, magic } = vi.hoisted(() => ({ field: { listTasks: vi.fn(), order: vi.fn() }, magic: { orderArticles: vi.fn(), orderLinks: vi.fn() } }));
 vi.mock('../src/lib/server/magiclinks', async (original) => ({ ...await original<typeof import('../src/lib/server/magiclinks')>(), magicLinksClient: () => field }));
 vi.mock('../src/lib/server/magic369', async (original) => ({ ...await original<typeof import('../src/lib/server/magic369')>(), magic369Client: () => magic }));
 import { syncPlacements, recordCheck, readChecks, checkSummary, enqueueCheck, latestJob, runNextCheck, scheduleAutomaticCheck, type Placement } from '../src/lib/server/backlink-monitor';
@@ -119,4 +120,15 @@ it('does not report an anchor mismatch when the brief has no expected text', () 
     recordCheck(db, placement, { ...found, links: [{ ...found.links[0], rel: 'nofollow' }] }, 2, DAY);
     expect(checkSummary(readChecks(db)).changed).toBe(1);
   }
+});
+
+it('discovers homepage donors from link orders during manual and scheduled checks', async () => {
+  recordPurchases(db, [{ siteHost: 'mysite.com', targetUrl: p.targetUrl, query: p.expectedAnchor, language: '', quantity: 5, taskId: '', orderId: 'homepage', provider: 'magic369', service: 'links' }]);
+  magic.orderLinks.mockResolvedValue([{ id: 77, url: p.targetUrl, anchor: p.expectedAnchor, publishedUrl: 'https://homepage.example/' }]);
+  const checker = vi.fn().mockResolvedValue(found);
+  enqueueCheck(db, { provider: 'magic369', orderId: 'homepage' });
+  await runNextCheck(db, checker);
+  expect(magic.orderLinks).toHaveBeenCalledWith('homepage');
+  expect(magic.orderArticles).not.toHaveBeenCalled();
+  expect(checker).toHaveBeenCalledWith('https://homepage.example/', p.targetUrl);
 });

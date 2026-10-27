@@ -12,7 +12,7 @@ import {
   type MagicLinksBrief,
   type MagicLinksLinkBrief
 } from '$lib/server/magiclinks';
-import { magic369Client, Magic369Error } from '$lib/server/magic369';
+import { magic369Client, Magic369Error, validateMagic369Link } from '$lib/server/magic369';
 import { PROVIDER_FIELDLINK, PROVIDER_MAGIC369, isMagicProviderId, supportsMagicService } from '$lib/server/magiclinks-providers';
 
 interface PurchaseItem {
@@ -22,6 +22,7 @@ interface PurchaseItem {
   count: number;
   tier?: string;
   contentHint?: string;
+  text?: string;
 }
 
 function parseItems(raw: unknown, service: 'posts' | 'links'): (MagicLinksBrief | MagicLinksLinkBrief)[] {
@@ -54,8 +55,33 @@ export const POST: RequestHandler = async ({ locals, request }) => {
   if (body?.provider !== undefined && !isMagicProviderId(body.provider)) throw error(400, 'Неизвестный провайдер');
   const service = body?.service ?? 'posts';
   if (service !== 'posts' && service !== 'links') throw error(400, 'Неизвестный тип размещения');
-  // Capabilities are per provider: the second provider can add links independently later.
-  if (!supportsMagicService(provider, service)) throw error(400, '369Team пока не поддерживает ссылки на главной в хабе');
+  // Validate capabilities before contacting the provider.
+  if (!supportsMagicService(provider, service)) throw error(400, 'Тип размещения не поддерживается провайдером');
+  if (provider === PROVIDER_MAGIC369 && service === 'links') {
+    if (!Array.isArray(body?.items) || !body.items.length || body.items.length > 2000) throw error(400, 'Нужно от 1 до 2000 строк');
+    let rows;
+    try { rows = body.items.map((r, i) => validateMagic369Link(r as unknown as Record<string, unknown>, i)); }
+    catch (e) { throw error(400, (e as Error).message); }
+    const requested = rows.reduce((sum, r) => sum + r.count, 0);
+    if (requested > 10000) throw error(400, 'Больше 10000 размещений за раз сервис не примет');
+    const client = magic369Client(db());
+    if (!client) throw error(400, 'Ключ 369Team не задан');
+    try {
+      const balance = await client.balance();
+      if (balance.linkPriceMinor === null || !Number.isInteger(balance.linkPriceMinor) || balance.linkPriceMinor <= 0) throw error(502, '369Team не вернул цену морды');
+      const amountMinor = requested * balance.linkPriceMinor;
+      const bonusCount = rows.reduce((sum, r) => sum + Math.floor(r.count * 30 / 100), 0);
+      return json({ provider, service, requested, rows: rows.length, quote: {
+        placementCount: requested, bonusCount, totalPlacementCount: requested + bonusCount,
+        amountMinor, balanceMinor: balance.balanceMinor,
+        shortfallMinor: Math.max(0, amountMinor - balance.balanceMinor),
+        canSubmit: balance.balanceMinor >= amountMinor, billed: true
+      } });
+    } catch (e) {
+      if (e instanceof Magic369Error) throw error(e.status === 401 ? 400 : 502, e.message);
+      throw e;
+    }
+  }
   const items = parseItems(body?.items, service);
 
   const requested = items.reduce((s, b) => s + (b.count ?? 1), 0);

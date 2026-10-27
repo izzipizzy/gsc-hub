@@ -93,7 +93,7 @@ describe('Magic369Client', () => {
   it('баланс и цена приходят в minor units', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonRes({ balance: 1000, currency: 'tokens', price_per_placement: 0.5 })));
     const balance = await new Magic369Client('t', 'https://api.test/v1', 0).balance();
-    expect(balance).toEqual({ balanceMinor: 100000, priceMinor: 50, currency: 'tokens' });
+    expect(balance).toEqual({ balanceMinor: 100000, priceMinor: 50, linkPriceMinor: null, currency: 'tokens' });
   });
 
   it('создание заказа шлёт массив строк и не шлёт идемпотентность', async () => {
@@ -146,7 +146,7 @@ describe('Magic369Client', () => {
     expect(order.progress).toEqual({ total: 15, published: 7, inProgress: 3, awaitingContent: 2, failed: 1, remaining: 7 });
     expect(order.items[0]).toEqual({
       url: 'https://a.es/p/', anchor: 'кей', language: 'Русский',
-      count: 10, published: 6, inProgress: 3, awaitingContent: 0, failed: 1
+      text: '', bonusCount: 0, count: 10, published: 6, inProgress: 3, awaitingContent: 0, failed: 1
     });
   });
 

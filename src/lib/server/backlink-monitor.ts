@@ -2,7 +2,7 @@ import { saveBacklinkSnapshot, type BacklinkTotals } from './backlink-snapshots'
 import { db, type Db } from './db';
 import { cachedMagicLinksClient, cachedMagic369Client } from './magiclinks-cache';
 import { MAGIC_PROVIDER_IDS, isMagicProviderId } from './magiclinks-providers';
-import { listPurchases } from './magiclinks-purchases';
+import { orderService, listPurchases } from './magiclinks-purchases';
 import type { BacklinkResult } from './backlink-checker';
 import { checkBacklink, backlinkSettings } from './backlink-fetch';
 import type { MagicProviderId } from './magiclinks-providers';
@@ -135,7 +135,9 @@ async function discover(database: Db, job: CheckJob, errors: string[]) {
         }));
       } else if (order.provider === 'magic369') {
         if (!magic) throw new Error('нет ключа 369Team');
-        placements = (await magic.orderArticles(order.id)).map((a) => ({ provider: 'magic369', orderId: order.id,
+        const service = orderService(database, order.id) ?? (await magic.order(order.id)).service;
+        const links = service === 'links' ? await magic.orderLinks(order.id) : await magic.orderArticles(order.id);
+        placements = links.map((a) => ({ provider: 'magic369', orderId: order.id,
           placementId: String(a.id), sourceUrl: a.publishedUrl, targetUrl: a.url, expectedAnchor: a.anchor }));
       } else { throw new Error('Для поставщика не подключён адаптер публикаций'); }
       syncPlacements(database, order.provider, order.id, placements);

@@ -265,6 +265,10 @@ export function openDb(path: string): Db {
     db.prepare('INSERT INTO query_filters (pattern, added_at) VALUES (?, ?)').run('site:', Date.now());
   }
 
+  const purchaseCols = db.prepare("PRAGMA table_info('magiclinks_purchases')").all() as { name: string }[];
+  if (!purchaseCols.some((c) => c.name === 'service')) {
+    db.exec("ALTER TABLE magiclinks_purchases ADD COLUMN service TEXT NOT NULL DEFAULT 'posts'");
+  }
   return db;
 }
 

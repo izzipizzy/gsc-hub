@@ -43,7 +43,7 @@ export async function cachedProviderRead<T>(database: Db, key: string, load: () 
 function cacheClient<T extends object>(database: Db, client: T | null, provider: string, token: string | undefined, base: string, force: boolean): T | null {
   if (!client) return null;
   const prefix = provider + ':' + createHash('sha256').update(base+'\n'+(token ?? '')).digest('hex').slice(0,24);
-  const reads = new Set(['balance','listTasks','listOrders','order','taskRows','orderArticles']);
+  const reads = new Set(['balance','listTasks','listOrders','order','taskRows','orderArticles','orderLinks']);
   return new Proxy(client, {
     get(target, property, receiver) {
       const value = Reflect.get(target, property, receiver);
@@ -53,7 +53,7 @@ function cacheClient<T extends object>(database: Db, client: T | null, provider:
         const ttl = (data: any) => {
           if (property === 'balance') return MINUTE;
           if (property === 'order') return /^(completed|partial|partially_completed|failed)$/.test(data?.order?.status ?? data?.status ?? '') ? 6*60*MINUTE : 5*MINUTE;
-          if (property === 'orderArticles' || property === 'taskRows') return 60*MINUTE;
+          if (property === 'orderArticles' || property === 'orderLinks' || property === 'taskRows') return 60*MINUTE;
           return 5*MINUTE;
         };
         return cachedProviderRead(database, prefix+':'+String(property)+':'+JSON.stringify(args), () => value.apply(target,args), ttl, force);

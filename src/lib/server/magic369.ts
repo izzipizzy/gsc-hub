@@ -3,8 +3,8 @@ import { getConfigValue, configSource, setConfigValue, clearConfigValue } from '
 import { languageLabel } from '$lib/utils/lang';
 
 // Единственный модуль, знающий второй провайдер покупок — 369Team
-// (https://magiclinks.online, «API размещения статей», swagger 1.0).
-// В отличие от FieldLink заказ тут одношаговый: POST /orders сразу списывает
+// (https://magiclinks.online, «API размещения статей», Swagger 1.1).
+// В отличие от FieldLink заказ тут одношаговый: POST /orders и POST /link-orders сразу списывают
 // деньги, отдельной операции «расчёт» в API нет — цена приходит с /balance.
 // Списка заказов в API тоже нет, поэтому история покупок пишется только в
 // момент покупки и догонять заказы из кабинета нечем.
@@ -22,6 +22,7 @@ export interface Magic369Balance {
   /** Цена одного размещения в minor units. */
   priceMinor: number;
   currency: string;
+  linkPriceMinor: number | null;
 }
 
 /** Строка заказа: ровно те поля, что принимает POST /orders, лишние — 400. */
@@ -31,6 +32,31 @@ export interface Magic369OrderRow {
   /** Человеческое название языка («English», «Русский»), не код. */
   language: string;
   count: number;
+}
+
+export interface Magic369LinkRow {
+  url: string;
+  anchor: string;
+  count: number;
+  text?: string;
+}
+
+/** Homepage orders accept plain text, not FieldLink topics or language codes. */
+export function validateMagic369Link(raw: Record<string, unknown>, index = 0): Magic369LinkRow {
+  const fail = (message: string): never => { throw new Error(`Строка ${index + 1}: ${message}`); };
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) fail('нужен объект');
+  const url = String(raw.targetUrl ?? raw.url ?? '').trim();
+  try { if (!['http:', 'https:'].includes(new URL(url).protocol)) fail('нужен URL http/https'); }
+  catch { fail('нужен URL http/https'); }
+  const anchor = String(raw.query ?? raw.anchor ?? '').trim();
+  if (/[\r\n\t]/.test(String(raw.query ?? raw.anchor ?? ''))) fail('анкор должен быть в одну строку');
+  if (!anchor || [...anchor].length > 200 || /[<>\r\n\t]/.test(anchor) || anchor.includes('$LINK')) fail('анкор: 1–200 символов, без HTML, переносов строк и $LINK');
+  const text = String(raw.text ?? '').trim();
+  if (/[\r\n\t]/.test(String(raw.text ?? ''))) fail('текст должен быть в одну строку');
+  if ([...text].length > 1000 || /[<>\r\n\t]/.test(text) || (text && (text.match(/\$LINK/g)?.length ?? 0) !== 1)) fail('текст: до 1000 символов, без HTML и переносов, с одним $LINK');
+  const count = Number(raw.count);
+  if (!Number.isInteger(count) || count < 1 || count > 250) fail('количество: от 1 до 250');
+  return { url, anchor, count, ...(text ? { text } : {}) };
 }
 
 export interface Magic369Progress {
@@ -43,6 +69,7 @@ export interface Magic369Progress {
 }
 
 export interface Magic369OrderStatus {
+  service: 'posts' | 'links';
   id: string;
   status: string;
   createdAt: string | null;
@@ -55,6 +82,8 @@ export interface Magic369OrderStatus {
     url: string;
     anchor: string;
     language: string;
+    text?: string;
+    bonusCount?: number;
     count: number;
     published: number;
     inProgress: number;
@@ -68,6 +97,7 @@ export interface Magic369Article {
   url: string;
   anchor: string;
   title: string;
+  text?: string;
   publishedUrl: string;
   publishedAt: string | null;
 }
@@ -171,13 +201,14 @@ export class Magic369Client {
 
   /** Баланс и текущая цена размещения — единственный источник цены в этом API. */
   async balance(): Promise<Magic369Balance> {
-    const d = await this.request<{ balance: number; currency?: string; price_per_placement: number }>(
+    const d = await this.request<{ balance: number; currency?: string; price_per_placement: number; link_price?: number }>(
       'GET',
       '/balance'
     );
     return {
       balanceMinor: toMinor(d.balance),
       priceMinor: toMinor(d.price_per_placement),
+      linkPriceMinor: Number.isFinite(d.link_price) && d.link_price! > 0 ? toMinor(d.link_price) : null,
       currency: d.currency ?? 'tokens'
     };
   }
@@ -186,7 +217,7 @@ export class Magic369Client {
    * Создаёт заказ и сразу списывает деньги. Идемпотентности в API нет, поэтому
    * вызов идёт только с кнопки оплаты и один раз.
    */
-  async createOrder(rows: Magic369OrderRow[]): Promise<{
+  async createOrder(rows: Magic369OrderRow[] | Magic369LinkRow[], service: 'posts' | 'links' = 'posts'): Promise<{
     orderId: string;
     status: string;
     totalCount: number;
@@ -201,7 +232,7 @@ export class Magic369Client {
       total_price: number;
       price_per_placement: number;
       balance: number;
-    }>('POST', '/orders', { body: rows, retries: 0 });
+    }>('POST', service === 'links' ? '/link-orders' : '/orders', { body: rows, retries: 0 });
     return {
       orderId: d.order_id,
       status: d.status,
@@ -213,7 +244,12 @@ export class Magic369Client {
   }
 
   /** Статус заказа: сводка прогресса и состояние по каждой строке заказа. */
-  async order(orderId: string): Promise<Magic369OrderStatus> {
+  async order(orderId: string, service?: 'posts' | 'links'): Promise<Magic369OrderStatus> {
+    if (!service) {
+      try { return await this.order(orderId, 'posts'); }
+      catch (e) { if (!(e instanceof Magic369Error) || e.status !== 404) throw e; }
+      return this.order(orderId, 'links');
+    }
     const d = await this.request<{
       order_id: string;
       status: string;
@@ -224,11 +260,12 @@ export class Magic369Client {
       refunded?: number;
       progress?: Record<string, number>;
       items?: Record<string, unknown>[];
-    }>('GET', `/orders/${encodeURIComponent(orderId)}`);
+    }>('GET', `${service === 'links' ? '/link-orders' : '/orders'}/${encodeURIComponent(orderId)}`);
 
     const p = d.progress ?? {};
     const num = (k: string) => Number(p[k] ?? 0);
     return {
+      service,
       id: d.order_id,
       status: d.status,
       createdAt: d.created_at ?? null,
@@ -248,6 +285,8 @@ export class Magic369Client {
         url: String(it.url ?? ''),
         anchor: String(it.anchor ?? ''),
         language: String(it.language ?? ''),
+        text: String(it.text ?? ''),
+        bonusCount: Number(it.bonus_count ?? 0),
         count: Number(it.count ?? 0),
         published: Number(it.published ?? 0),
         inProgress: Number(it.in_progress ?? 0),
@@ -255,6 +294,17 @@ export class Magic369Client {
         failed: Number(it.failed ?? 0)
       }))
     };
+  }
+
+  /** Published homepage links, mapped to the same placement shape as articles. */
+  async orderLinks(orderId: string): Promise<Magic369Article[]> {
+    const d = await this.request<{ links?: { id: number; url: string; anchor: string; text?: string; page_url: string; published_at?: string }[] }>(
+      'GET', `/link-orders/${encodeURIComponent(orderId)}/links`
+    );
+    return (d.links ?? []).map((a) => ({
+      id: a.id, url: a.url, anchor: a.anchor, title: '', text: a.text ?? '',
+      publishedUrl: a.page_url, publishedAt: a.published_at ?? null
+    }));
   }
 
   /** Уже размещённые статьи; список пополняется по мере выполнения заказа. */

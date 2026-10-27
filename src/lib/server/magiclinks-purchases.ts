@@ -14,6 +14,7 @@ export interface PurchaseInput {
   orderId: string;
   /** Провайдер покупки; у сделанных до появления поля — FieldLink. */
   provider?: string;
+  service?: 'posts' | 'links';
 }
 
 export interface PurchaseRow extends PurchaseInput {
@@ -40,6 +41,7 @@ interface Row {
   task_id: string;
   order_id: string;
   provider: string;
+  service: 'posts' | 'links';
   created_at: number;
 }
 
@@ -53,6 +55,7 @@ const toPurchase = (r: Row): PurchaseRow => ({
   taskId: r.task_id,
   orderId: r.order_id,
   provider: r.provider,
+  service: r.service,
   createdAt: r.created_at
 });
 
@@ -62,8 +65,8 @@ export function recordPurchases(db: Db, rows: PurchaseInput[], now = Date.now())
   // делает повторный импорт безвредным даже при гонке двух одновременных.
   const ins = db.prepare(
     `INSERT OR IGNORE INTO magiclinks_purchases
-       (site_host, target_url, query, language, quantity, task_id, order_id, provider, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       (site_host, target_url, query, language, quantity, task_id, order_id, provider, service, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const tx = db.transaction((batch: PurchaseInput[]) => {
     let written = 0;
@@ -77,6 +80,7 @@ export function recordPurchases(db: Db, rows: PurchaseInput[], now = Date.now())
         r.taskId,
         r.orderId,
         r.provider ?? 'fieldlink',
+        r.service ?? 'posts',
         now
       );
       written += res.changes;
@@ -175,4 +179,9 @@ export function purchaseSummary(db: Db, siteHost?: string): Record<string, Purch
     else cur.orders.push({ orderId: p.orderId, quantity: p.quantity, createdAt: p.createdAt });
   }
   return out;
+}
+
+/** Old purchases are article orders; unknown orders need API discovery. */
+export function orderService(db: Db, orderId: string): 'posts' | 'links' | undefined {
+  return (db.prepare('SELECT service FROM magiclinks_purchases WHERE order_id = ? LIMIT 1').get(orderId) as { service: 'posts' | 'links' } | undefined)?.service;
 }

@@ -283,7 +283,8 @@
             {#if data.m369.balance}
               <div class="grid grid-cols-2 gap-px overflow-hidden rounded border border-line bg-line">
                 <div class="flex flex-col bg-pane px-2 py-1.5"><span class="stat-label">Доступно</span><span class="stat-value">{credits(data.m369.balance.balanceMinor)}</span></div>
-                <div class="flex flex-col bg-pane px-2 py-1.5"><span class="stat-label">Цена размещения</span><span class="stat-value">{credits(data.m369.balance.priceMinor)}</span></div>
+                <div class="flex flex-col bg-pane px-2 py-1.5"><span class="stat-label">Цена поста</span><span class="stat-value">{credits(data.m369.balance.priceMinor)}</span></div>
+                <div class="flex flex-col bg-pane px-2 py-1.5"><span class="stat-label">Цена морды</span><span class="stat-value">{data.m369.balance.linkPriceMinor != null ? credits(data.m369.balance.linkPriceMinor) : '—'}</span></div>
               </div>
             {/if}
             <p class="text-[11px] text-ink-3">
