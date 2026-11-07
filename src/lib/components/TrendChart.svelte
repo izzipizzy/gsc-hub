@@ -276,7 +276,7 @@
 
   <svg
     viewBox="0 0 {width} {height}"
-    class="block w-full touch-none outline-none"
+    class="block w-full touch-none outline-hidden"
     style="height:{height}px"
     onpointermove={onMove}
     onpointerleave={() => (hoverI = null)}

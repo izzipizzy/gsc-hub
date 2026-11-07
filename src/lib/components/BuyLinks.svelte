@@ -248,7 +248,7 @@
   role="presentation"
   onclick={(e) => { if (e.target === e.currentTarget) onclose(); }}
 >
-  <div class="mt-10 w-full max-w-xl rounded border border-line bg-pane text-[12.5px] shadow-[0_12px_40px_-12px_rgb(19_23_34/0.35)]" role="dialog" aria-modal="true" aria-labelledby="buylinks-title">
+  <div class="mt-10 w-full max-w-xl rounded-sm border border-line bg-pane text-[12.5px] shadow-[0_12px_40px_-12px_rgb(19_23_34/0.35)]" role="dialog" aria-modal="true" aria-labelledby="buylinks-title">
     <div class="pane-head">
       <h2 id="buylinks-title">Купить размещения</h2>
       <div class="flex items-center gap-2">
@@ -364,7 +364,7 @@
       {#if !customSite}
       <div class="flex flex-col gap-1">
         <span class="text-[11px] text-ink-3">Позиции</span>
-        <div class="max-h-40 overflow-y-auto rounded border border-line">
+        <div class="max-h-40 overflow-y-auto rounded-sm border border-line">
           <table class="w-full text-[12px]">
             <tbody>
               {#each rows.slice(0, 50) as r (r.targetUrl + r.query)}
@@ -399,7 +399,7 @@
       {#if needsLanguage}
       <div class="flex flex-col gap-1">
         <span class="text-[11px] text-ink-3">{service === 'links' ? 'Язык текста по сайтам' : 'Язык статьи по сайтам'}</span>
-        <div class="flex flex-col divide-y divide-line-soft rounded border border-line">
+        <div class="flex flex-col divide-y divide-line-soft rounded-sm border border-line">
           {#each hosts as h (h)}
             <label class="flex items-center justify-between gap-2 px-2 py-1">
               <span class="pii min-w-0 truncate text-ink">{h}</span>

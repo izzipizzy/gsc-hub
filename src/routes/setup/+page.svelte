@@ -34,7 +34,7 @@
           <li>Authorized redirect URI — вставь это:</li>
         </ol>
         <div class="flex items-center gap-2">
-          <code class="flex-1 break-all rounded border border-line bg-sunk px-2 py-1 font-mono text-[12px] text-ink">{data.redirectUri}</code>
+          <code class="flex-1 break-all rounded-sm border border-line bg-sunk px-2 py-1 font-mono text-[12px] text-ink">{data.redirectUri}</code>
           <button type="button" class="btn btn-sec btn-sm" onclick={copyRedirect}>
             {copied ? 'скопировано' : 'копировать'}
           </button>

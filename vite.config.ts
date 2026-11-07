@@ -1,4 +1,5 @@
 import { sveltekit } from '@sveltejs/kit/vite';
+import tailwindcss from '@tailwindcss/vite';
 import type { Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
 
@@ -24,7 +25,7 @@ function devLoopbackOrigin(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [sveltekit(), devLoopbackOrigin()],
+  plugins: [tailwindcss(), sveltekit(), devLoopbackOrigin()],
   test: {
     include: ['tests/**/*.test.ts'],
     setupFiles: ['tests/setup/gsc-cache-reset.ts'],

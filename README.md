@@ -92,6 +92,27 @@ The same lenses across every non-hidden site at once, computed from a single que
 - `GET /api/v1/sites`, `/queries`, `/query-pages`, `/properties`, `/countries`, `/site-countries` give a script or a SERP monitor the same numbers the UI shows. `POST /api/v1/site-events` records a domain merge.
 - Agent-facing documentation is served at `/api/v1/doc.md` (with a key).
 
+### CLI and skills: install with your AI agent
+
+Copy this prompt into Codex or Claude Code:
+
+```text
+Install the gsc-hub CLI and all five skills from
+https://github.com/izzipizzy/gsc-hub, release v0.9.4, for my current agent.
+Read docs/CLIENT-INSTALL.md at that release first. Check the prerequisites
+for my OS (macOS or Windows), then use cli/install.mjs with --cli --skills
+and --agent codex or --agent claude. Verify the CLI using its full installed
+path and report where the skills were copied. I'll configure the server
+URL and API key separately.
+```
+
+[Prompts in English and Russian, including CLI-only and skills-only installs](docs/CLIENT-INSTALL.md#install-with-an-ai-agent).
+Prefer manual installation? The same guide covers setup and commands for both OSes.
+
+The CLI reads SEO reports and site events, supports JSON output, and records
+an existing domain merge with `merge --yes`. Connect to your own hub using
+`GSC_HUB_URL` and `GSC_HUB_KEY`. See the [command reference](docs/CLI.md).
+
 ### MCP server & agent skills
 
 - A built-in **MCP server** at `/api/v1/mcp`: Claude Code, Claude Desktop, Cursor
@@ -109,8 +130,8 @@ The same lenses across every non-hidden site at once, computed from a single que
   read-only, though: the same Bearer is accepted by the REST endpoint
   `POST /api/v1/site-events`, which records a domain merge on a site in the
   key's scope. Hand out keys with that in mind.
-- **Four agent skills** ship with the hub (striking plan, cannibalization,
-  decay triage, portfolio review). They are served by the same instance as MCP
+- **Five agent skills** ship with the hub (striking plan, cannibalization,
+  decay triage, portfolio review and CLI workflows). They are served by the same instance as MCP
   prompts - `/mcp__gsc-hub__gsc-striking-plan` in Claude Code - and as files over
   `/api/v1/skills`, so installing them needs a key and a URL, not a copy of this
   repository. See [docs/MCP-SETUP.md](docs/MCP-SETUP.md).
@@ -154,7 +175,7 @@ claude mcp add --transport http gsc-hub https://your-hub.example.com/api/v1/mcp 
 
 ## Quickstart
 
-Requirements: **Node 22+**, **pnpm**.
+Requirements: **Node 22.18+**, **pnpm 12.18.0** (pinned in `package.json`; use `corepack enable`). The UI targets Safari 16.4+, Chrome 111+ and Firefox 128+ after the Tailwind 4 migration. See [dependency compatibility notes](docs/DEPENDENCIES.md).
 
 ```bash
 git clone https://github.com/izzipizzy/gsc-hub.git

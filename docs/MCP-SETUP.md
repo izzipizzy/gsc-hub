@@ -71,7 +71,7 @@ tool argument.
 
 ## 4. Skills
 
-Four skills ship with the hub:
+Five skills ship with the hub:
 
 | Skill | For |
 |---|---|
@@ -79,6 +79,7 @@ Four skills ship with the hub:
 | `gsc-cannibalization` | find competing pages and decide what to merge, rewrite or leave alone |
 | `gsc-decay-triage` | explain a drop: which pages lost what, and whether a merge or a season explains it |
 | `gsc-portfolio-review` | period review across the whole portfolio: what grew, what fell, where the growth is |
+| `gsc-hub-cli` | run the same analyses from the terminal and record explicitly requested merge events |
 
 **As MCP prompts** - nothing to install. They are listed by `prompts/list` and
 appear in Claude Code as `/mcp__gsc-hub__gsc-striking-plan` and friends.
@@ -96,6 +97,7 @@ done
 ```
 
 The same files live in this repository under `.agents/skills/`, if you have it.
+For the CLI installation and its token environment variables, see [CLI.md](CLI.md).
 
 ## 5. What the server will not do
 

@@ -5,6 +5,54 @@ All notable changes to this project are documented here. Format loosely follows
 
 Русская версия — [CHANGELOG.ru.md](CHANGELOG.ru.md).
 
+## [0.9.4] - 2026-11-07
+
+### How to update
+
+```bash
+git pull --ff-only
+docker compose up -d --build
+```
+
+No database schema changes. Existing data stays in the mounted volume. Reload
+open browser tabs. Source installations require Node.js 22.18+ and the pinned
+pnpm 12.18.0.
+
+### New: CLI and agent skills
+
+Use **gsc-hub from your terminal or AI agent** to read sites, queries, ranking
+pages, striking-distance keywords, cannibalization, CTR, decay, countries and
+site events. Reports support JSON output; recording a domain-merge event
+requires the explicit `merge --yes` command.
+
+Install the CLI, skills, or both independently of the server. Copy this into
+Codex or Claude Code:
+
+```text
+Install the gsc-hub CLI and all five skills for my current agent from
+https://github.com/izzipizzy/gsc-hub, release v0.9.4.
+Read docs/CLIENT-INSTALL.md at that release, check my macOS or Windows
+prerequisites, and use cli/install.mjs with --cli --skills and the appropriate
+--agent codex or --agent claude. Verify the CLI by its full installed path
+and report the skill destinations. I'll configure my hub URL and API key
+separately.
+```
+
+[English and Russian prompts, CLI-only/skills-only options and manual setup](https://github.com/izzipizzy/gsc-hub/blob/v0.9.4/docs/CLIENT-INSTALL.md#install-with-an-ai-agent).
+The installer checks Node/npm, preserves existing skills unless `--force` is
+selected, and installs a packed CLI that works after the checkout is deleted.
+macOS installation is verified; native Windows end-to-end validation is pending.
+
+### Changed
+- Updated compatible dependencies, including Tailwind 4, better-sqlite3 13 and
+  Vitest 5. SvelteKit 2 and TypeScript 6 are retained for integration compatibility;
+  see [dependency notes](https://github.com/izzipizzy/gsc-hub/blob/v0.9.4/docs/DEPENDENCIES.md).
+- Tailwind 4 theme and reusable utilities now live in CSS. Browser requirements:
+  Safari 16.4+, Chrome 111+, Firefox 128+.
+
+### Fixed
+- Preserved valid table-state and numeric-cell selectors during the Tailwind migration.
+
 ## [0.9.3] - 2026-10-27
 
 ### How to update

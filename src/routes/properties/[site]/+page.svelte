@@ -634,12 +634,12 @@
                     {#if b.branded.clicks === 0}
                       <p class="text-[12.5px] text-ink-2">No branded clicks — all <b class="app-num pii">{fmt(b.nonBranded.clicks)}</b> are non-branded <span class="text-ink-3">· terms: {(analytics.brandedTerms ?? []).join(', ') || '—'}</span></p>
                     {:else}
-                      <div class="mb-1.5 flex h-2 overflow-hidden rounded-sm bg-bg" aria-hidden="true">
+                      <div class="mb-1.5 flex h-2 overflow-hidden rounded-xs bg-bg" aria-hidden="true">
                         <div class="bg-acc" style:width="{Math.round(b.brandedPct * 100)}%"></div>
                       </div>
                       <div class="flex justify-between text-[12.5px]">
-                        <span><i class="mr-1.5 inline-block h-2 w-2 rounded-sm bg-acc"></i>Branded <b class="app-num pii">{fmt(b.branded.clicks)}</b> <span class="text-ink-3">· {pct(b.brandedPct)}</span></span>
-                        <span><i class="mr-1.5 inline-block h-2 w-2 rounded-sm bg-bg ring-1 ring-line"></i>Non-branded <b class="app-num pii">{fmt(b.nonBranded.clicks)}</b></span>
+                        <span><i class="mr-1.5 inline-block h-2 w-2 rounded-xs bg-acc"></i>Branded <b class="app-num pii">{fmt(b.branded.clicks)}</b> <span class="text-ink-3">· {pct(b.brandedPct)}</span></span>
+                        <span><i class="mr-1.5 inline-block h-2 w-2 rounded-xs bg-bg ring-1 ring-line"></i>Non-branded <b class="app-num pii">{fmt(b.nonBranded.clicks)}</b></span>
                       </div>
                     {/if}
                   </div>
@@ -658,7 +658,7 @@
               {#if healthErr}<p class="text-err">{healthErr}</p>{/if}
               {#if health?.data}
                 {@const d = health.data}
-                <div class="grid gap-px overflow-hidden rounded border border-line bg-line sm:grid-cols-3">
+                <div class="grid gap-px overflow-hidden rounded-sm border border-line bg-line sm:grid-cols-3">
                   <div class="bg-pane p-3">
                     <div class="stat-label">SSL</div>
                     {#if 'error' in d.ssl}
@@ -822,7 +822,7 @@
                     </table>
                   </div>
                   {#if selectedVisible > 0}
-                    <div class="sticky bottom-3 z-20 m-3 flex flex-wrap items-center gap-3 rounded border border-acc/30 bg-pane px-3 py-2 shadow-[0_6px_20px_-6px_rgb(19_23_34/0.25)]">
+                    <div class="sticky bottom-3 z-20 m-3 flex flex-wrap items-center gap-3 rounded-sm border border-acc/30 bg-pane px-3 py-2 shadow-[0_6px_20px_-6px_rgb(19_23_34/0.25)]">
                       <span class="text-[12.5px]">Выбрано пар: <b class="app-num">{selectedVisible}</b></span>
                       <span class="text-xs text-ink-3">одним заданием; провайдер выбирается в окне покупки</span>
                       <span class="flex-1"></span>
@@ -912,10 +912,10 @@
               {:else if tab === 'branded'}
                 {@const b = analytics.branded}
                 <div class="p-3">
-                  <div class="mb-3 flex h-2.5 max-w-xl overflow-hidden rounded-sm bg-bg" aria-hidden="true">
+                  <div class="mb-3 flex h-2.5 max-w-xl overflow-hidden rounded-xs bg-bg" aria-hidden="true">
                     <div class="bg-acc" style:width="{Math.round(b.brandedPct * 100)}%"></div>
                   </div>
-                  <div class="grid max-w-xl grid-cols-2 gap-px overflow-hidden rounded border border-line bg-line">
+                  <div class="grid max-w-xl grid-cols-2 gap-px overflow-hidden rounded-sm border border-line bg-line">
                     <div class="bg-pane p-3">
                       <div class="stat-label">Branded · {pct(b.brandedPct)}</div>
                       <div class="stat-value pii">{fmt(b.branded.clicks)} <span class="text-xs font-normal text-ink-3">clicks</span></div>
@@ -968,7 +968,7 @@
         {/if}
         <div class="pane-body flex flex-col gap-2">
           <div class="flex gap-2">
-            <input type="date" bind:value={evDate} required class="input app-num w-[8.5rem]" title="Event date" />
+            <input type="date" bind:value={evDate} required class="input app-num w-34" title="Event date" />
             <select bind:value={evType} class="input min-w-0 flex-1">
               {#each Object.entries(data.eventTypes) as [id, t] (id)}
                 {#if id === 'merge'}<option value={id}>{t.label}</option>{/if}

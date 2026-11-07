@@ -107,7 +107,7 @@
         </p>
         {#if data.filter}
           <p class="flex flex-wrap items-center gap-2">
-            <span class="rounded border border-acc/25 bg-acc-t px-2 py-1 text-xs text-ink-2">
+            <span class="rounded-sm border border-acc/25 bg-acc-t px-2 py-1 text-xs text-ink-2">
               {#if filterOn}Показаны размещения связки{:else}Фильтр снят, показан весь заказ{/if}:
               <b class="pii text-ink">{data.filter.query}</b>
               <span class="pii text-ink-3">{data.filter.targetUrl.replace(/^https?:\/\//, '')}</span>
@@ -212,7 +212,7 @@
 
         {#if data.filter}
           <p class="flex flex-wrap items-center gap-2">
-            <span class="rounded border border-acc/25 bg-acc-t px-2 py-1 text-xs text-ink-2">
+            <span class="rounded-sm border border-acc/25 bg-acc-t px-2 py-1 text-xs text-ink-2">
               {#if filterOn}Показаны позиции связки{:else}Фильтр снят, показан весь заказ{/if}:
               <b class="pii text-ink">{data.filter.query}</b>
               <span class="pii text-ink-3">{data.filter.targetUrl.replace(/^https?:\/\//, '')}</span>

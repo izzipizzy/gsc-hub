@@ -1226,7 +1226,7 @@
                 {@const bSt = bingStates.get(sKey)}
                 {@const iSt = indexnowStates.get(sKey)}
                 <tr class="cursor-pointer {s.hasIndexNow ? '' : 'bg-warn-t/60 hover:bg-warn-t'} {isHidden ? 'is-hidden-row' : ''}" class:is-selected={expanded} class:has-status={!!(subSt || bSt || iSt)} onclick={() => toggleSite(s)} title={s.hasIndexNow ? undefined : 'Нет IndexNow-ключа ({key}.txt) — не настроен для Bing/IndexNow'}>
-                  <td class="min-w-[14rem]">
+                  <td class="min-w-56">
                     <div class="flex items-center gap-1.5 whitespace-nowrap">
                       {@render chevron(expanded)}
                       <!-- Имя ведёт на страницу сайта внутри хаба: туда ходят чаще, чем на сам сайт.
@@ -1388,7 +1388,7 @@
                             Force refresh
                           </button>
                         </div>
-                        <div class="overflow-x-auto rounded border border-line bg-pane">
+                        <div class="overflow-x-auto rounded-sm border border-line bg-pane">
                           <table class="app-table">
                             <thead>
                               <tr>
@@ -1466,7 +1466,7 @@
               {label}<span class="font-normal text-ink-3">{selected.size > 0 ? ` · ${selected.size}` : ' · all'}</span>
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
             </summary>
-            <div class="absolute z-20 mt-1 flex max-h-72 w-52 flex-col rounded border border-line bg-pane p-1 shadow-[0_6px_20px_-6px_rgb(19_23_34/0.25)]">
+            <div class="absolute z-20 mt-1 flex max-h-72 w-52 flex-col rounded-sm border border-line bg-pane p-1 shadow-[0_6px_20px_-6px_rgb(19_23_34/0.25)]">
               {#if options.length === 0}
                 <div class="px-2 py-1 text-ink-4">—</div>
               {:else}
@@ -1482,7 +1482,7 @@
                 {/if}
                 <div class="overflow-auto">
                   {#each shown as opt}
-                    <label class="flex cursor-pointer items-center gap-2 rounded px-2 py-1 hover:bg-sunk">
+                    <label class="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 hover:bg-sunk">
                       <input type="checkbox" checked={selected.has(opt)} onchange={() => onToggle(opt)} />
                       <span class="break-all font-mono text-[11px] text-ink-2">{opt}</span>
                     </label>
@@ -1520,7 +1520,7 @@
           {#each queryFilters as f}
             <span class="badge badge-muted gap-0.5 pr-0.5 font-mono">
               {f.pattern}
-              <button type="button" class="inline-flex h-4 w-4 items-center justify-center rounded-sm text-ink-4 hover:bg-dn-t hover:text-dn" title="Remove filter" aria-label="Remove filter {f.pattern}" onclick={() => removeQueryFilter(f.id)}>
+              <button type="button" class="inline-flex h-4 w-4 items-center justify-center rounded-xs text-ink-4 hover:bg-dn-t hover:text-dn" title="Remove filter" aria-label="Remove filter {f.pattern}" onclick={() => removeQueryFilter(f.id)}>
                 <svg viewBox="0 0 16 16" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>
               </button>
             </span>
@@ -1616,7 +1616,7 @@
                           {@const n = chart.rows.length}
                           {@const hi = histHover !== null && histHover < n ? histHover : null}
                           {@const shownRow = chart.rows[hi ?? n - 1]}
-                          <div class="rounded border border-line bg-pane px-3 pb-2 pt-1.5">
+                          <div class="rounded-sm border border-line bg-pane px-3 pb-2 pt-1.5">
                             <!-- readout row: hovered day (or the latest one) -->
                             <div class="mb-1 flex min-h-[24px] flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-2">
                               <span class="font-mono text-[11.5px] text-ink-3">{shownRow.date}</span>
@@ -1625,7 +1625,7 @@
                                 <b class="font-mono text-[11.5px] font-semibold text-ink">{shownRow.position > 0 ? fmtPos(shownRow.position) : '—'}</b>
                               </span>
                               <span class="inline-flex items-center gap-1.5">
-                                <i class="inline-block h-2.5 w-2.5 rounded-sm opacity-60" style:background={SERIES.impr}></i>Impressions
+                                <i class="inline-block h-2.5 w-2.5 rounded-xs opacity-60" style:background={SERIES.impr}></i>Impressions
                                 <b class="font-mono text-[11.5px] font-semibold text-ink">{fmtNum(shownRow.impressions)}</b>
                               </span>
                               <span class="ml-auto text-[11px] text-ink-3">Aggregated across {historyState.entries.length} visible site{historyState.entries.length === 1 ? '' : 's'} · Position {chart.minPos.toFixed(1)}–{chart.maxPos.toFixed(1)} · Max impr {fmtNum(chart.maxImpr)}</span>
@@ -1633,7 +1633,7 @@
                             <!-- svelte-ignore a11y_no_noninteractive_element_interactions, a11y_no_noninteractive_tabindex -->
                             <svg
                               viewBox="0 0 {chart.width} {chart.height}"
-                              class="block w-full touch-none select-none outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-acc"
+                              class="block w-full touch-none select-none outline-hidden focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-acc"
                               role="application"
                               tabindex="0"
                               aria-label="16-month query history: position and impressions. Use left and right arrows to read single days."
@@ -1742,7 +1742,7 @@
 
   {#if sitemapModal}
     <div class="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4" onclick={closeSitemapModal} role="presentation">
-      <div class="max-h-[85vh] w-full max-w-lg overflow-auto rounded border border-line bg-pane shadow-[0_6px_20px_-6px_rgb(19_23_34/0.25)]" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
+      <div class="max-h-[85vh] w-full max-w-lg overflow-auto rounded-sm border border-line bg-pane shadow-[0_6px_20px_-6px_rgb(19_23_34/0.25)]" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
         <div class="pane-head sticky top-0 bg-pane">
           <h2 class="truncate">Sitemaps — <span class="normal-case tracking-normal text-ink">{sitemapModal.title}</span></h2>
           <button class="btn btn-ghost btn-sm btn-icon" onclick={closeSitemapModal} aria-label="Close">{@render xIcon()}</button>
@@ -1759,7 +1759,7 @@
               {#if sitemapModal.current.length === 0}
                 <p class="text-[12.5px] text-ink-4">None.</p>
               {:else}
-                <ul class="divide-y divide-line-soft rounded border border-line">
+                <ul class="divide-y divide-line-soft rounded-sm border border-line">
                   {#each sitemapModal.current as sm}
                     <li class="break-all px-2 py-1 font-mono text-[11.5px]">
                       <span class="text-ink">{sm.path}</span>
@@ -1778,7 +1778,7 @@
               {:else if sitemapModal.robots.length === 0}
                 <p class="text-[12.5px] text-ink-4">None found.</p>
               {:else}
-                <ul class="divide-y divide-line-soft rounded border border-line">
+                <ul class="divide-y divide-line-soft rounded-sm border border-line">
                   {#each sitemapModal.robots as r}
                     <li class="break-all px-2 py-1 font-mono text-[11.5px] text-ink">{r}</li>
                   {/each}
@@ -1787,7 +1787,7 @@
             </div>
 
             {#if sitemapModal.resync.kind === 'done'}
-              <div class="mb-3 rounded border border-up/25 bg-up-t px-3 py-2 text-[12.5px] text-up">
+              <div class="mb-3 rounded-sm border border-up/25 bg-up-t px-3 py-2 text-[12.5px] text-up">
                 Deleted <span class="app-num">{sitemapModal.resync.deleted}</span>, submitted <span class="app-num">{sitemapModal.resync.submitted}</span>.
                 {#if sitemapModal.resync.failed.length > 0}
                   <div class="mt-1 text-dn">{sitemapModal.resync.failed.length} failed:

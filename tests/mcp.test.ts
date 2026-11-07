@@ -128,6 +128,7 @@ describe('MCP: скилы как промпты', () => {
     const names = res.result.prompts.map((p) => p.name);
     expect(names).toContain('gsc-striking-plan');
     expect(names).toContain('gsc-decay-triage');
+    expect(names).toContain('gsc-hub-cli');
   });
 
   it('prompts/get отдаёт текст скила без фронтматтера', async () => {

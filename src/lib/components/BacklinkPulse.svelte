@@ -42,7 +42,7 @@
   <div class="grid gap-2 sm:grid-cols-3" role="group" aria-label="Поставщик ссылок">
     {#each scopes as provider}
       {@const s = dashboard.totals[provider.id]}
-      <button type="button" aria-pressed={scope === provider.id} onclick={() => { scope = provider.id; hover = null; }} class="rounded border px-3 py-2 text-left transition-colors {scope === provider.id ? 'border-acc bg-acc-t' : 'border-line hover:bg-sunk'}">
+      <button type="button" aria-pressed={scope === provider.id} onclick={() => { scope = provider.id; hover = null; }} class="rounded-sm border px-3 py-2 text-left transition-colors {scope === provider.id ? 'border-acc bg-acc-t' : 'border-line hover:bg-sunk'}">
         <span class="text-xs text-ink-2">{provider.label}</span>
         <div class="mt-1 flex items-baseline gap-2"><span class="app-num text-lg font-semibold text-up">{percentage(s.found,s.total)}</span><span class="text-xs text-ink-3">живых</span></div>
         <span class="app-num text-xs text-ink-2">{s.found} из {s.total}</span>
@@ -50,7 +50,7 @@
       </button>
     {/each}
   </div>
-  <div class="rounded border border-line px-2 py-2">
+  <div class="rounded-sm border border-line px-2 py-2">
     <div class="mb-1 flex flex-wrap items-center justify-between gap-1 px-1 text-xs">
       <span class="font-medium text-ink">История количества ссылок</span>
       {#if activePoint}<span class="app-num text-ink-3">{date(activePoint.at)}{activePoint.current ? ' · текущая проверка' : ''}</span>{/if}

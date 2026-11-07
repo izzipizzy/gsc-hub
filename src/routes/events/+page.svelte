@@ -77,7 +77,7 @@
                 {#if r.href}<a class="font-medium text-ink hover:text-acc hover:underline" href={r.href}>{r.site}</a>{:else}<span class="font-medium text-ink">{r.site}</span>{/if}
                 <a class="ml-1 text-ink-4 hover:text-acc" href={ext(r.site)} target="_blank" rel="noopener noreferrer" title="Открыть {r.site}" aria-label="Открыть {r.site}"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" class="inline h-3 w-3 align-[-1px]" aria-hidden="true"><path d="M6.5 3.5h-3v9h9v-3M9 3.5h3.5V7M12.5 3.5 7 9"/></svg></a>
               </td>
-              <td><span class="inline-block mr-1.5 h-2 w-2 rounded-sm" style:background={r.color}></span>{r.typeLabel}</td>
+              <td><span class="inline-block mr-1.5 h-2 w-2 rounded-xs" style:background={r.color}></span>{r.typeLabel}</td>
               <td>
                 {#if r.donor}
                   ← {r.donor}

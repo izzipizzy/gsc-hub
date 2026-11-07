@@ -39,7 +39,7 @@
   {#if data.accounts.length === 0}
     <div class="app-empty">
       <div class="app-empty-title">No connected accounts yet</div>
-      <p class="app-empty-sub">Click <span class="font-medium text-ink-2">Connect Google account</span> above to authorize one or more accounts. OAuth tokens stay local in <code class="rounded bg-sunk px-1 py-0.5 font-mono text-[11px] text-ink-2">data/gsc-hub.db</code>.</p>
+      <p class="app-empty-sub">Click <span class="font-medium text-ink-2">Connect Google account</span> above to authorize one or more accounts. OAuth tokens stay local in <code class="rounded-sm bg-sunk px-1 py-0.5 font-mono text-[11px] text-ink-2">data/gsc-hub.db</code>.</p>
     </div>
   {:else}
     <section class="pane">

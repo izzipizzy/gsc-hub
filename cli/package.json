@@ -1,0 +1,10 @@
+{
+  "name": "gsc-hub-cli",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Terminal client for the gsc-hub machine API",
+  "type": "module",
+  "bin": { "gsc-hub": "bin/gsc-hub.mjs" },
+  "files": ["bin", "lib"],
+  "engines": { "node": ">=22.18.0" }
+}

@@ -671,7 +671,7 @@
       {/if}
 
       {#if tab === 'striking' && selected.size > 0}
-        <div class="sticky bottom-3 z-20 m-3 flex flex-wrap items-center gap-3 rounded border border-acc/30 bg-pane px-3 py-2 shadow-[0_6px_20px_-6px_rgb(19_23_34/0.25)]">
+        <div class="sticky bottom-3 z-20 m-3 flex flex-wrap items-center gap-3 rounded-sm border border-acc/30 bg-pane px-3 py-2 shadow-[0_6px_20px_-6px_rgb(19_23_34/0.25)]">
           <span class="text-[12.5px]">Выбрано пар: <b class="app-num">{selected.size}</b></span>
           <span class="text-xs text-ink-3">одним заданием; провайдер выбирается в окне покупки</span>
           <span class="flex-1"></span>

@@ -213,7 +213,7 @@
 
 {#snippet metricCell(label: string, value: string, d: number | null, invert = false)}
   <div class="flex min-w-0 flex-col">
-    <span class="text-[10px] font-medium uppercase tracking-[0.05em] text-ink-3">{label}</span>
+    <span class="text-[10px] font-medium uppercase tracking-wider text-ink-3">{label}</span>
     <span class="flex items-center gap-1 whitespace-nowrap">
       <span class="pii app-num font-semibold text-ink">{value}</span>
       {@render deltaChip(d, invert)}
@@ -248,7 +248,7 @@
             height="14"
             alt=""
             loading="lazy"
-            class="pii shrink-0 rounded-sm"
+            class="pii shrink-0 rounded-xs"
             onerror={(ev) => ((ev.currentTarget as HTMLImageElement).style.display = 'none')}
           />
           <span class="pii truncate text-[13px] font-semibold text-ink">{domain}</span>
@@ -270,7 +270,7 @@
 
     <!-- Chart: clicks line over a faint area, previous period dashed, impressions thin gray -->
     {#if e.error}
-      <div class="pii mx-3 mt-2 rounded bg-dn-t px-2 py-1.5 text-[11px] text-dn">{e.error}</div>
+      <div class="pii mx-3 mt-2 rounded-sm bg-dn-t px-2 py-1.5 text-[11px] text-dn">{e.error}</div>
     {:else}
       <svg viewBox="0 0 {CHART_W} {CHART_H}" class="mt-1.5 h-16 w-full px-3" preserveAspectRatio="none" aria-hidden="true">
         <defs>

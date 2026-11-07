@@ -159,7 +159,7 @@
       {/if}
     </div>
 
-    <aside class="order-first flex min-w-0 flex-col gap-3 lg:order-none">
+    <aside class="order-first flex min-w-0 flex-col gap-3 lg:order-0">
       <section class="pane">
         <div class="pane-head">Настройки проверки ссылок</div>
         <div class="pane-body flex flex-col gap-3 text-xs">
@@ -194,7 +194,7 @@
               <br />API: <code class="pii break-all font-mono text-[12px] text-ink">{data.base}</code>
             </p>
             {#if data.balance}
-              <div class="grid grid-cols-3 gap-px overflow-hidden rounded border border-line bg-line">
+              <div class="grid grid-cols-3 gap-px overflow-hidden rounded-sm border border-line bg-line">
                 <div class="flex flex-col bg-pane px-2 py-1.5"><span class="stat-label">Доступно</span><span class="stat-value">{credits(data.balance.balanceMinor)}</span></div>
                 <div class="flex flex-col bg-pane px-2 py-1.5"><span class="stat-label">В резерве</span><span class="stat-value">{credits(data.balance.reservedMinor)}</span></div>
                 <div class="flex flex-col bg-pane px-2 py-1.5"><span class="stat-label">Всего</span><span class="stat-value">{credits(data.balance.totalBalanceMinor)}</span></div>
@@ -281,7 +281,7 @@
               <br />API: <code class="pii break-all font-mono text-[12px] text-ink">{data.m369.base}</code>
             </p>
             {#if data.m369.balance}
-              <div class="grid grid-cols-2 gap-px overflow-hidden rounded border border-line bg-line">
+              <div class="grid grid-cols-2 gap-px overflow-hidden rounded-sm border border-line bg-line">
                 <div class="flex flex-col bg-pane px-2 py-1.5"><span class="stat-label">Доступно</span><span class="stat-value">{credits(data.m369.balance.balanceMinor)}</span></div>
                 <div class="flex flex-col bg-pane px-2 py-1.5"><span class="stat-label">Цена поста</span><span class="stat-value">{credits(data.m369.balance.priceMinor)}</span></div>
                 <div class="flex flex-col bg-pane px-2 py-1.5"><span class="stat-label">Цена морды</span><span class="stat-value">{data.m369.balance.linkPriceMinor != null ? credits(data.m369.balance.linkPriceMinor) : '—'}</span></div>

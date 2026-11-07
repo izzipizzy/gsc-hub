@@ -71,7 +71,7 @@
           <div class="pane-body flex flex-col gap-2 text-[12.5px]">
             <p class="font-medium text-ink">Ключ «{fresh.name}» создан. Скопируй его сейчас — второй раз он не покажется.</p>
             <div class="flex flex-wrap items-center gap-2">
-              <code class="break-all rounded border border-line bg-sunk px-2 py-1 font-mono text-[12px] text-ink">{fresh.key}</code>
+              <code class="break-all rounded-sm border border-line bg-sunk px-2 py-1 font-mono text-[12px] text-ink">{fresh.key}</code>
               <button type="button" class="btn btn-pri" onclick={() => copy(fresh.key, 'key')}>
                 {copied === 'key' ? 'Скопировано' : 'Скопировать ключ'}
               </button>
@@ -81,7 +81,7 @@
               {#each fresh.sites as s (s)}<span class="pii mr-1">{s}</span>{/each}
             </p>
             <p class="text-ink-2">Подключить как MCP-сервер:</p>
-            <pre class="overflow-x-auto rounded border border-line bg-sunk p-2 font-mono text-[11.5px] text-ink"><code class="pii">{mcpCommand(fresh.key)}</code></pre>
+            <pre class="overflow-x-auto rounded-sm border border-line bg-sunk p-2 font-mono text-[11.5px] text-ink"><code class="pii">{mcpCommand(fresh.key)}</code></pre>
             <div>
               <button type="button" class="btn btn-sec" onclick={() => copy(mcpCommand(fresh.key), 'mcp')}>
                 {copied === 'mcp' ? 'Скопировано' : 'Скопировать команду'}
@@ -112,7 +112,7 @@
               bind:value={siteFilter}
               class="input w-64"
             />
-            <div class="max-h-56 overflow-y-auto rounded border border-line">
+            <div class="max-h-56 overflow-y-auto rounded-sm border border-line">
               {#each shownSites as s (s.site)}
                 <label class="flex items-center gap-2 border-b border-line-soft px-2 py-1 last:border-b-0 hover:bg-sunk">
                   <input type="checkbox" name="site" value={s.site} checked={scope.has(s.site)} onchange={() => toggleSite(s.site)} />
@@ -207,7 +207,7 @@
             только свои сайты и только на чтение. Адрес:
             <code class="pii break-all font-mono text-[12px] text-ink">{mcpUrl}</code>
           </p>
-          <pre class="overflow-x-auto rounded border border-line bg-sunk p-2 font-mono text-[11.5px] text-ink"><code class="pii">{mcpCommand(null)}</code></pre>
+          <pre class="overflow-x-auto rounded-sm border border-line bg-sunk p-2 font-mono text-[11.5px] text-ink"><code class="pii">{mcpCommand(null)}</code></pre>
           <p>
             Скилы отдаются этим же сервером как промпты, а файлами - на
             <code class="pii break-all font-mono text-[12px] text-ink">{data.origin}/api/v1/skills</code>. Подробности:

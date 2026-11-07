@@ -6,7 +6,7 @@
 <div class="mx-auto max-w-2xl p-6">
   <h1 class="mb-4 text-xl font-semibold">Индексаторы</h1>
   <p class="mb-4 text-ink-2">Сервисы индексации и их API-ключи. Ключ каждого сервиса используется для всех доменов.</p>
-  <div class="rounded border border-line bg-pane p-5">
+  <div class="rounded-sm border border-line bg-pane p-5">
     <h2 class="mb-2 font-semibold">NeuralIndexer · Inderixing</h2>
     <p class="mb-4 text-ink-2">Один API-ключ для всех доменов. Отправка страниц и карт сайта — кнопка «Индексация» на странице домена.</p>
     <p class="mb-3">{data.configured ? 'Ключ настроен' : 'Ключ не настроен'}{data.source === 'env' ? ' · задан в окружении' : ''}</p>

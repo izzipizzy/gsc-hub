@@ -24,21 +24,21 @@
 </script>
 <svelte:window onkeydown={(e) => { if (e.key === 'Escape' && !busy) onclose(); }} />
 <div class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/30 p-4" role="presentation" onclick={(e) => { if (e.target === e.currentTarget && !busy) onclose(); }}>
-  <div class="mt-10 w-full max-w-2xl rounded border border-line bg-pane text-[12.5px] shadow-xl" role="dialog" aria-modal="true" aria-labelledby="indexing-title" tabindex="-1">
+  <div class="mt-10 w-full max-w-2xl rounded-sm border border-line bg-pane text-[12.5px] shadow-xl" role="dialog" aria-modal="true" aria-labelledby="indexing-title" tabindex="-1">
     <div class="pane-head"><h2 id="indexing-title">Индексация</h2><button class="btn btn-ghost" disabled={busy} onclick={onclose}>Закрыть</button></div>
     <div class="space-y-3 p-4">
       <p class="text-ink-2">Сервис: <b class="text-ink">NeuralIndexer · Inderixing</b></p>
       {#if !configured}<p>Укажи ключ в <a class="text-blue-600 underline" href="/settings/integrations">разделе «Индексаторы»</a>.</p>{/if}
       <label class="block">Источник<select class="input mt-1 w-full" bind:value={mode} onchange={reset} disabled={busy}><option value="pages">Отдельные страницы</option><option value="sitemap">Карта сайта (включая дочерние карты)</option></select></label>
       <label class="block">{mode === 'sitemap' ? 'URL карты сайта или /sitemap.xml' : 'URL или пути страниц — по одному на строку'}
-        <textarea class="input mt-1 w-full !h-auto py-2" rows={mode === 'sitemap' ? 2 : 6} bind:value={input} oninput={reset} disabled={busy} placeholder={mode === 'sitemap' ? '/sitemap.xml' : '/page-1/\n/page-2/'}></textarea>
+        <textarea class="input mt-1 w-full h-auto! py-2" rows={mode === 'sitemap' ? 2 : 6} bind:value={input} oninput={reset} disabled={busy} placeholder={mode === 'sitemap' ? '/sitemap.xml' : '/page-1/\n/page-2/'}></textarea>
       </label>
       <label class="block">Очередь<select class="input mt-1 w-full" bind:value={queue} onchange={reset} disabled={busy}><option value="slow">Обычная · Google + Bing</option><option value="fast">Быстрая · Google</option><option value="yandex">Яндекс</option></select></label>
       <p class="text-ink-2">Только URL текущего домена. Дубли удаляются. Расчёт не отправляет страницы на индексацию.</p>
       {#if message}<p class="text-red-600">{message}</p>{/if}
       {#if result}<p class="text-emerald-700">Отправка #{result.submissionId} принята. URL: {result.accepted ?? '—'}. Списано: {result.charged === null ? '—' : `$${money(result.charged)}`}.</p>{/if}
       {#if quote}
-        <div class="rounded border border-line p-3 space-y-2">
+        <div class="rounded-sm border border-line p-3 space-y-2">
           <p><b>{quote.count}</b> уникальных URL × ${money(quote.price)} = <b>${money(quote.total)}</b></p>
           <p>Баланс: ${money(quote.balance)}. Расчёт действует 30 минут.</p>
           <p class="text-ink-2">Предварительная стоимость. Фактическое списание определяет сервис после фильтрации URL.</p>
