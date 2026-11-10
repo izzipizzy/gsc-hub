@@ -5,6 +5,27 @@ All notable changes to this project are documented here. Format loosely follows
 
 Русская версия — [CHANGELOG.ru.md](CHANGELOG.ru.md).
 
+## [0.9.5] - 2026-11-10
+
+### Added
+
+- Search sites by domain in Dashboard and All sites. Matching ignores case and
+  accepts a full domain or a substring such as `.com`; clear the search to
+  restore the list. Searches with no matches show an explicit empty state.
+- Sort Dashboard by domain in ascending (A–Z) or descending (Z–A) order,
+  including filtered sites. Favorites and hidden sites keep their own groups.
+- Keep the search when changing the period or sorting the current view.
+
+### How to update
+
+```bash
+git pull --ff-only
+docker compose up -d --build
+```
+
+No database schema changes. Existing data stays in the mounted volume.
+Reload open browser tabs after updating.
+
 ## [0.9.4] - 2026-11-07
 
 ### How to update

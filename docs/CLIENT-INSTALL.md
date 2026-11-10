@@ -23,7 +23,7 @@ must be preserved; replacement requires an explicit choice of `--force`.
 
 ```text
 Install the gsc-hub CLI and all five skills for my current agent from
-https://github.com/izzipizzy/gsc-hub, release v0.9.4.
+https://github.com/izzipizzy/gsc-hub, release v0.9.5.
 Read docs/CLIENT-INSTALL.md at that release. Check macOS or Windows
 prerequisites, fetch cli and .agents/skills, and use cli/install.mjs with
 --cli --skills and the appropriate --agent. Verify the installed CLI by
@@ -35,7 +35,7 @@ and API key separately.
 
 ```text
 Установи CLI gsc-hub и все пять скиллов для моего текущего агента из
-https://github.com/izzipizzy/gsc-hub, релиз v0.9.4.
+https://github.com/izzipizzy/gsc-hub, релиз v0.9.5.
 Прочитай docs/CLIENT-INSTALL.md этого релиза. Проверь подготовку macOS или
 Windows, забери cli и .agents/skills и используй cli/install.mjs с
 --cli --skills и подходящим --agent. Проверь установленный CLI по полному
@@ -49,7 +49,7 @@ Windows, забери cli и .agents/skills и используй cli/install.mj
 
 ```text
 Install only the gsc-hub CLI from https://github.com/izzipizzy/gsc-hub,
-release v0.9.4. Read docs/CLIENT-INSTALL.md at that release, check my macOS
+release v0.9.5. Read docs/CLIENT-INSTALL.md at that release, check my macOS
 or Windows prerequisites, fetch cli and run cli/install.mjs --cli.
 Verify the command using its full installed path and explain the PATH
 entry I need. I'll configure the hub URL and API key separately.
@@ -59,7 +59,7 @@ entry I need. I'll configure the hub URL and API key separately.
 
 ```text
 Установи только CLI gsc-hub из https://github.com/izzipizzy/gsc-hub,
-релиз v0.9.4. Прочитай docs/CLIENT-INSTALL.md этого релиза, проверь подготовку
+релиз v0.9.5. Прочитай docs/CLIENT-INSTALL.md этого релиза, проверь подготовку
 моей macOS или Windows, забери cli и запусти cli/install.mjs --cli.
 Проверь команду по полному пути установки и покажи, какой каталог добавить
 в PATH. Адрес хаба и API-ключ я настрою отдельно.
@@ -71,7 +71,7 @@ entry I need. I'll configure the hub URL and API key separately.
 
 ```text
 Install only the five gsc-hub skills for my current agent from
-https://github.com/izzipizzy/gsc-hub, release v0.9.4.
+https://github.com/izzipizzy/gsc-hub, release v0.9.5.
 Read docs/CLIENT-INSTALL.md at that release, check my macOS or Windows
 prerequisites, fetch cli and .agents/skills, then run cli/install.mjs
 --skills with the appropriate --agent codex or --agent claude.
@@ -83,7 +83,7 @@ installation does not need an API key, npm, or the server application.
 
 ```text
 Установи только пять скиллов gsc-hub для моего текущего агента из
-https://github.com/izzipizzy/gsc-hub, релиз v0.9.4.
+https://github.com/izzipizzy/gsc-hub, релиз v0.9.5.
 Прочитай docs/CLIENT-INSTALL.md этого релиза, проверь подготовку моей macOS
 или Windows, забери cli и .agents/skills и запусти cli/install.mjs --skills
 с подходящим --agent codex или --agent claude. Сохрани мои правки в
@@ -155,7 +155,7 @@ that restriction and handles spaces in paths.
 ## Repository and release
 
 Install from the public repository `https://github.com/izzipizzy/gsc-hub.git`,
-release **v0.9.4**. The installer is `cli/install.mjs`; skill sources are
+release **v0.9.5**. The installer is `cli/install.mjs`; skill sources are
 `.agents/skills/<name>/SKILL.md`. A GitHub account or SSH key is not required
 for this HTTPS clone.
 
@@ -163,7 +163,7 @@ for this HTTPS clone.
 
 ```bash
 gsc_client_dir=$(mktemp -d)
-git clone --branch v0.9.4 --depth 1 --filter=blob:none --sparse \
+git clone --branch v0.9.5 --depth 1 --filter=blob:none --sparse \
   https://github.com/izzipizzy/gsc-hub.git "$gsc_client_dir"
 git -C "$gsc_client_dir" sparse-checkout set cli .agents/skills
 node "$gsc_client_dir/cli/install.mjs" --check
@@ -180,7 +180,7 @@ shell configuration (normally `~/.zshrc`). The installer does not edit it.
 
 ```powershell
 $gscClientDir = Join-Path $env:TEMP ("gsc-hub-client-" + [guid]::NewGuid())
-git clone --branch v0.9.4 --depth 1 --filter=blob:none --sparse `
+git clone --branch v0.9.5 --depth 1 --filter=blob:none --sparse `
   https://github.com/izzipizzy/gsc-hub.git $gscClientDir
 git -C $gscClientDir sparse-checkout set cli .agents/skills
 node "$gscClientDir\cli\install.mjs" --check

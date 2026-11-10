@@ -96,7 +96,7 @@
 
 ```text
 Установи CLI gsc-hub и все пять скиллов для моего текущего агента из
-https://github.com/izzipizzy/gsc-hub, релиз v0.9.4.
+https://github.com/izzipizzy/gsc-hub, релиз v0.9.5.
 Сначала прочитай docs/CLIENT-INSTALL.md этого релиза. Проверь подготовку
 моей ОС (macOS или Windows), затем используй cli/install.mjs с --cli --skills
 и --agent codex или --agent claude. Проверь CLI по полному пути установки

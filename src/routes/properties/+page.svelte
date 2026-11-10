@@ -1,9 +1,11 @@
 <script lang="ts">
+  import SiteSearch from '$lib/components/SiteSearch.svelte';
+  import { page } from '$app/state';
   import SortCaret from '$lib/components/SortCaret.svelte';
   import { onMount } from 'svelte';
   import { goto, invalidateAll } from '$app/navigation';
   import { env as pubenv } from '$env/dynamic/public';
-  import { displaySite, siteDomain, siteHref, siteSearchHref, bingWebmasterHref, gscHref } from '$lib/utils/site';
+  import { displaySite, matchesSiteDomain, siteDomain, siteHref, siteSearchHref, bingWebmasterHref, gscHref } from '$lib/utils/site';
   import googleIcon from '$lib/assets/google.svg';
   import bingIcon from '$lib/assets/bing.svg';
   import TrendChart from '$lib/components/TrendChart.svelte';
@@ -161,8 +163,11 @@
     loadPulse(pulseDays);
   }
 
+  const searchQuery = $derived(page.state.siteSearchQuery ?? page.url.searchParams.get('q') ?? '');
+  const searchParam = $derived(`&q=${encodeURIComponent(searchQuery)}`);
+
   let visibleSites = $derived(
-    data.sites.filter(s => !hidden.has(keyOf(s)) || showHidden)
+    data.sites.filter(s => (!hidden.has(keyOf(s)) || showHidden) && matchesSiteDomain(s.siteUrl, searchQuery))
   );
 
   // Totals across non-hidden sites for the selected period.
@@ -195,12 +200,12 @@
   function goToDays(raw: string | number) {
     const n = Math.floor(Number(raw));
     if (!Number.isFinite(n) || n < 1) return;
-    goto(`?days=${Math.min(n, 480)}&sort=${data.sort}&dir=${data.dir}`);
+    goto(`?days=${Math.min(n, 480)}&sort=${data.sort}&dir=${data.dir}${searchParam}`);
   }
 
   function sortHref(field: string, currentSort: string, currentDir: 'asc' | 'desc', days: number) {
     const nextDir = currentSort === field && currentDir === 'desc' ? 'asc' : 'desc';
-    return `?days=${days}&sort=${field}&dir=${nextDir}`;
+    return `?days=${days}&sort=${field}&dir=${nextDir}${searchParam}`;
   }
 
   function sortIndicator(field: string, currentSort: string, currentDir: 'asc' | 'desc'): 'asc' | 'desc' | '' {
@@ -1062,7 +1067,7 @@
     <div class="app-toolbar-right">
       <div class="app-segmented" aria-label="Period">
         {#each [1, 3, 7, 28, 60] as d}
-          <a class:is-active={data.days === d} href="?days={d}&sort={data.sort}&dir={data.dir}">{d}D</a>
+          <a class:is-active={data.days === d} href="?days={d}&sort={data.sort}&dir={data.dir}{searchParam}">{d}D</a>
         {/each}
         <input
           type="number"
@@ -1164,6 +1169,8 @@
         <div class="stat"><span class="stat-label">Clicks</span><span class="stat-value">{fmtNum(totals.clicks)}</span></div>
       </div>
 
+      <div class="border-b border-line px-3 py-2"><SiteSearch /></div>
+
       {#if perAccount.length > 1}
         <div class="grid gap-px border-b border-line bg-line sm:grid-cols-2 lg:grid-cols-4">
           {#each perAccount as a}
@@ -1185,6 +1192,11 @@
             <div class="app-empty-title">No sites yet</div>
             <p class="app-empty-sub">Connect a Google account on <a class="text-acc hover:underline" href="/">Accounts</a>.</p>
           </div>
+        </div>
+      {:else if visibleSites.length === 0 && searchQuery.trim()}
+        <div class="app-empty" role="status">
+          <div class="app-empty-title">No matching sites</div>
+          <p class="app-empty-sub">Try another domain, clear the search or show hidden sites.</p>
         </div>
       {:else}
         <div class="overflow-x-auto">

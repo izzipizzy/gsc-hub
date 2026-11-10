@@ -1,3 +1,4 @@
+import { siteDomain } from '$lib/utils/site';
 import type { PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { fetchDailyBreakdown } from '$lib/server/google';
@@ -19,7 +20,7 @@ function parseCols(raw: string | null): AllowedCols {
   return (ALLOWED_COLS as readonly number[]).includes(n) ? (n as AllowedCols) : 4;
 }
 
-const SORT_FIELDS = ['clicks', 'impressions'] as const;
+const SORT_FIELDS = ['clicks', 'impressions', 'site'] as const;
 type SortField = (typeof SORT_FIELDS)[number];
 
 function parseSort(raw: string | null): SortField {
@@ -39,6 +40,11 @@ export const load: PageServerLoad = async ({ url, locals }) => {
   const { entries, errors, comparable } = await fetchDailyBreakdown(db(), days);
   const other = sort === 'clicks' ? 'impressions' : 'clicks';
   const sorted = [...entries].sort((a, b) => {
+    if (sort === 'site') {
+      const domain = siteDomain(a.siteUrl).localeCompare(siteDomain(b.siteUrl), 'en', { sensitivity: 'base' });
+      const tie = a.siteUrl.localeCompare(b.siteUrl) || a.accountId.localeCompare(b.accountId);
+      return (dir === 'asc' ? 1 : -1) * (domain || tie);
+    }
     const primary = a.currentTotals[sort] - b.currentTotals[sort];
     const signed = dir === 'asc' ? primary : -primary;
     if (signed !== 0) return signed;

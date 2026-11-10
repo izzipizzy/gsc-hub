@@ -1,9 +1,11 @@
 <script lang="ts">
+  import SiteSearch from '$lib/components/SiteSearch.svelte';
+  import { page } from '$app/state';
   import SortCaret from '$lib/components/SortCaret.svelte';
   import type { PageData } from './$types';
   import { onMount } from 'svelte';
   import { goto, invalidateAll } from '$app/navigation';
-  import { siteHref, siteDomain, siteSearchHref } from '$lib/utils/site';
+  import { siteHref, siteDomain, siteSearchHref, matchesSiteDomain } from '$lib/utils/site';
   import { SERIES } from '$lib/chart-theme';
 
   let { data }: { data: PageData } = $props();
@@ -101,24 +103,28 @@
     try { localStorage.setItem(METRICS_KEY, JSON.stringify({ ctr: showCtr, pos: showPos })); } catch { /* ignore */ }
   }
 
+  const searchQuery = $derived(page.state.siteSearchQuery ?? page.url.searchParams.get('q') ?? '');
+  const searchParam = $derived(`&q=${encodeURIComponent(searchQuery)}`);
+  const matchingEntries = $derived(data.entries.filter((e) => matchesSiteDomain(e.siteUrl, searchQuery)));
+
   const visibleEntries = $derived(
-    data.entries.filter((e) => !hidden.has(keyOf(e)))
+    matchingEntries.filter((e) => !hidden.has(keyOf(e)))
   );
   const favEntries = $derived(visibleEntries.filter((e) => favs.has(keyOf(e))));
   const restEntries = $derived(visibleEntries.filter((e) => !favs.has(keyOf(e))));
-  const hiddenEntries = $derived(data.entries.filter((e) => hidden.has(keyOf(e))));
+  const hiddenEntries = $derived(matchingEntries.filter((e) => hidden.has(keyOf(e))));
 
   // Custom day range, capped at GSC's 16-month window (480 days).
   function goToDays(raw: string | number) {
     const n = Math.floor(Number(raw));
     if (!Number.isFinite(n) || n < 1) return;
-    goto(`?days=${Math.min(n, 480)}&cols=${data.cols}&sort=${data.sort}&dir=${data.dir}`);
+    goto(`?days=${Math.min(n, 480)}&cols=${data.cols}&sort=${data.sort}&dir=${data.dir}${searchParam}`);
   }
 
-  // Toggle direction when re-clicking the active field, else default to desc.
-  function sortHref(field: 'clicks' | 'impressions') {
-    const dir = data.sort === field && data.dir === 'desc' ? 'asc' : 'desc';
-    return `?days=${data.days}&cols=${data.cols}&sort=${field}&dir=${dir}`;
+  // Toggle the active field; domains start A–Z and metrics start descending.
+  function sortHref(field: 'clicks' | 'impressions' | 'site') {
+    const dir = data.sort === field ? (data.dir === 'desc' ? 'asc' : 'desc') : (field === 'site' ? 'asc' : 'desc');
+    return `?days=${data.days}&cols=${data.cols}&sort=${field}&dir=${dir}${searchParam}`;
   }
 
   const nf = new Intl.NumberFormat('en-US');
@@ -369,7 +375,7 @@
       <div class="app-segmented">
         <span class="app-segmented-label">Period</span>
         {#each [1, 3, 7, 28, 60] as d}
-          <a class:is-active={data.days === d} href="?days={d}&cols={data.cols}&sort={data.sort}&dir={data.dir}">{d}D</a>
+          <a class:is-active={data.days === d} href="?days={d}&cols={data.cols}&sort={data.sort}&dir={data.dir}{searchParam}">{d}D</a>
         {/each}
         <input
           type="number"
@@ -386,6 +392,7 @@
       <span class="app-toolbar-divider" aria-hidden="true"></span>
       <div class="app-segmented">
         <span class="app-segmented-label">Sort</span>
+        <a class:is-active={data.sort === 'site'} href={sortHref('site')}>Domain<SortCaret dir={data.sort === 'site' ? data.dir : ''} /></a>
         <a class:is-active={data.sort === 'clicks'} href={sortHref('clicks')}>Clicks<SortCaret dir={data.sort === 'clicks' ? data.dir : ''} /></a>
         <a class:is-active={data.sort === 'impressions'} href={sortHref('impressions')}>Impr<SortCaret dir={data.sort === 'impressions' ? data.dir : ''} /></a>
       </div>
@@ -397,7 +404,7 @@
       <div class="app-segmented">
         <span class="app-segmented-label">Cols</span>
         {#each [2, 4, 6] as c}
-          <a class:is-active={data.cols === c} href="?days={data.days}&cols={c}&sort={data.sort}&dir={data.dir}">{c}</a>
+          <a class:is-active={data.cols === c} href="?days={data.days}&cols={c}&sort={data.sort}&dir={data.dir}{searchParam}">{c}</a>
         {/each}
       </div>
       <span class="app-toolbar-divider" aria-hidden="true"></span>
@@ -425,6 +432,8 @@
     </div>
   </header>
   {#if refreshError}<p class="app-errors">{refreshError}</p>{/if}
+
+  <div class="mb-3"><SiteSearch /></div>
 
   <section class="pane mb-3 flex flex-wrap items-center gap-x-5 gap-y-1.5 px-3 py-2">
     <div class="stat-label">
@@ -469,7 +478,12 @@
     </div>
   {/if}
 
-  {#if visibleEntries.length === 0}
+  {#if searchQuery.trim() && matchingEntries.length === 0}
+    <div class="app-empty" role="status">
+      <div class="app-empty-title">No matching sites</div>
+      <p class="app-empty-sub">Try another domain or clear the search.</p>
+    </div>
+  {:else if visibleEntries.length === 0}
     <div class="app-empty">
       <div class="app-empty-title">No visible sites</div>
       <p class="app-empty-sub">Connect a Google account on <a class="text-acc hover:underline" href="/">Accounts</a>{hidden.size > 0 ? ' or unhide a site below' : ''}.</p>
@@ -496,7 +510,7 @@
     </section>
   {/if}
 
-  {#if visibleEntries.length > 0 && hiddenEntries.length > 0}
+  {#if hiddenEntries.length > 0}
     <section class="mt-5">
       <div class="opacity-60">{@render sectionHead('Hidden', hiddenEntries.length)}</div>
       <div class="grid {colsClass(data.cols)} gap-3 opacity-60">

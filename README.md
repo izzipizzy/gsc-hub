@@ -98,7 +98,7 @@ Copy this prompt into Codex or Claude Code:
 
 ```text
 Install the gsc-hub CLI and all five skills from
-https://github.com/izzipizzy/gsc-hub, release v0.9.4, for my current agent.
+https://github.com/izzipizzy/gsc-hub, release v0.9.5, for my current agent.
 Read docs/CLIENT-INSTALL.md at that release first. Check the prerequisites
 for my OS (macOS or Windows), then use cli/install.mjs with --cli --skills
 and --agent codex or --agent claude. Verify the CLI using its full installed

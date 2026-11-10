@@ -46,3 +46,8 @@ export function gscHref(siteUrl: string, accountEmail?: string): string {
 export function bingWebmasterHref(siteUrl: string): string {
   return `https://www.bing.com/webmasters/home?siteUrl=${siteHref(siteUrl)}`;
 }
+
+// Match only the displayed domain, across both GSC property formats.
+export function matchesSiteDomain(siteUrl: string, query: string): boolean {
+  return siteDomain(siteUrl).toLowerCase().includes(query.trim().toLowerCase());
+}
