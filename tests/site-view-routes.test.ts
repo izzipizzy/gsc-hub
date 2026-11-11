@@ -10,6 +10,7 @@ vi.mock('../src/lib/server/algo-updates', () => ({ getAlgoUpdates: async () => (
 vi.mock('../src/lib/server/serp-monitor', () => ({ fetchBindings: bindings, fetchPositions: positions, requestCheck: vi.fn() }));
 import { load } from '../src/routes/properties/[site]/+page.server';
 import { GET } from '../src/routes/properties/[site]/serp/+server';
+import { addSiteEvent } from '../src/lib/server/site-events';
 import { POST } from '../src/routes/properties/[site]/view-settings/+server';
 const site = 'https://example.com/';
 const locals = { user: { role: 'admin' } };
@@ -50,4 +51,14 @@ it('updates sorting without overwriting saved dates or geo', async () => {
 it('refuses settings writes by non-admins', async () => {
   const event = { params: { site }, locals: { user: { role: 'manager' } }, request: new Request('http://localhost', { method: 'POST', body: '{}' }) } as any;
   await expect(POST(event)).rejects.toMatchObject({ status: 403 });
+});
+
+it('refreshes named markers for this site and window while retaining the event history', async () => {
+  daily.mockResolvedValue({ series: [{ date: '2026-11-08' }, { date: '2026-11-10' }] });
+  addSiteEvent(testDb, { siteHost: 'example.com', date: '2026-11-09', type: 'custom', note: 'Переезд в подпапку' });
+  addSiteEvent(testDb, { siteHost: 'example.com', date: '2026-11-07', type: 'custom', note: 'Outside' });
+  addSiteEvent(testDb, { siteHost: 'other.com', date: '2026-11-09', type: 'custom', note: 'Other' });
+  const result = await load({ params: { site }, locals, url: new URL('http://localhost/?acc=account') } as any) as any;
+  expect(result.siteEvents).toEqual([expect.objectContaining({ date: '2026-11-09', label: 'Переезд в подпапку' })]);
+  expect(result.eventRows).toHaveLength(2);
 });

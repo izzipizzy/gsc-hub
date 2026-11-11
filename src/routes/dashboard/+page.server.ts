@@ -54,8 +54,7 @@ export const load: PageServerLoad = async ({ url, locals }) => {
   });
 
   // Per-site event markers (domain merges etc.) for the card sparklines, matched by
-  // host. Dates outside the entry's window are kept — the card clamps them to the
-  // nearest edge so a merge that just happened is still visible.
+  // host, restricted to each card's current date window.
   const eventsByHost = new Map<string, ReturnType<typeof listSiteEvents>>();
   for (const ev of listSiteEvents(db())) {
     const arr = eventsByHost.get(ev.siteHost) ?? [];
@@ -64,7 +63,7 @@ export const load: PageServerLoad = async ({ url, locals }) => {
   }
   const withEvents = sorted.map((e) => ({
     ...e,
-    events: toChartEvents(eventsByHost.get(hostOfSite(e.siteUrl)) ?? [])
+    events: toChartEvents(eventsByHost.get(hostOfSite(e.siteUrl)) ?? [], e.current.map((r) => r.date))
   }));
 
   return { entries: withEvents, errors, days, cols, sort, dir, comparable };

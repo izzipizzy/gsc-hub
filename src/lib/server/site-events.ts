@@ -10,7 +10,7 @@ import { listPurchases } from './magiclinks-purchases';
 // Reads are live per request: a row added straight into SQLite shows up on refresh,
 // no restart needed.
 
-export type SiteEventType = 'merge' | 'link_purchase';
+export type SiteEventType = 'merge' | 'custom' | 'link_purchase';
 
 export interface SiteEvent {
   id: number;
@@ -25,6 +25,7 @@ export interface SiteEvent {
 /** Display config per type — chart line color + human label. */
 export const SITE_EVENT_TYPES: Record<SiteEventType, { color: string; label: string }> = {
   merge: { color: '#131722', label: 'Merge' },
+  custom: { color: '#434a57', label: 'Custom event' },
   link_purchase: { color: '#7c3aed', label: 'Покупка ссылок' }
 };
 
@@ -103,13 +104,20 @@ export function listSiteEventsForSite(db: Db, siteUrl: string): SiteEvent[] {
   return listSiteEvents(db).filter((e) => e.siteHost === host);
 }
 
+export class SiteEventError extends Error {}
+
 export function addSiteEvent(
   db: Db,
   input: { siteHost: string; date: string; type?: SiteEventType; note?: string }
 ): SiteEvent | null {
-  const host = hostOfSite(input.siteHost);
+  const host = normalizeDomain(input.siteHost);
+  if (!host) throw new SiteEventError('site must be a domain');
+  if (!isRealDate(input.date)) throw new SiteEventError('date must be a real YYYY-MM-DD');
   const type = input.type ?? 'merge';
-  const note = input.note ?? '';
+  if (type !== 'merge' && type !== 'custom') throw new SiteEventError('only merge or custom events can be added manually');
+  const note = (input.note ?? '').trim();
+  if (type === 'custom' && !note) throw new SiteEventError('event name required');
+  if (type === 'custom' && note.length > 200) throw new SiteEventError('event name must be at most 200 characters');
   const res = db
     .prepare('INSERT OR IGNORE INTO site_events (site_host, date, type, note, added_at) VALUES (?, ?, ?, ?, ?)')
     .run(host, input.date, type, note, Date.now());
@@ -215,8 +223,11 @@ export interface ChartEvent {
   typeLabel?: string;
 }
 
-export function toChartEvents(events: SiteEvent[]): ChartEvent[] {
-  return events.map((e) => ({
+export function toChartEvents(events: SiteEvent[], dates?: readonly string[]): ChartEvent[] {
+  const visible = dates === undefined ? events : events.filter((e) =>
+    dates.length > 0 && e.date >= dates[0] && e.date <= dates[dates.length - 1]
+  );
+  return visible.map((e) => ({
     id: e.id,
     date: e.date,
     label: e.note || SITE_EVENT_TYPES[e.type]?.label || e.type,

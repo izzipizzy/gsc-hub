@@ -5,6 +5,32 @@ All notable changes to this project are documented here. Format loosely follows
 
 Русская версия — [CHANGELOG.ru.md](CHANGELOG.ru.md).
 
+## [0.9.6] - 2026-11-11
+
+### Added
+
+- Create a **Custom event** on a site with a name and calendar date, without a
+  donor domain. Named markers appear immediately after saving and persist across
+  reloads on the site chart, Dashboard and portfolio pulse.
+- Filter custom annotations on the Events page. Existing domain merges and
+  automatic link-purchase events continue to work.
+
+### Fixed
+
+- Reject impossible calendar dates, empty custom names and names over 200
+  characters, with visible save errors in the event form.
+- Show chart markers only within the displayed date range. Interpolate dates
+  between data points instead of snapping to the next day or the chart edge.
+
+### How to update
+
+```bash
+git pull --ff-only
+docker compose up -d --build
+```
+
+No database schema changes or data migration. Reload open browser tabs.
+
 ## [0.9.5] - 2026-11-10
 
 ### Added

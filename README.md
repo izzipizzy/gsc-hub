@@ -80,7 +80,7 @@ The same lenses across every non-hidden site at once, computed from a single que
 ### Traffic charts and site events
 - The site page draws a full traffic chart (clicks, impressions, position) with **Google ranking updates** shaded in, taken from Google's public status feed.
 - The Sites page opens with a **portfolio pulse**: all visible sites summed per day, on the same update bands.
-- **Site events** are your own markers - domain merges (donor → site), migrations, anything worth seeing on the timeline. Add and remove them on the site page; they show up on the charts and dashboard cards. `/events` lists all of them in one table. Link purchases are included automatically from Magiclinks history: one purple marker per order and site, with the ordered quantity, provider and an order link. The marker uses the purchase date (UTC), not the placement date; historical orders appear without a migration.
+- **Site events** are your own markers - domain merges (donor → site), migrations, anything worth seeing on the timeline. Choose **Custom event**, enter a name and date, and click **Add** on the site page; you can also remove events there. Markers are limited to the displayed date range; they show up on the charts and dashboard cards. `/events` lists all of them in one table. Link purchases are included automatically from Magiclinks history: one purple marker per order and site, with the ordered quantity, provider and an order link. The marker uses the purchase date (UTC), not the placement date; historical orders appear without a migration.
 
 ### Bing Webmaster + IndexNow
 - Bing performance data alongside GSC, with merged GSC/Bing keyword rollups.
@@ -98,7 +98,7 @@ Copy this prompt into Codex or Claude Code:
 
 ```text
 Install the gsc-hub CLI and all five skills from
-https://github.com/izzipizzy/gsc-hub, release v0.9.5, for my current agent.
+https://github.com/izzipizzy/gsc-hub, release v0.9.6, for my current agent.
 Read docs/CLIENT-INSTALL.md at that release first. Check the prerequisites
 for my OS (macOS or Windows), then use cli/install.mjs with --cli --skills
 and --agent codex or --agent claude. Verify the CLI using its full installed

@@ -70,7 +70,7 @@ export const load: PageServerLoad = async ({ params, url, locals }) => {
     dailyError,
     algoUpdates,
     algoSource,
-    siteEvents: toChartEvents(eventRows),
+    siteEvents: toChartEvents(eventRows, daily?.series.map((r) => r.date) ?? []),
     eventRows,
     eventTypes: SITE_EVENT_TYPES,
     brandedTerms: getBrandedTerms(db(), siteUrl),

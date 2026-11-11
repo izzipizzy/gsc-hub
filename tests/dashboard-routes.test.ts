@@ -4,6 +4,7 @@ let testDb: Db;
 vi.mock('../src/lib/server/db', async (original) => ({ ...await original<typeof import('../src/lib/server/db')>(), db: () => testDb }));
 const { daily } = vi.hoisted(() => ({ daily: vi.fn() }));
 vi.mock('../src/lib/server/google', () => ({ fetchDailyBreakdown: daily }));
+import { addSiteEvent } from '../src/lib/server/site-events';
 import { load } from '../src/routes/dashboard/+page.server';
 
 const entries = [
@@ -11,7 +12,7 @@ const entries = [
   { siteUrl: 'https://Alpha.com/path/', clicks: 10, impressions: 200 },
   { siteUrl: 'http://zeta.org/', clicks: 30, impressions: 50 }
 ].map(({ siteUrl, clicks, impressions }) => ({
-  siteUrl, accountId: 'account', currentTotals: { clicks, impressions }
+  siteUrl, accountId: 'account', current: [{ date: '2026-11-08' }, { date: '2026-11-10' }], currentTotals: { clicks, impressions }
 }));
 const page = (query = '', role = 'admin') => load({
   url: new URL(`http://localhost/dashboard${query}`), locals: { user: { role } }
@@ -41,4 +42,14 @@ it('keeps existing metric sorts and rejects unknown sort fields', async () => {
 it('continues to require an administrator', async () => {
   await expect(page('', 'manager')).rejects.toMatchObject({ status: 403 });
   expect(daily).not.toHaveBeenCalled();
+});
+
+it('only includes events for the card host and current calendar window', async () => {
+  addSiteEvent(testDb, { siteHost: 'beta.com', date: '2026-11-09', type: 'custom', note: 'Переезд в подпапку' });
+  addSiteEvent(testDb, { siteHost: 'beta.com', date: '2026-11-07', type: 'custom', note: 'Outside' });
+  addSiteEvent(testDb, { siteHost: 'other.com', date: '2026-11-09', type: 'custom', note: 'Other site' });
+  const result = await page();
+  expect(result.entries.find((e: any) => e.siteUrl === 'sc-domain:beta.com').events)
+    .toEqual([expect.objectContaining({ date: '2026-11-09', label: 'Переезд в подпапку' })]);
+  expect(result.entries.find((e: any) => e.siteUrl === 'http://zeta.org/').events).toEqual([]);
 });

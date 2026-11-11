@@ -1,10 +1,21 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { openDb, type Db } from '../src/lib/server/db';
 import { addGluedDomain, normalizeDomain, listSiteEvents, GluedError, addSiteEvent, donorOf, listSiteEventsForSite, toChartEvents, SITE_EVENT_TYPES } from '../src/lib/server/site-events';
 
 import { recordPurchases } from '../src/lib/server/magiclinks-purchases';
 
 let db: Db;
+vi.mock('../src/lib/server/db', async (original) => ({ ...await original<typeof import('../src/lib/server/db')>(), db: () => db }));
+const { portfolio } = vi.hoisted(() => ({ portfolio: vi.fn() }));
+vi.mock('../src/lib/server/google', () => ({ fetchPortfolioDaily: portfolio }));
+vi.mock('../src/lib/server/algo-updates', () => ({ getAlgoUpdates: async () => ({ updates: [] }), updatesForChart: () => [] }));
+import { POST, DELETE } from '../src/routes/properties/site-events/+server';
+import { GET as pulse } from '../src/routes/properties/pulse/+server';
+import { eventPosition } from '../src/lib/chart-theme';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 beforeEach(() => { db = openDb(':memory:'); });
 afterEach(() => { db.close(); });
 
@@ -135,5 +146,83 @@ describe('purchase timeline events', () => {
     expect(markers.find((e) => e.typeLabel === 'Покупка ссылок')?.color)
       .toBe(SITE_EVENT_TYPES.link_purchase.color);
     expect(listSiteEventsForSite(db, 'unrelated.com')).toEqual([]);
+  });
+});
+
+const eventRequest = (body: unknown, role = 'admin') => ({
+  locals: { user: { role } },
+  request: new Request('http://localhost/properties/site-events', { method: 'POST', body: JSON.stringify(body) })
+}) as any;
+
+describe('custom site events', () => {
+  const custom = { site: 'https://www.example.com/folder/', date: '2026-11-09', type: 'custom', note: 'Переезд в подпапку' };
+
+  it('creates, projects, rejects duplicates and deletes through the existing endpoint', async () => {
+    const res = await POST(eventRequest(custom));
+    const saved = await res.json();
+    expect(saved).toMatchObject({ siteHost: 'example.com', date: custom.date, type: 'custom', note: custom.note });
+    expect(toChartEvents(listSiteEventsForSite(db, 'sc-domain:example.com')))
+      .toEqual([expect.objectContaining({ label: custom.note, date: custom.date, typeLabel: 'Custom event' })]);
+    expect(listSiteEventsForSite(db, 'other.com')).toEqual([]);
+    await expect(POST(eventRequest(custom))).rejects.toMatchObject({ status: 409 });
+    await DELETE(eventRequest({ id: saved.id }));
+    expect(listSiteEventsForSite(db, custom.site)).toEqual([]);
+  });
+
+  it.each([
+    { note: '  ' }, { note: 'a'.repeat(201) }, { date: '2026-02-30' },
+    { date: '2026-13-01' }, { date: '' }, { date: 42 }, { note: {} },
+    { site: 'not a domain' }, { type: 42 }, { type: 'link_purchase' }, { type: 'unknown' }
+  ])('rejects invalid input %j', async (invalid) => {
+    await expect(POST(eventRequest({ ...custom, ...invalid }))).rejects.toMatchObject({ status: 400 });
+    expect(listSiteEvents(db)).toEqual([]);
+  });
+
+  it('protects creation and deletion from non-admin users', async () => {
+    await expect(POST(eventRequest(custom, 'manager'))).rejects.toMatchObject({ status: 403 });
+    await expect(DELETE(eventRequest({ id: 1 }, 'manager'))).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('persists custom annotations and existing merges when the database is reopened', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'gsc-events-'));
+    try {
+      let disk = openDb(join(dir, 'events.db'));
+      addSiteEvent(disk, { siteHost: 'example.com', date: custom.date, type: 'custom', note: custom.note });
+      addGluedDomain(disk, { site: 'example.com', donor: 'donor.com', date: custom.date });
+      disk.close();
+      disk = openDb(join(dir, 'events.db'));
+      try {
+        expect(listSiteEventsForSite(disk, 'https://www.example.com/')).toEqual([
+          expect.objectContaining({ type: 'custom', note: custom.note }),
+          expect.objectContaining({ type: 'merge', note: '← donor.com' })
+        ]);
+      } finally { disk.close(); }
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('restricts portfolio markers to included hosts and dates, keeping legacy types', async () => {
+    addSiteEvent(db, { siteHost: 'example.com', date: custom.date, type: 'custom', note: custom.note });
+    addSiteEvent(db, { siteHost: 'example.com', date: '2026-11-07', type: 'custom', note: 'Outside' });
+    addSiteEvent(db, { siteHost: 'other.com', date: custom.date, type: 'custom', note: 'Other' });
+    addGluedDomain(db, { site: 'example.com', donor: 'donor.com', date: custom.date });
+    portfolio.mockResolvedValue({ daily: { series: [{ date: '2026-11-08' }, { date: '2026-11-10' }] }, hosts: ['example.com'], errors: [] });
+    const res = await pulse({ url: new URL('http://localhost/properties/pulse?days=3'), locals: { user: { role: 'admin' } } } as any);
+    const result = await res.json();
+    expect(result.events.map((e: any) => e.label)).toEqual([custom.note, '← donor.com']);
+  });
+});
+
+describe('calendar placement on chart series', () => {
+  const dates = ['2026-11-01', '2026-11-03', '2026-11-05'];
+  it('interpolates gaps instead of snapping to the next data day', () => {
+    expect(eventPosition(dates, '2026-11-02')).toBe(0.25);
+    expect(eventPosition(dates, '2026-11-03')).toBe(0.5);
+    expect(eventPosition(dates, '2026-11-05')).toBe(1);
+  });
+  it('omits out-of-window events and handles empty/single-day series', () => {
+    expect(eventPosition(dates, '2026-10-31')).toBeNull();
+    expect(eventPosition(dates, '2026-11-06')).toBeNull();
+    expect(eventPosition([], '2026-11-01')).toBeNull();
+    expect(eventPosition(['2026-11-01'], '2026-11-01')).toBe(0.5);
   });
 });

@@ -29,3 +29,16 @@ export const AXIS = {
   text: 'rgb(110 118 132)',
   ink: 'rgb(19 23 34)'
 } as const;
+
+/** Position an event on an index-spaced daily series, interpolating calendar gaps.
+ * Dates outside the displayed window have no marker. A single day is centered. */
+export function eventPosition(dates: readonly string[], date: string): number | null {
+  if (!dates.length || date < dates[0] || date > dates[dates.length - 1]) return null;
+  if (dates.length === 1) return 0.5;
+  const right = dates.findIndex((d) => d >= date);
+  if (dates[right] === date) return right / (dates.length - 1);
+  const left = right - 1;
+  const fraction = (Date.parse(date) - Date.parse(dates[left])) /
+    (Date.parse(dates[right]) - Date.parse(dates[left]));
+  return (left + fraction) / (dates.length - 1);
+}

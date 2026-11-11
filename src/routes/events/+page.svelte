@@ -45,13 +45,14 @@
       <h1 class="app-pagetitle">Склейки и события</h1>
       <p class="text-xs text-ink-3">
         <span class="app-num">{data.rows.length}</span> событий на <span class="app-num">{sites}</span> сайтах. Те же маркеры, что на графиках сайтов, на дашборде и в portfolio pulse.
-        Склейки добавляются на странице сайта или через <a class="text-acc hover:underline" href="/api">API</a>; покупки — автоматически из <a class="text-acc hover:underline" href="/magiclinks">Magiclinks</a>, по дате заказа.
+        Склейки и кастомные события добавляются на странице сайта или через <a class="text-acc hover:underline" href="/api">API</a>; покупки — автоматически из <a class="text-acc hover:underline" href="/magiclinks">Magiclinks</a>, по дате заказа.
       </p>
     </div>
     <div class="app-toolbar-right">
       <select bind:value={eventType} class="input" aria-label="Тип события">
         <option value="">Все события</option>
         <option value="merge">Склейки</option>
+        <option value="custom">Кастомные события</option>
         <option value="link_purchase">Покупки ссылок</option>
       </select>
       <input bind:value={q} placeholder="сайт, донор или описание" aria-label="Фильтр событий" class="input w-72" />

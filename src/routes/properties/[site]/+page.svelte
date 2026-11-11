@@ -966,27 +966,30 @@
             {/each}
           </ul>
         {/if}
-        <div class="pane-body flex flex-col gap-2">
+        <form class="pane-body flex flex-col gap-2" onsubmit={(e) => { e.preventDefault(); addEvent(); }}>
           <div class="flex gap-2">
-            <input type="date" bind:value={evDate} required class="input app-num w-34" title="Event date" />
-            <select bind:value={evType} class="input min-w-0 flex-1">
+            <input type="date" bind:value={evDate} required disabled={evSaving} class="input app-num w-34" aria-label="Event date" />
+            <select bind:value={evType} disabled={evSaving} class="input min-w-0 flex-1" aria-label="Event type">
               {#each Object.entries(data.eventTypes) as [id, t] (id)}
-                {#if id === 'merge'}<option value={id}>{t.label}</option>{/if}
+                {#if id === 'merge' || id === 'custom'}<option value={id}>{t.label}</option>{/if}
               {/each}
             </select>
           </div>
           <div class="flex gap-2">
             <input
               bind:value={evNote}
-              placeholder="← donordomain.com"
+              placeholder={evType === 'custom' ? 'Переезд в подпапку' : '← donordomain.com'}
+              aria-label={evType === 'custom' ? 'Event name' : 'Donor domain'}
+              maxlength={evType === 'custom' ? 200 : undefined}
+              required
+              disabled={evSaving}
               class="input min-w-0 flex-1"
-              onkeydown={(e) => { if (e.key === 'Enter') addEvent(); }}
             />
-            <button type="button" onclick={addEvent} disabled={evSaving || !evNote.trim()} class="btn btn-pri">{evSaving ? '…' : 'Add'}</button>
+            <button type="submit" disabled={evSaving || !evNote.trim() || !evDate} class="btn btn-pri">{evSaving ? 'Saving…' : 'Add'}</button>
           </div>
-          {#if evError}<p class="text-err text-xs">{evError}</p>{/if}
+          {#if evError}<p class="text-dn text-xs" role="alert">{evError}</p>{/if}
           <p class="text-[11px] text-ink-3">Покупки автоматически из <a href="/magiclinks" class="hover:underline">Magiclinks</a>, по дате заказа. Маркеры видны также на дашборде и в portfolio pulse.</p>
-        </div>
+        </form>
       </section>
 
       <section class="pane">

@@ -6,7 +6,7 @@
   import { onMount } from 'svelte';
   import { goto, invalidateAll } from '$app/navigation';
   import { siteHref, siteDomain, siteSearchHref, matchesSiteDomain } from '$lib/utils/site';
-  import { SERIES } from '$lib/chart-theme';
+  import { SERIES, eventPosition } from '$lib/chart-theme';
 
   let { data }: { data: PageData } = $props();
 
@@ -170,14 +170,9 @@
     return `${line} L${((rows.length - 1) * step).toFixed(2)},${CHART_H} L0,${CHART_H} Z`;
   }
 
-  // Event marker x on a card sparkline: snap to the nearest data day, clamp to the
-  // edges so an event outside the window still shows up (at the border).
   function eventX(rows: DailyRow[], date: string): number | null {
-    if (rows.length === 0) return null;
-    let i = rows.findIndex((r) => r.date >= date);
-    if (i === -1) i = rows.length - 1;
-    const step = rows.length > 1 ? CHART_W / (rows.length - 1) : 0;
-    return Math.min(CHART_W, Math.max(0, i * step));
+    const position = eventPosition(rows.map((r) => r.date), date);
+    return position === null ? null : position * CHART_W;
   }
 
   // Market chip — derived from the ccTLD; generic TLDs read as "unknown market".

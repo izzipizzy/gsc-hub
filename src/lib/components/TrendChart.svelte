@@ -4,7 +4,7 @@
   // updates are shaded rollout bands with a label strip, site events are marked
   // days. Hover draws a crosshair with axis tags; the legend row reads out the
   // hovered day, so nothing floats over the data. Hand-rolled SVG — no chart lib.
-  import { SERIES, UPDATE_COLORS } from '$lib/chart-theme';
+  import { SERIES, UPDATE_COLORS, eventPosition } from '$lib/chart-theme';
 
   export interface ChartUpdate {
     date: string; // ISO, clipped to the chart window
@@ -149,10 +149,9 @@
   const eventMarks = $derived.by(() => {
     if (!showEvents) return [];
     const placed = events
-      .map((ev) => {
-        let i = points.findIndex((p) => p.date >= ev.date);
-        if (i === -1) i = n - 1;
-        return { ev, x: x(i) };
+      .flatMap((ev) => {
+        const position = eventPosition(points.map((p) => p.date), ev.date);
+        return position === null ? [] : [{ ev, x: position * innerW }];
       })
       .sort((a, b) => a.x - b.x);
     const groups: { x: number; items: ChartEvent[] }[] = [];

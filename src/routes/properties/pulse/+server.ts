@@ -28,7 +28,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 
   // Events are per-target-domain; on the aggregate only those of included sites count.
   const hostSet = new Set(hosts);
-  const events = toChartEvents(listSiteEvents(db()).filter((e) => hostSet.has(e.siteHost)));
+  const events = toChartEvents(listSiteEvents(db()).filter((e) => hostSet.has(e.siteHost)), daily.series.map((r) => r.date));
 
   return json({ ...daily, updates, events, errors });
 };
