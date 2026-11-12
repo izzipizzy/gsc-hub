@@ -165,6 +165,44 @@ CREATE TABLE IF NOT EXISTS indexing_requests (
 );
 CREATE INDEX IF NOT EXISTS indexing_requests_site ON indexing_requests(site, created_at);
 
+CREATE TABLE IF NOT EXISTS index_check_runs (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  site TEXT NOT NULL,
+  provider TEXT NOT NULL CHECK (provider IN ('xmlriver', 'dataforseo')),
+  engine TEXT NOT NULL CHECK (engine = 'google'),
+  state TEXT NOT NULL,
+  started_at INTEGER NOT NULL,
+  finished_at INTEGER,
+  total_urls INTEGER NOT NULL,
+  checked_urls INTEGER NOT NULL,
+  found_count INTEGER,
+  error_count INTEGER NOT NULL,
+  skipped_count INTEGER NOT NULL,
+  batch_id TEXT,
+  batch_position INTEGER,
+  options_json TEXT,
+  stop_reason TEXT
+);
+CREATE TABLE IF NOT EXISTS index_check_results (
+  run_id TEXT NOT NULL REFERENCES index_check_runs(id) ON DELETE CASCADE,
+  position INTEGER NOT NULL,
+  url TEXT NOT NULL,
+  status TEXT NOT NULL,
+  checked_at INTEGER,
+  matched_url TEXT,
+  error_code TEXT,
+  message TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  next_attempt_at INTEGER,
+  attempt_started_at INTEGER,
+  PRIMARY KEY (run_id, position)
+);
+CREATE INDEX IF NOT EXISTS idx_index_check_site_date
+  ON index_check_runs (site, account_id, started_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_index_check_date
+  ON index_check_runs (started_at DESC, id DESC);
+
 CREATE TABLE IF NOT EXISTS app_config (
   key        TEXT PRIMARY KEY,
   value      TEXT NOT NULL,
@@ -229,6 +267,14 @@ export function openDb(path: string): Db {
     .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='query_filters'")
     .get();
   db.exec(SCHEMA);
+  for (const [table, additions] of [
+    ['index_check_runs', [['options_json', 'TEXT'], ['stop_reason', 'TEXT'], ['batch_id', 'TEXT'], ['batch_position', 'INTEGER']]],
+    ['index_check_results', [['attempts', 'INTEGER NOT NULL DEFAULT 0'], ['next_attempt_at', 'INTEGER'], ['attempt_started_at', 'INTEGER']]]
+  ] as const) {
+    const existing = new Set((db.prepare(`PRAGMA table_info('${table}')`).all() as { name: string }[]).map((c) => c.name));
+    for (const [name, definition] of additions) if (!existing.has(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${definition}`);
+  }
+  db.exec('CREATE INDEX IF NOT EXISTS idx_index_check_batch ON index_check_runs(batch_id, batch_position)');
   const cols = db.prepare("PRAGMA table_info('google_accounts')").all() as Array<{ name: string }>;
   if (!cols.some((c) => c.name === 'owner_id')) {
     db.exec('ALTER TABLE google_accounts ADD COLUMN owner_id TEXT');

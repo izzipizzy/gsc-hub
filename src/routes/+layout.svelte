@@ -12,6 +12,7 @@
     { href: '/events', label: 'Events', title: 'Склейки доменов и покупки ссылок с датами' },
     { href: '/magiclinks', label: 'MagicLinks', title: 'Задания на посты и ссылки: статусы и URL публикаций' },
     { href: '/api', label: 'API', title: 'API-ключи и документация для агентов' },
+    { href: '/index-check', label: 'Проверка индексации', title: 'Проверка URL из sitemap через XML River и DataForSEO' },
     { href: '/settings/integrations', label: 'Индексаторы', title: 'Сервисы индексации и API-ключи' },
     { href: '/admin/users', label: 'Users' }
   ];

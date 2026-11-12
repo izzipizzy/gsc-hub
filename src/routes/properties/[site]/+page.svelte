@@ -552,6 +552,7 @@
             </div>
           {/if}
           <div class="ml-auto flex items-center gap-2">
+            <a class="btn btn-ghost" href="/index-check?account={encodeURIComponent(data.accId)}&site={encodeURIComponent(data.siteUrl)}">Проверка индексации</a>
             <button class="btn btn-sec" onclick={() => indexingOpen = true}>Индексация</button>
             <button class="btn btn-pri" onclick={() => { buyRows = null; customOpen = true; }}>Купить на свой URL</button>
             <a class="btn btn-ghost" href={siteUrl.startsWith('sc-domain:') ? `https://${siteHost}/` : siteUrl} target="_blank" rel="noopener noreferrer" title="Открыть сайт">

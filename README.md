@@ -82,6 +82,10 @@ The same lenses across every non-hidden site at once, computed from a single que
 - The Sites page opens with a **portfolio pulse**: all visible sites summed per day, on the same update bands.
 - **Site events** are your own markers - domain merges (donor → site), migrations, anything worth seeing on the timeline. Choose **Custom event**, enter a name and date, and click **Add** on the site page; you can also remove events there. Markers are limited to the displayed date range; they show up on the charts and dashboard cards. `/events` lists all of them in one table. Link purchases are included automatically from Magiclinks history: one purple marker per order and site, with the ordered quantity, provider and an order link. The marker uses the purchase date (UTC), not the placement date; historical orders appear without a migration.
 
+### Google URL visibility checks
+
+- **Index checks** (`Проверка индексации`, `/index-check`) loads unique sitemap URLs and checks exact matches in Google through XML River or DataForSEO. Search by site address, select up to 20 sites and run one queue with per-site results and progress. Configure API credentials, balances, concurrency and retries in **Indexers** (`Индексаторы`, `/settings/integrations`); review the URL count and request budget before explicitly starting a paid check. Sitemap discovery uses all GSC and `robots.txt` declarations, including nested maps. **Copy not-found URLs** for one site or the entire queue, one per line, across all result pages; errors and unchecked URLs are excluded. Each run and its results remain in SQLite history after repeated checks and restarts; interrupted paid work never resumes automatically. A missing search match alone does not prove absence from Google's index. See [setup and provider contracts](docs/INDEX-CHECK.md).
+
 ### Bing Webmaster + IndexNow
 - Bing performance data alongside GSC, with merged GSC/Bing keyword rollups.
 - **Submit sitemap to Bing** and **push URLs to IndexNow**, plus an IndexNow-key indicator per site.

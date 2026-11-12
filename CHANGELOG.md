@@ -5,6 +5,61 @@ All notable changes to this project are documented here. Format loosely follows
 
 Русская версия — [CHANGELOG.ru.md](CHANGELOG.ru.md).
 
+## [0.10.0] - 2026-11-12
+
+### Added
+
+- **Index checks** (`Проверка индексации`, `/index-check`): check exact URL
+  matches in Google results through XML River or DataForSEO.
+- Search sites by address and select up to **20 sites** for one queue. Sites
+  run in order under one provider concurrency limit, with progress and a
+  button to stop the whole queue.
+- Save separate per-site results and history in SQLite. Reload a queue or open
+  an earlier run; a server restart marks unfinished work as interrupted and
+  never resumes paid requests automatically.
+- **Copy not-found URLs** for the open site or the entire queue, one address
+  per line, with duplicates removed. Copy includes every saved result,
+  regardless of the table's status filter or page; errors and unchecked URLs
+  are excluded. If clipboard access is denied, select and copy the list manually.
+- Provider balances, XML River concurrency and temporary-error retry settings
+  under **Indexers** (`Индексаторы`, `/settings/integrations`). The default is
+  three retries with a three-minute pause.
+
+### Fixed
+
+- Discover all sitemap addresses declared in GSC and `robots.txt`, deduplicate
+  them and follow nested maps. No guessed `/sitemap.xml` fallback. Correctly
+  parse self-closing language-alternate tags in sitemap XML.
+- Search matches site addresses only; an account email no longer adds unrelated sites.
+
+### Where to find it and how to use it
+
+1. Open **Indexers → Index checks** and save the selected service's API
+   credentials. Check its balance and adjust concurrency, retries and pause.
+2. Open **Index checks**, search by domain and select one or more sites.
+   Click **Получить URL из sitemap** to preview the URLs and request budget.
+   This preparation does not send paid provider requests.
+3. Choose the service and explicitly start the paid check. Open each site's
+   **Результаты** to see its URLs, or reopen a run from history.
+4. Use **Скопировать ненайденные URL сайта** for that site, or
+   **Скопировать ненайденные URL всех сайтов** above the queue. Copying saved
+   results does not run another check.
+
+“Not found” means no exact match was returned in the search results; it does
+not, by itself, prove that a page is absent from Google's index.
+
+### How to update
+
+Let active checks finish and back up SQLite before updating. Then:
+
+```bash
+git pull --ff-only
+docker compose up -d --build
+```
+
+New history tables and columns are created automatically. Keep the existing
+data mount and reload open browser tabs. [Detailed setup and provider contracts](https://github.com/izzipizzy/gsc-hub/blob/v0.10.0/docs/INDEX-CHECK.md).
+
 ## [0.9.6] - 2026-11-11
 
 ### Added

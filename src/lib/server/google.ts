@@ -372,9 +372,10 @@ const SITEMAP_SUBMIT_URL = (siteUrl: string, feedpath: string) =>
 export async function listSitemaps(
   db: Db,
   acc: AccountRow,
-  siteUrl: string
+  siteUrl: string,
+  signal?: AbortSignal
 ): Promise<GscSitemap[]> {
-  const res = await authorizedFetch(db, acc, SITEMAPS_LIST_URL(siteUrl));
+  const res = await authorizedFetch(db, acc, SITEMAPS_LIST_URL(siteUrl), { signal });
   if (res.status === 401) {
     markRevoked(db, acc.id, 'sitemaps.list 401');
     throw new Error('sitemaps.list 401');
