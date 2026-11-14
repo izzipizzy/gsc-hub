@@ -1,11 +1,15 @@
 <script lang="ts">
+  import PeriodPicker from '$lib/components/PeriodPicker.svelte';
+  import { t, tx, plural, fmtNum, fmtPct, fmtDec, fmtDay, fmtCompact, getLocale } from '$lib/i18n/index.svelte';
   import SiteSearch from '$lib/components/SiteSearch.svelte';
-  import { page } from '$app/state';
+  import Pager from '$lib/components/Pager.svelte';
+  import SnapshotStatus from '$lib/components/SnapshotStatus.svelte';
+  import { FAVS_COOKIE, parseFavs, writeFavsCookie } from '$lib/utils/favs';
   import SortCaret from '$lib/components/SortCaret.svelte';
   import type { PageData } from './$types';
   import { onMount } from 'svelte';
   import { goto, invalidateAll } from '$app/navigation';
-  import { siteHref, siteDomain, siteSearchHref, matchesSiteDomain } from '$lib/utils/site';
+  import { siteHref, siteDomain, siteSearchHref } from '$lib/utils/site';
   import { SERIES, eventPosition } from '$lib/chart-theme';
 
   let { data }: { data: PageData } = $props();
@@ -15,9 +19,10 @@
 
   const keyOf = (e: Entry) => `${e.accountId}|${e.siteUrl}`;
 
-  // Hidden sites — server-side store, shared with /properties (keyed accountId|siteUrl).
-  let hidden = $state<Set<string>>(new Set());
-  // Favorites — localStorage (single-user tool, no backend table needed).
+  // Hidden sites — server-side store, shared with /properties; the server puts
+  // them last, after favorites and the rest, so each card knows its group.
+  // Favorites — localStorage (single-user tool, no backend table needed),
+  // mirrored into a cookie so the server can page them first.
   const FAVS_KEY = 'gsc-hub:favs';
   let favs = $state<Set<string>>(new Set());
 
@@ -37,6 +42,7 @@
   };
   let today = $state<Today | null>(null);
   let todayFailed = $state(false);
+  let todayErrorsOpen = $state(false);
 
   // Today is fetched on its own, outside page data, so Refresh calls it again.
   function loadToday() {
@@ -55,6 +61,13 @@
     try {
       const raw = localStorage.getItem(FAVS_KEY);
       if (raw) favs = new Set(JSON.parse(raw) as string[]);
+      // Favorites saved before the cookie existed: hand them to the server once.
+      const cookie = document.cookie.split('; ').find((c) => c.startsWith(`${FAVS_COOKIE}=`));
+      const mirrored = parseFavs(cookie ? decodeURIComponent(cookie.slice(FAVS_COOKIE.length + 1)) : null);
+      if (favs.size !== mirrored.size || [...favs].some((k) => !mirrored.has(k))) {
+        writeFavsCookie(favs);
+        invalidateAll();
+      }
       const m = JSON.parse(localStorage.getItem(METRICS_KEY) ?? '{}') as { ctr?: boolean; pos?: boolean };
       showCtr = m.ctr === true;
       showPos = m.pos === true;
@@ -62,10 +75,6 @@
       // corrupted prefs are not worth a broken dashboard
     }
     loadToday();
-    fetch('/properties/hidden-sites')
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then((j: { hidden: string[] }) => { hidden = new Set(j.hidden); })
-      .catch((e) => console.warn('Failed to load hidden sites:', e));
   });
 
   function toggleFav(e: Entry) {
@@ -75,26 +84,26 @@
     else next.add(k);
     favs = next;
     try { localStorage.setItem(FAVS_KEY, JSON.stringify([...next])); } catch { /* private mode */ }
+    writeFavsCookie(next);
+    invalidateAll();
   }
 
+  let hideError = $state<string | null>(null);
   async function toggleHide(e: Entry) {
-    const k = keyOf(e);
-    const isHidden = hidden.has(k);
-    const next = new Set(hidden);
-    if (isHidden) next.delete(k);
-    else next.add(k);
-    hidden = next;
+    const isHidden = e.group === 'hidden';
+    hideError = null;
     try {
-      await fetch('/properties/hidden-sites', {
+      const r = await fetch('/properties/hidden-sites', {
         method: isHidden ? 'DELETE' : 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ account: e.accountId, site: e.siteUrl })
       });
-    } catch {
-      // revert on failure so the UI never lies about persisted state
-      hidden = new Set(hidden);
-      if (isHidden) hidden.add(k); else hidden.delete(k);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    } catch (err) {
+      // The card stays where the server has it, so the UI never lies about persisted state.
+      hideError = `Could not ${isHidden ? 'unhide' : 'hide'} ${siteDomain(e.siteUrl)}: ${(err as Error).message}`;
     }
+    await invalidateAll();
   }
 
   function toggleMetric(m: 'ctr' | 'pos') {
@@ -103,23 +112,16 @@
     try { localStorage.setItem(METRICS_KEY, JSON.stringify({ ctr: showCtr, pos: showPos })); } catch { /* ignore */ }
   }
 
-  const searchQuery = $derived(page.state.siteSearchQuery ?? page.url.searchParams.get('q') ?? '');
-  const searchParam = $derived(`&q=${encodeURIComponent(searchQuery)}`);
-  const matchingEntries = $derived(data.entries.filter((e) => matchesSiteDomain(e.siteUrl, searchQuery)));
+  const searchQuery = $derived(data.q);
+  const searchParam = $derived(searchQuery ? `&q=${encodeURIComponent(searchQuery)}` : '');
 
-  const visibleEntries = $derived(
-    matchingEntries.filter((e) => !hidden.has(keyOf(e)))
-  );
-  const favEntries = $derived(visibleEntries.filter((e) => favs.has(keyOf(e))));
-  const restEntries = $derived(visibleEntries.filter((e) => !favs.has(keyOf(e))));
-  const hiddenEntries = $derived(matchingEntries.filter((e) => hidden.has(keyOf(e))));
+  // This page's cards, by group; the counts are over the whole portfolio.
+  const favEntries = $derived(data.entries.filter((e) => e.group === 'fav'));
+  const restEntries = $derived(data.entries.filter((e) => e.group === 'rest'));
+  const hiddenEntries = $derived(data.entries.filter((e) => e.group === 'hidden'));
+  const visibleCount = $derived(data.counts.fav + data.counts.rest);
 
   // Custom day range, capped at GSC's 16-month window (480 days).
-  function goToDays(raw: string | number) {
-    const n = Math.floor(Number(raw));
-    if (!Number.isFinite(n) || n < 1) return;
-    goto(`?days=${Math.min(n, 480)}&cols=${data.cols}&sort=${data.sort}&dir=${data.dir}${searchParam}`);
-  }
 
   // Toggle the active field; domains start A–Z and metrics start descending.
   function sortHref(field: 'clicks' | 'impressions' | 'site') {
@@ -127,15 +129,14 @@
     return `?days=${data.days}&cols=${data.cols}&sort=${field}&dir=${dir}${searchParam}`;
   }
 
-  const nf = new Intl.NumberFormat('en-US');
-  function fmtNum(n: number) { return nf.format(Math.round(n)); }
+  // Numbers follow the interface language: 1 908 852 / 1,908,852.
+  function num(n: number) { return fmtNum(Math.round(n)); }
   function fmtK(n: number) {
     const r = Math.round(n);
-    if (r >= 1000) return `${(r / 1000).toFixed(1).replace(/\.0$/, '')}k`;
-    return String(r);
+    return r >= 1000 ? fmtCompact(r) : String(r);
   }
-  function fmtCtr(c: number) { return (c * 100).toFixed(1) + '%'; }
-  function fmtPos(p: number) { return p.toFixed(1); }
+  function fmtCtr(c: number) { return fmtPct(c); }
+  function fmtPos(p: number) { return fmtDec(p, 1); }
 
   // Rounded percent change vs the previous period; null when there is no base.
   function pctDelta(cur: number, prev: number): number | null {
@@ -204,7 +205,7 @@
 </script>
 
 
-<svelte:head><title>Dashboard — gsc-hub</title></svelte:head>
+<svelte:head><title>{t('Дашборд')} · gsc-hub</title></svelte:head>
 
 {#snippet deltaChip(d: number | null, invert = false)}
   {#if data.comparable && d !== null && d !== 0}
@@ -228,7 +229,7 @@
   {@const falling = data.comparable && ((dC ?? 0) < 0 || (dI ?? 0) < 0)}
   {@const worst = Math.max(-(dC ?? 0), -(dI ?? 0), 0)}
   {@const isFav = favs.has(keyOf(e))}
-  {@const isHidden = hidden.has(keyOf(e))}
+  {@const isHidden = e.group === 'hidden'}
   {@const market = marketOf(e.siteUrl)}
   {@const domain = siteDomain(e.siteUrl)}
   <article
@@ -256,15 +257,15 @@
         </div>
         <div class="flex min-w-0 items-center gap-1.5 text-[11px] text-ink-3">
           {#if market}
-            <span class="badge badge-muted px-1 py-0 font-mono text-[10px] font-semibold" title="Market (from ccTLD)">{market}</span>
+            <span class="badge badge-muted px-1 py-0 font-mono text-[10px] font-semibold" title={t('Рынок (по ccTLD)')}>{market}</span>
           {:else}
-            <span class="badge badge-warn px-1 py-0 text-[10px]" title="Unknown market — generic TLD">no market</span>
+            <span class="badge badge-warn px-1 py-0 text-[10px]" title={t('Рынок неизвестен: общий домен верхнего уровня')}>{t('нет рынка')}</span>
           {/if}
           <span class="pii truncate">{e.accountLabel ?? e.accountEmail}</span>
         </div>
       </div>
       <div class="flex shrink-0 flex-col items-end gap-0.5">
-        <span class="pii font-mono text-[14px] font-semibold tabular-nums text-ink">{fmtNum(e.currentTotals.clicks)}</span>
+        <span class="pii font-mono text-[14px] font-semibold tabular-nums text-ink">{num(e.currentTotals.clicks)}</span>
         {@render deltaChip(dC)}
       </div>
     </header>
@@ -272,6 +273,8 @@
     <!-- Chart: clicks line over a faint area, previous period dashed, impressions thin gray -->
     {#if e.error}
       <div class="pii mx-3 mt-2 rounded-sm bg-dn-t px-2 py-1.5 text-[11px] text-dn">{e.error}</div>
+    {:else if e.pending}
+      <div class="loading mx-3 mt-2 h-16 text-[11px] text-ink-3">{t('Загрузка…')}</div>
     {:else}
       <svg viewBox="0 0 {CHART_W} {CHART_H}" class="mt-1.5 h-16 w-full px-3" preserveAspectRatio="none" aria-hidden="true">
         <defs>
@@ -306,26 +309,26 @@
       role="presentation"
     >
       <div class="flex min-w-0 flex-wrap items-end gap-x-3 gap-y-1">
-        {@render metricCell('Impr', fmtK(e.currentTotals.impressions), dI)}
+        {@render metricCell(t('Показы'), fmtK(e.currentTotals.impressions), dI)}
         {#if showCtr}
           {@render metricCell('CTR', fmtCtr(e.currentTotals.ctr), pctDelta(e.currentTotals.ctr, e.previousTotals.ctr))}
         {/if}
         {#if showPos}
-          {@render metricCell('Pos', fmtPos(e.currentTotals.position), pctDelta(e.currentTotals.position, e.previousTotals.position), true)}
+          {@render metricCell(t('Поз.'), fmtPos(e.currentTotals.position), pctDelta(e.currentTotals.position, e.previousTotals.position), true)}
         {/if}
       </div>
       <div class="-mr-1.5 flex shrink-0 items-center">
-        <a class="btn btn-ghost btn-sm btn-icon text-ink-3" href={siteHref(e.siteUrl)} target="_blank" rel="noopener noreferrer" onclick={(ev) => ev.stopPropagation()} title="Open site">
+        <a class="btn btn-ghost btn-sm btn-icon text-ink-3" href={siteHref(e.siteUrl)} target="_blank" rel="noopener noreferrer" onclick={(ev) => ev.stopPropagation()} title={t('Открыть сайт')}>
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6.5 3.5h-3v9h9v-3M9 3.5h3.5V7M12.5 3.5 7 9"/></svg>
         </a>
-        <a class="btn btn-ghost btn-sm btn-icon text-ink-3" href={siteSearchHref(e.siteUrl)} target="_blank" rel="noopener noreferrer" title="Search site on Google">
+        <a class="btn btn-ghost btn-sm btn-icon text-ink-3" href={siteSearchHref(e.siteUrl)} target="_blank" rel="noopener noreferrer" title={t('Найти сайт в Google')}>
           <span class="text-[11px] font-extrabold leading-none">G</span>
         </a>
         <a
           class="btn btn-ghost btn-sm btn-icon text-ink-3"
           href="/properties/export?account={encodeURIComponent(e.accountId)}&site={encodeURIComponent(e.siteUrl)}&days={data.days}&dim=query"
           download
-          title="Export CSV (queries, {data.days}d)"
+          title={t('Выгрузить CSV (запросы, {n} дн.)', { n: data.days })}
         >
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 10.5v2h11v-2M5 7l3 3 3-3M8 10V2.5"/></svg>
         </a>
@@ -333,7 +336,7 @@
           type="button"
           class="btn btn-ghost btn-sm btn-icon {isHidden ? 'bg-acc-t text-acc hover:bg-acc-t hover:text-acc' : 'text-ink-3'}"
           onclick={() => toggleHide(e)}
-          title={isHidden ? 'Unhide site' : 'Hide site'}
+          title={isHidden ? t('Вернуть сайт') : t('Скрыть сайт')}
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" /><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" /><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" /><line x1="2" x2="22" y1="2" y2="22" /></svg>
         </button>
@@ -341,7 +344,7 @@
           type="button"
           class="btn btn-ghost btn-sm btn-icon {isFav ? 'text-acc hover:text-acc' : 'text-ink-3'}"
           onclick={() => toggleFav(e)}
-          title={isFav ? 'Remove from favorites' : 'Add to favorites'}
+          title={isFav ? t('Убрать из избранного') : t('В избранное')}
         >
           <svg viewBox="0 0 24 24" fill={isFav ? 'currentColor' : 'none'} stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>
         </button>
@@ -360,102 +363,106 @@
   <header class="app-toolbar">
     <div class="app-toolbar-left">
       <nav class="app-breadcrumbs">
-        <a href="/">Accounts</a>
+        <span>{t('Обзор')}</span>
         <span aria-hidden="true">/</span>
-        <span class="text-ink-2">Dashboard</span>
+        <span class="text-ink-2">{t('Дашборд')}</span>
       </nav>
-      <h1 class="app-pagetitle">Dashboard</h1>
+      <h1 class="app-pagetitle">{t('Дашборд')}</h1>
     </div>
     <div class="app-toolbar-right">
-      <div class="app-segmented">
-        <span class="app-segmented-label">Period</span>
-        {#each [1, 3, 7, 28, 60] as d}
-          <a class:is-active={data.days === d} href="?days={d}&cols={data.cols}&sort={data.sort}&dir={data.dir}{searchParam}">{d}D</a>
-        {/each}
-        <input
-          type="number"
-          min="1"
-          max="480"
-          placeholder="days"
-          value={[1, 3, 7, 28, 60].includes(data.days) ? '' : data.days}
-          class="input app-num ml-0.5 h-6 w-16 px-1.5 text-xs"
-          title="Custom day range, up to 480 (16 months)"
-          onkeydown={(e) => { if (e.key === 'Enter') goToDays(e.currentTarget.value); }}
-          onchange={(e) => goToDays(e.currentTarget.value)}
-        />
-      </div>
+      <PeriodPicker days={data.days} href={(d) => `?days=${d}&cols=${data.cols}&sort=${data.sort}&dir=${data.dir}${searchParam}`} />
       <span class="app-toolbar-divider" aria-hidden="true"></span>
       <div class="app-segmented">
-        <span class="app-segmented-label">Sort</span>
-        <a class:is-active={data.sort === 'site'} href={sortHref('site')}>Domain<SortCaret dir={data.sort === 'site' ? data.dir : ''} /></a>
-        <a class:is-active={data.sort === 'clicks'} href={sortHref('clicks')}>Clicks<SortCaret dir={data.sort === 'clicks' ? data.dir : ''} /></a>
-        <a class:is-active={data.sort === 'impressions'} href={sortHref('impressions')}>Impr<SortCaret dir={data.sort === 'impressions' ? data.dir : ''} /></a>
+        <span class="app-segmented-label">{t('Сортировка')}</span>
+        <a class:is-active={data.sort === 'site'} href={sortHref('site')}>{t('Домен')}<SortCaret dir={data.sort === 'site' ? data.dir : ''} /></a>
+        <a class:is-active={data.sort === 'clicks'} href={sortHref('clicks')}>{t('Клики')}<SortCaret dir={data.sort === 'clicks' ? data.dir : ''} /></a>
+        <a class:is-active={data.sort === 'impressions'} href={sortHref('impressions')}>{t('Показы')}<SortCaret dir={data.sort === 'impressions' ? data.dir : ''} /></a>
       </div>
       <div class="app-segmented">
-        <span class="app-segmented-label">Metrics</span>
+        <span class="app-segmented-label">{t('Метрики')}</span>
         <button type="button" class:is-active={showCtr} onclick={() => toggleMetric('ctr')}>CTR</button>
-        <button type="button" class:is-active={showPos} onclick={() => toggleMetric('pos')}>Pos</button>
+        <button type="button" class:is-active={showPos} onclick={() => toggleMetric('pos')}>{t('Поз.')}</button>
       </div>
       <div class="app-segmented">
-        <span class="app-segmented-label">Cols</span>
+        <span class="app-segmented-label">{t('Колонки')}</span>
         {#each [2, 4, 6] as c}
           <a class:is-active={data.cols === c} href="?days={data.days}&cols={c}&sort={data.sort}&dir={data.dir}{searchParam}">{c}</a>
         {/each}
       </div>
       <span class="app-toolbar-divider" aria-hidden="true"></span>
-      <a href="/properties?days={data.days}" class="btn btn-ghost">Sites</a>
+      <a href="/properties?days={data.days}" class="btn btn-ghost">{t('Сайты')}</a>
       <button
         type="button"
         class="btn btn-sec"
         onclick={async () => {
-          // Refresh promises fresh numbers: drop the 60-minute GSC cache first,
-          // then re-run the load and Today, which lives outside page data.
+          // Refresh starts a fresh pass over the portfolio; the page keeps
+          // showing the current numbers and the pass's progress meanwhile.
           refreshError = null;
           try {
             const r = await fetch('/cache/clear', { method: 'POST' });
-            if (!r.ok) refreshError = `Кеш не сброшен (HTTP ${r.status}) - цифры могут быть до часа старыми.`;
+            if (!r.ok) refreshError = t('Обновление не запущено (HTTP {status}) - цифры могут быть до часа старыми.', { status: r.status });
           } catch {
-            refreshError = 'Кеш не сброшен: сервер не ответил - цифры могут быть до часа старыми.';
+            refreshError = t('Обновление не запущено: сервер не ответил - цифры могут быть до часа старыми.');
           }
           await invalidateAll();
           await loadToday();
         }}
       >
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M13.5 8A5.5 5.5 0 1 1 11.8 4M13.5 2v3h-3"/></svg>
-        Refresh
+        {t('Обновить')}
       </button>
     </div>
   </header>
-  {#if refreshError}<p class="app-errors">{refreshError}</p>{/if}
+  {#if refreshError}<p class="app-errors">{tx(refreshError)}</p>{/if}
 
   <div class="mb-3"><SiteSearch /></div>
+  <SnapshotStatus status={data.status} />
+  {#if hideError}<p class="app-errors">{tx(hideError)}</p>{/if}
 
   <section class="pane mb-3 flex flex-wrap items-center gap-x-5 gap-y-1.5 px-3 py-2">
     <div class="stat-label">
-      Today{#if today}<span class="app-num normal-case tracking-normal"> · {today.date}</span>{/if}
+      {t('Сегодня')}{#if today}<span class="app-num normal-case tracking-normal"> · {today.date}</span>{/if}
     </div>
     {#if today}
       <div class="stat">
-        <span class="stat-label">Clicks</span>
-        <span class="stat-value pii">{fmtNum(today.totals.clicks)}</span>
+        <span class="stat-label">{t('Клики')}</span>
+        <span class="stat-value pii">{num(today.totals.clicks)}</span>
       </div>
       <div class="stat">
-        <span class="stat-label">Impressions</span>
-        <span class="stat-value pii">{fmtNum(today.totals.impressions)}</span>
+        <span class="stat-label">{t('Показы')}</span>
+        <span class="stat-value pii">{num(today.totals.impressions)}</span>
       </div>
-      <div class="text-[11px] text-ink-3">still filling — no comparison</div>
-      {#if today.partial}
-        <span
-          class="badge badge-warn"
-          title={today.errors.slice(0, 10).map((e) => e.reason).join('\n')}
+      <div class="text-[11px] text-ink-3">{t('день ещё идёт — без сравнения')}</div>
+      {#if today.errors.length > 0}
+        <button
+          type="button"
+          class="badge badge-warn cursor-pointer"
+          aria-expanded={todayErrorsOpen}
+          aria-controls="today-errors"
+          onclick={() => (todayErrorsOpen = !todayErrorsOpen)}
         >
-          partial — {today.errors.length} read {today.errors.length === 1 ? 'error' : 'errors'}
-        </span>
+          {t('неполные данные')} — {plural('ошибка чтения', today.errors.length)}
+        </button>
+      {:else if today.partial}
+        <span class="text-[11px] text-ink-3">{t('неполные данные — часть сайтов ещё загружается')}</span>
+      {/if}
+      {#if todayErrorsOpen && today.errors.length > 0}
+        <!-- Name what failed and where to fix it: a token problem is fixed by reconnecting the account. -->
+        <ul id="today-errors" class="w-full border-t border-line-soft pt-1.5 text-[12px] text-ink-2">
+          {#each today.errors.slice(0, 20) as e, i (i)}
+            <li class="flex flex-wrap items-baseline gap-x-2">
+              <span class="pii font-medium text-ink">{e.accountEmail}</span>
+              <span class="pii min-w-0 break-all">{tx(e.reason)}</span>
+              <a class="link text-[11.5px]" href="/settings/accounts">{t('Reconnect в аккаунтах')}</a>
+            </li>
+          {/each}
+          {#if today.errors.length > 20}<li class="text-ink-3">{t('и ещё')} {today.errors.length - 20}</li>{/if}
+        </ul>
       {/if}
     {:else if todayFailed}
-      <div class="text-[11px] text-ink-3">unavailable</div>
+      <div class="text-[11px] text-ink-3">{t('недоступно')}</div>
     {:else}
-      <div class="loading text-[11px]">loading…</div>
+      <div class="loading text-[11px]">{t('Загрузка…')}</div>
     {/if}
   </section>
 
@@ -463,30 +470,33 @@
     <div class="app-errors">
       <div class="app-errors-title">
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="6" cy="6" r="5"/><path d="M6 3.5v3M6 8.5v.01"/></svg>
-        Errors
+        {t('Ошибки')}
       </div>
       <ul class="ml-4 list-disc">
         {#each data.errors as e}
-          <li class="pii"><span class="font-medium">{e.accountEmail}</span>: {e.reason}</li>
+          <li class="pii"><span class="font-medium">{e.accountEmail}</span>: {tx(e.reason)}</li>
         {/each}
       </ul>
     </div>
   {/if}
 
-  {#if searchQuery.trim() && matchingEntries.length === 0}
+  {#if data.status.state === 'cold' && data.totalSites === 0}
+    <!-- Nothing to list until the site lists arrive; the status line says why. -->
+  {:else if searchQuery.trim() && data.total === 0}
     <div class="app-empty" role="status">
-      <div class="app-empty-title">No matching sites</div>
-      <p class="app-empty-sub">Try another domain or clear the search.</p>
+      <div class="app-empty-title">{t('Подходящих сайтов нет')}</div>
+      <p class="app-empty-sub">{t('Попробуйте другой домен или сбросьте поиск.')}</p>
     </div>
-  {:else if visibleEntries.length === 0}
+  {:else if visibleCount === 0}
     <div class="app-empty">
-      <div class="app-empty-title">No visible sites</div>
-      <p class="app-empty-sub">Connect a Google account on <a class="text-acc hover:underline" href="/">Accounts</a>{hidden.size > 0 ? ' or unhide a site below' : ''}.</p>
+      <div class="app-empty-title">{t('Видимых сайтов нет')}</div>
+      <p class="app-empty-sub">{t('Подключите Google-аккаунт в')} <a class="link" href="/settings/accounts">{t('Настройках')}</a>{data.counts.hidden > 0 ? t(' или верните сайт ниже') : ''}.</p>
     </div>
-  {:else}
+  {/if}
+  {#if visibleCount > 0}
     {#if favEntries.length > 0}
       <section class="mb-5">
-        {@render sectionHead('Favorites', favEntries.length)}
+        {@render sectionHead(t('Избранное'), data.counts.fav)}
         <div class="grid {colsClass(data.cols)} gap-3">
           {#each favEntries as e, i}
             {@render siteCard(e, `f${i}`)}
@@ -495,19 +505,21 @@
       </section>
     {/if}
 
+    {#if restEntries.length > 0}
     <section>
-      {@render sectionHead('All sites', restEntries.length)}
+      {@render sectionHead(t('Все сайты'), data.counts.rest)}
       <div class="grid {colsClass(data.cols)} gap-3">
         {#each restEntries as e, i}
           {@render siteCard(e, `r${i}`)}
         {/each}
       </div>
     </section>
+    {/if}
   {/if}
 
   {#if hiddenEntries.length > 0}
     <section class="mt-5">
-      <div class="opacity-60">{@render sectionHead('Hidden', hiddenEntries.length)}</div>
+      <div class="opacity-60">{@render sectionHead(t('Скрытые'), data.counts.hidden)}</div>
       <div class="grid {colsClass(data.cols)} gap-3 opacity-60">
         {#each hiddenEntries as e, i}
           {@render siteCard(e, `h${i}`, true)}
@@ -515,4 +527,6 @@
       </div>
     </section>
   {/if}
+
+  <Pager page={data.page} pageCount={data.pageCount} total={data.total} />
 </main>

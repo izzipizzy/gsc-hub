@@ -22,11 +22,11 @@ export interface SiteEvent {
   orderHref?: string; // purchase events are derived from order history, read-only
 }
 
-/** Display config per type — chart line color + human label. */
+/** Display config per type: chart colour as a CSS token (app.css) + human label. */
 export const SITE_EVENT_TYPES: Record<SiteEventType, { color: string; label: string }> = {
-  merge: { color: '#131722', label: 'Merge' },
-  custom: { color: '#434a57', label: 'Custom event' },
-  link_purchase: { color: '#7c3aed', label: 'Покупка ссылок' }
+  merge: { color: 'rgb(var(--event-merge))', label: 'Склейка' },
+  custom: { color: 'rgb(var(--event-custom))', label: 'Своё событие' },
+  link_purchase: { color: 'rgb(var(--event-purchase))', label: 'Покупка ссылок' }
 };
 
 /** Bare lowercase host of a GSC siteUrl ("sc-domain:Example.com", "https://www.x/").

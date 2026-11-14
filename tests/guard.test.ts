@@ -10,6 +10,9 @@ describe('guard paths', () => {
   });
   it('manager is allowed only home, logout, auth', () => {
     expect(isManagerAllowed('/')).toBe(true);
+    expect(isManagerAllowed('/settings/accounts')).toBe(true);
+    expect(isManagerAllowed('/profile')).toBe(true);
+    expect(isManagerAllowed('/settings/indexers')).toBe(false);
     expect(isManagerAllowed('/logout')).toBe(true);
     expect(isManagerAllowed('/auth/signin/google')).toBe(true);
     expect(isManagerAllowed('/dashboard')).toBe(false);

@@ -194,6 +194,23 @@ export async function getBing(): Promise<BingData> {
   return bingInflight;
 }
 
+/**
+ * getBing for pages: waits at most `ms` on a cold cache, then renders without
+ * Bing columns while the refresh finishes in the background. A cold Bing API
+ * answer took 20+ seconds, and the page has nothing else left to wait for.
+ */
+export async function getBingWithin(ms: number): Promise<BingData> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<BingData>((resolve) => {
+    timer = setTimeout(() => resolve(bingCache?.data ?? EMPTY_BING), ms);
+  });
+  try {
+    return await Promise.race([getBing(), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // Сколько запросов на сайт отдаём наружу. Лимит остаётся: снять его значит
 // материализовать всю серию Bing по всем сайтам в памяти процесса.
 export const BING_PER_SITE_LIMIT = 200;

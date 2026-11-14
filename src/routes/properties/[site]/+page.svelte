@@ -1,4 +1,9 @@
 <script lang="ts">
+  import PeriodPicker from '$lib/components/PeriodPicker.svelte';
+  import { t, tx, plural, fmtNum, fmtPct, fmtDec, fmtDay, getLocale } from '$lib/i18n/index.svelte';
+  import type { MessageKey } from '$lib/i18n/messages';
+  import { isoDate, dateTime, clock } from '$lib/utils/time';
+  import LiveStamp from '$lib/components/LiveStamp.svelte';
   import type { PageData } from './$types';
   import { invalidateAll } from '$app/navigation';
   import { untrack } from 'svelte';
@@ -20,14 +25,14 @@
   const daysHref = (d: number) => `${base}?${accQ}&days=${d}`;
 
   type Tab = 'overview' | 'keywords' | 'cannibal' | 'ctr' | 'branded' | 'decay' | 'health';
-  const TABS: { id: Tab; label: string }[] = [
-    { id: 'overview', label: 'Overview' },
+  const TABS: { id: Tab; label: MessageKey }[] = [
+    { id: 'overview', label: 'Обзор' },
     { id: 'keywords', label: 'Striking Distance' },
-    { id: 'cannibal', label: 'Cannibalization' },
-    { id: 'ctr', label: 'CTR Benchmark' },
-    { id: 'branded', label: 'Branded' },
-    { id: 'decay', label: 'Decay' },
-    { id: 'health', label: 'Health' }
+    { id: 'cannibal', label: 'Каннибализация' },
+    { id: 'ctr', label: 'CTR-бенчмарк' },
+    { id: 'branded', label: 'Брендовые' },
+    { id: 'decay', label: 'Падение' },
+    { id: 'health', label: 'Здоровье' }
   ];
   let tab = $state<Tab>(untrack(() => data.viewSettings.tab as Tab));
   let strikingSort = $state<StrikingSortKey>(untrack(() => data.viewSettings.sort));
@@ -41,7 +46,7 @@
         const res = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         viewSaveError = '';
-      } catch (e) { viewSaveError = `Не удалось сохранить настройки: ${(e as Error).message}`; }
+      } catch (e) { viewSaveError = t('Не удалось сохранить настройки: {error}', { error: tx((e as Error).message) }); }
     });
   }
   function sortBy(key: StrikingSortKey) {
@@ -79,7 +84,7 @@
 
   const boughtFor = (page: string, query: string) => purchases[pairKey(page, query)];
   const dayfmt = (ms: number) =>
-    new Date(ms).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+    isoDate(ms);
 
   function togglePair(page: string, query: string) {
     const k = pairKey(page, query);
@@ -178,16 +183,18 @@
   let customOpen = $state(false);
 
   // ── formatting helpers ──
-  const nf = new Intl.NumberFormat('en-US');
-  const fmt = (n: number) => nf.format(Math.round(n));
-  const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
-  const pos = (x: number) => x.toFixed(1);
+  // Numbers follow the interface language.
+  const fmt = (n: number) => fmtNum(Math.round(n));
+  const pct = (x: number) => fmtPct(x);
+  const pos = (x: number) => fmtDec(x, 1);
   const shortUrl = (u: string) => u.replace(/^https?:\/\/[^/]+/, '') || '/';
   // Live, not cached: stamp the moment this page's data arrived.
   const fetchedAt = $derived.by(() => {
     void data;
-    return new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+    return Date.now();
   });
+  // Indexing actions (send to indexers, check URLs) live in one menu, apart from Buy.
+  let indexMenuOpen = $state(false);
   const signedPct = (x: number) => `${x > 0 ? '+' : x < 0 ? '−' : ''}${Math.abs(x * 100).toFixed(1)}%`;
 
   // Refresh drops the GSC cache, then re-runs the page load and keeps the URL state.
@@ -327,9 +334,9 @@
     });
     const data = await res.json();
     serpNote =
-      data.status === 'queued' ? 'проверка поставлена в очередь'
-      : data.status === 'already_active' ? 'проверка уже идёт'
-      : data.status === 'unavailable' ? 'серпмонитор недоступен'
+      data.status === 'queued' ? t('проверка поставлена в очередь')
+      : data.status === 'already_active' ? t('проверка уже идёт')
+      : data.status === 'unavailable' ? t('серпмонитор недоступен')
       : String(data.status ?? '');
   }
 
@@ -479,17 +486,19 @@
   };
 </script>
 
+<svelte:window onclick={(e) => { if (indexMenuOpen && !(e.target as Element | null)?.closest('[data-index-menu]')) indexMenuOpen = false; }} />
+
 <svelte:head><title>{siteUrl} · gsc-hub</title></svelte:head>
 
 {#snippet serpCell(query: string)}
   <td class="num app-num {serpPositions.get(query) ? 'text-ink' : 'text-ink-4'}"
       title={serpState === 'error'
-        ? 'SERP-монитор не ответил — позиция неизвестна'
+        ? t('SERP-монитор не ответил — позиция неизвестна')
         : serpState === 'ok' && !serpAsked.has(query)
-          ? 'не спрашивали: запросов на экране больше, чем помещается в один запрос'
+          ? t('не спрашивали: запросов на экране больше, чем помещается в один запрос')
           : serpCheckedAt
-            ? `измерено ${serpCheckedAt}`
-            : 'сайт не на мониторинге'}>
+            ? t('измерено {date}', { date: serpCheckedAt })
+            : t('сайт не на мониторинге')}>
     {serpState === 'error'
       ? '?'
       : serpState === 'ok' && !serpAsked.has(query)
@@ -500,18 +509,18 @@
 
 {#snippet serpPane()}
       <section class="pane">
-  <div class="pane-head">SERP monitor
+  <div class="pane-head">{t('SERP-монитор')}
     {#if serpState === 'ok' && serpBindings.length > 0}
-      <button class="btn btn-sec btn-sm normal-case tracking-normal" onclick={askCheck}>Проверить</button>
+      <button class="btn btn-sec btn-sm normal-case tracking-normal" onclick={askCheck}>{t('Проверить')}</button>
     {/if}
   </div>
   <div class="pane-body text-[12.5px]">
     {#if serpState === 'error'}
-      <p class="text-dn">Не ответил{serpReason ? ` (${serpReason})` : ''} — состояние мониторинга неизвестно</p>
+      <p class="text-dn">{t('Не ответил')}{serpReason ? ` (${serpReason})` : ''} {t('— состояние мониторинга неизвестно')}</p>
     {:else if serpState === 'off'}
-      <p class="text-ink-3">Интеграция не настроена</p>
+      <p class="text-ink-3">{t('Интеграция не настроена')}</p>
     {:else if serpBindings.length === 0}
-      <p class="text-ink-3">Сайт не на мониторинге</p>
+      <p class="text-ink-3">{t('Сайт не на мониторинге')}</p>
     {:else}
       <div class="mb-2 flex flex-wrap gap-1">
         {#each serpBindings as b (b.geo)}
@@ -523,7 +532,7 @@
         {/each}
       </div>
       <p class="text-xs text-ink-3">
-        {serpCheckedAt ? `последняя проверка ${serpCheckedAt.slice(0, 10)}` : 'проверок ещё не было'}{#if serpNote} · {serpNote}{/if}
+        {serpCheckedAt ? t('последняя проверка {date}', { date: serpCheckedAt.slice(0, 10) }) : t('проверок ещё не было')}{#if serpNote} · {serpNote}{/if}
       </p>
     {/if}
   </div>
@@ -538,47 +547,70 @@
         <div class="symbol border-b border-line px-4 py-3">
           <div class="w-full min-w-0 sm:w-auto">
             <div class="app-breadcrumbs mb-0.5">
-              <a href={`/dashboard?days=${data.days}`}>Dashboard</a><span aria-hidden="true">/</span><a href="/properties">Sites</a>
+              <span>{t('Обзор')}</span><span aria-hidden="true">/</span><a href="/properties">{t('Сайты')}</a>
             </div>
             <h1 class="symbol-name pii truncate">{siteHost}</h1>
-            <div class="symbol-sub pii">{data.account.label ?? data.account.email}{siteUrl.startsWith('sc-domain:') ? ' · domain property' : ''} · <span class="font-mono" title="Данные получены из GSC в это время">live {fetchedAt}</span></div>
+            <div class="symbol-sub pii">{data.account.label ?? data.account.email}{siteUrl.startsWith('sc-domain:') ? ` · ${t('доменный ресурс')}` : ''}</div>
           </div>
           {#if data.daily}
             <div class="grid grid-cols-2 gap-y-2 sm:flex sm:gap-x-5">
-            <div class="stat"><span class="stat-label">Clicks · {data.days}d</span><span class="stat-value pii">{fmt(data.daily.clicks)}</span></div>
-            <div class="stat"><span class="stat-label">Impressions</span><span class="stat-value pii">{fmt(data.daily.impressions)}</span></div>
+            <div class="stat"><span class="stat-label">{t('Клики · {n} дн.', { n: data.days })}</span><span class="stat-value pii">{fmt(data.daily.clicks)}</span></div>
+            <div class="stat"><span class="stat-label">{t('Показы')}</span><span class="stat-value pii">{fmt(data.daily.impressions)}</span></div>
             <div class="stat"><span class="stat-label">CTR</span><span class="stat-value pii">{pct(data.daily.ctr)}</span></div>
-            <div class="stat"><span class="stat-label">Avg position</span><span class="stat-value pii">{pos(data.daily.position)}</span></div>
+            <div class="stat"><span class="stat-label">{t('Средняя позиция')}</span><span class="stat-value pii">{pos(data.daily.position)}</span></div>
             </div>
           {/if}
-          <div class="ml-auto flex items-center gap-2">
-            <a class="btn btn-ghost" href="/index-check?account={encodeURIComponent(data.accId)}&site={encodeURIComponent(data.siteUrl)}">Проверка индексации</a>
-            <button class="btn btn-sec" onclick={() => indexingOpen = true}>Индексация</button>
-            <button class="btn btn-pri" onclick={() => { buyRows = null; customOpen = true; }}>Купить на свой URL</button>
-            <a class="btn btn-ghost" href={siteUrl.startsWith('sc-domain:') ? `https://${siteHost}/` : siteUrl} target="_blank" rel="noopener noreferrer" title="Открыть сайт">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6.5 3.5h-3v9h9v-3M9 3.5h3.5V7M12.5 3.5 7 9"/></svg>Open
+          <!-- ghost → sec → pri; indexing is one menu, apart from the purchase -->
+          <div class="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
+            <a class="btn btn-ghost" href={siteUrl.startsWith('sc-domain:') ? `https://${siteHost}/` : siteUrl} target="_blank" rel="noopener noreferrer" title={t('Открыть сайт')}>
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6.5 3.5h-3v9h9v-3M9 3.5h3.5V7M12.5 3.5 7 9"/></svg>{t('Открыть')}
             </a>
-            <button class="btn btn-sec" onclick={refresh} disabled={refreshing}>
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true" class:animate-spin={refreshing}><path d="M13.5 8A5.5 5.5 0 1 1 11.8 4M13.5 2v3h-3"/></svg>
-              {refreshing ? 'Refreshing…' : 'Refresh'}
-            </button>
+            <div class="relative" data-index-menu>
+              <button
+                type="button"
+                class="btn btn-sec"
+                aria-haspopup="menu"
+                aria-expanded={indexMenuOpen}
+                onclick={() => (indexMenuOpen = !indexMenuOpen)}
+                onkeydown={(e) => { if (e.key === 'Escape') indexMenuOpen = false; }}
+              >
+                {t('Индексация')}
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg>
+              </button>
+              {#if indexMenuOpen}
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <div
+                  class="absolute right-0 top-8 z-20 flex w-60 flex-col rounded-sm border border-line bg-pane p-1 shadow-pop sm:left-auto"
+                  role="menu"
+                  tabindex="-1"
+                  onkeydown={(e) => { if (e.key === 'Escape') indexMenuOpen = false; }}
+                >
+                  <button type="button" role="menuitem" class="btn btn-ghost w-full justify-start font-normal text-ink" onclick={() => { indexMenuOpen = false; indexingOpen = true; }}>{t('Отправить в индексаторы…')}</button>
+                  <a role="menuitem" class="btn btn-ghost w-full justify-start font-normal text-ink" href="/index-check?account={encodeURIComponent(data.accId)}&site={encodeURIComponent(data.siteUrl)}">{t('Проверить индексацию URL')}</a>
+                  <p class="px-2 pb-1 pt-1.5 text-[11px] text-ink-3">{t('Запросы оплачиваются по тарифу сервиса')}</p>
+                </div>
+              {/if}
+            </div>
+            <button class="btn btn-pri grow sm:grow-0" onclick={() => { buyRows = null; customOpen = true; }}>{t('Купить на свой URL')}</button>
           </div>
         </div>
 
         <div class="flex flex-wrap items-center gap-2 border-b border-line px-3 py-1.5">
-          <div class="app-segmented" aria-label="Period">
-            {#each [28, 60, 90, 180, 365, 480] as d}
-              <a class:is-active={data.days === d} href={daysHref(d)}>{d === 480 ? '16M' : d === 365 ? '1Y' : `${d}D`}</a>
-            {/each}
-          </div>
+          <PeriodPicker days={data.days} label={false} href={daysHref} />
           {#if data.algoSource === 'builtin'}
-            <span class="text-[11px] text-ink-3">Update feed unreachable — built-in update list</span>
+            <span class="text-[11px] text-ink-3">{t('Лента апдейтов недоступна — встроенный список')}</span>
           {/if}
+          <span class="ml-auto"></span>
+          <LiveStamp at={fetchedAt} updating={refreshing} note={t('данные получены из Search Console')} />
+          <button class="btn btn-sec btn-sm" onclick={refresh} disabled={refreshing}>
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true" class:animate-spin={refreshing}><path d="M13.5 8A5.5 5.5 0 1 1 11.8 4M13.5 2v3h-3"/></svg>
+            {refreshing ? t('Обновляется…') : t('Обновить')}
+          </button>
         </div>
 
         <div class="px-3 pb-2 pt-2">
           {#if data.dailyError}
-            <p class="text-err py-10 text-center">Failed to load: {data.dailyError}</p>
+            <p class="text-err py-10 text-center">{t('Не удалось загрузить: {error}', { error: tx(data.dailyError) })}</p>
           {:else if data.daily}
             <TrendChart points={data.daily.series} updates={data.algoUpdates} events={data.siteEvents} height={340} />
           {/if}
@@ -587,10 +619,10 @@
 
       <section class="pane min-w-0">
         <div class="tabs px-2" role="tablist">
-          {#each TABS as t (t.id)}
-            <button role="tab" aria-selected={tab === t.id} class:is-active={tab === t.id} onclick={() => openTab(t.id)}>
-              {t.label}
-              {#if tabCount(t.id) != null}<span class="count">{tabCount(t.id)}</span>{/if}
+          {#each TABS as it (it.id)}
+            <button role="tab" aria-selected={tab === it.id} class:is-active={tab === it.id} onclick={() => openTab(it.id)}>
+              {t(it.label)}
+              {#if tabCount(it.id) != null}<span class="count">{tabCount(it.id)}</span>{/if}
             </button>
           {/each}
         </div>
@@ -599,48 +631,48 @@
           {#if tab === 'overview'}
             <div class="grid gap-px bg-line sm:grid-cols-2">
               <div class="bg-pane p-3">
-                <div class="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-3">Top striking queries</div>
-                {#if analyticsLoading}<p class="loading">Loading…</p>
+                <div class="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-3">{t('Главные striking-запросы')}</div>
+                {#if analyticsLoading}<p class="loading">{t('Загрузка…')}</p>
                 {:else if strikingRows.length}
                   <table class="app-table">
-                    <thead><tr><th>Query</th><th class="num">Pos</th><th class="num">Impr</th></tr></thead>
+                    <thead><tr><th>{t('Запрос')}</th><th class="num">{t('Поз.')}</th><th class="num">{t('Показы')}</th></tr></thead>
                     <tbody>
                       {#each strikingRows.slice(0, 6) as r (r.query + r.page)}
                         <tr><td><span class="pii">{r.query}</span></td><td class="num app-num">{pos(r.position)}</td><td class="num app-num pii">{fmt(r.impressions)}</td></tr>
                       {/each}
                     </tbody>
                   </table>
-                  <button class="btn btn-ghost btn-sm mt-1.5 -ml-2" onclick={() => openTab('keywords')}>All {strikingRows.length} <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></button>
-                {:else}<p class="loading">No striking-distance keywords.</p>{/if}
+                  <button class="btn btn-ghost btn-sm mt-1.5 -ml-2" onclick={() => openTab('keywords')}>{t('Все {n}', { n: strikingRows.length })} <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></button>
+                {:else}<p class="loading">{t('Запросов в striking distance нет.')}</p>{/if}
               </div>
               <div class="flex flex-col bg-pane p-3">
-                <div class="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-3">CTR below benchmark</div>
-                {#if analyticsLoading}<p class="loading">Loading…</p>
+                <div class="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-3">{t('CTR ниже бенчмарка')}</div>
+                {#if analyticsLoading}<p class="loading">{t('Загрузка…')}</p>
                 {:else if analytics?.ctr?.opportunities?.length}
                   <table class="app-table">
-                    <thead><tr><th>Query</th><th class="num">Pos</th><th class="num">CTR</th><th class="num">Bench</th></tr></thead>
+                    <thead><tr><th>{t('Запрос')}</th><th class="num">{t('Поз.')}</th><th class="num">CTR</th><th class="num">{t('Бенчмарк')}</th></tr></thead>
                     <tbody>
                       {#each analytics.ctr.opportunities.slice(0, 6) as o (o.query + o.page)}
                         <tr><td><span class="pii">{o.query}</span></td><td class="num app-num">{pos(o.position)}</td><td class="num app-num text-dn">{pct(o.ctr)}</td><td class="num app-num text-ink-3">{pct(o.benchmark)}</td></tr>
                       {/each}
                     </tbody>
                   </table>
-                  <button class="btn btn-ghost btn-sm mt-1.5 -ml-2 self-start" onclick={() => openTab('ctr')}>All {analytics.ctr.opportunities.length} <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></button>
-                {:else if analytics}<p class="loading">Every query is at or above the benchmark CTR.</p>{/if}
+                  <button class="btn btn-ghost btn-sm mt-1.5 -ml-2 self-start" onclick={() => openTab('ctr')}>{t('Все {n}', { n: analytics.ctr.opportunities.length })} <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></button>
+                {:else if analytics}<p class="loading">{t('У всех запросов CTR не ниже бенчмарка.')}</p>{/if}
 
                 {#if analytics?.branded}
                   {@const b = analytics.branded}
                   <div class="mt-auto border-t border-line-soft pt-2.5">
-                    <div class="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-3">Branded split</div>
+                    <div class="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-3">{t('Брендовые и небрендовые')}</div>
                     {#if b.branded.clicks === 0}
-                      <p class="text-[12.5px] text-ink-2">No branded clicks — all <b class="app-num pii">{fmt(b.nonBranded.clicks)}</b> are non-branded <span class="text-ink-3">· terms: {(analytics.brandedTerms ?? []).join(', ') || '—'}</span></p>
+                      <p class="text-[12.5px] text-ink-2">{t('Брендовых кликов нет — все')} <b class="app-num pii">{fmt(b.nonBranded.clicks)}</b> {t('небрендовые')} <span class="text-ink-3">· {t('термины')}: {(analytics.brandedTerms ?? []).join(', ') || '—'}</span></p>
                     {:else}
                       <div class="mb-1.5 flex h-2 overflow-hidden rounded-xs bg-bg" aria-hidden="true">
                         <div class="bg-acc" style:width="{Math.round(b.brandedPct * 100)}%"></div>
                       </div>
                       <div class="flex justify-between text-[12.5px]">
-                        <span><i class="mr-1.5 inline-block h-2 w-2 rounded-xs bg-acc"></i>Branded <b class="app-num pii">{fmt(b.branded.clicks)}</b> <span class="text-ink-3">· {pct(b.brandedPct)}</span></span>
-                        <span><i class="mr-1.5 inline-block h-2 w-2 rounded-xs bg-bg ring-1 ring-line"></i>Non-branded <b class="app-num pii">{fmt(b.nonBranded.clicks)}</b></span>
+                        <span><i class="mr-1.5 inline-block h-2 w-2 rounded-xs bg-acc"></i>{t('Брендовые')} <b class="app-num pii">{fmt(b.branded.clicks)}</b> <span class="text-ink-3">· {pct(b.brandedPct)}</span></span>
+                        <span><i class="mr-1.5 inline-block h-2 w-2 rounded-xs bg-bg ring-1 ring-line"></i>{t('Небрендовые')} <b class="app-num pii">{fmt(b.nonBranded.clicks)}</b></span>
                       </div>
                     {/if}
                   </div>
@@ -651,12 +683,12 @@
           {:else if tab === 'health'}
             <div class="flex items-center gap-2 border-b border-line px-3 py-2">
               <button onclick={runHealth} disabled={healthLoading} class="btn btn-pri btn-sm">
-                {healthLoading ? 'Checking…' : 'Check now'}
+                {healthLoading ? t('Проверяем…') : t('Проверить сейчас')}
               </button>
               <span class="text-xs text-ink-3">checked {ageText(health?.checkedAt ?? null)}</span>
             </div>
             <div class="p-3">
-              {#if healthErr}<p class="text-err">{healthErr}</p>{/if}
+              {#if healthErr}<p class="text-err">{tx(healthErr)}</p>{/if}
               {#if health?.data}
                 {@const d = health.data}
                 <div class="grid gap-px overflow-hidden rounded-sm border border-line bg-line sm:grid-cols-3">
@@ -665,13 +697,13 @@
                     {#if 'error' in d.ssl}
                       <div class="text-err mt-1">{d.ssl.error}</div>
                     {:else}
-                      <div class="mt-1 text-[13px]"><span class="badge {d.ssl.daysLeft < 14 ? 'badge-bad' : 'badge-ok'}">{d.ssl.grade}</span> <span class="app-num">{d.ssl.daysLeft}</span> days left <span class="text-ink-3">· {d.ssl.issuer}</span></div>
+                      <div class="mt-1 text-[13px]"><span class="badge {d.ssl.daysLeft < 14 ? 'badge-bad' : 'badge-ok'}">{d.ssl.grade}</span> <span class="app-num">{plural('день', d.ssl.daysLeft)}</span> {t('осталось')} <span class="text-ink-3">· {d.ssl.issuer}</span></div>
                     {/if}
                   </div>
                   <div class="bg-pane p-3">
-                    <div class="stat-label">Safe Browsing</div>
+                    <div class="stat-label">{t('Safe Browsing')}</div>
                     {#if 'skipped' in d.safeBrowsing}
-                      <div class="mt-1 text-[13px] text-ink-3">not configured (no key)</div>
+                      <div class="mt-1 text-[13px] text-ink-3">{t('не настроено (нет ключа)')}</div>
                     {:else if 'error' in d.safeBrowsing}
                       <div class="text-err mt-1">{d.safeBrowsing.error}</div>
                     {:else}
@@ -679,14 +711,14 @@
                     {/if}
                   </div>
                   <div class="bg-pane p-3">
-                    <div class="stat-label">Core Web Vitals · mobile</div>
+                    <div class="stat-label">{t('Core Web Vitals · мобильные')}</div>
                     {#if 'skipped' in d.cwv}
-                      <div class="mt-1 text-[13px] text-ink-3">not configured (no key)</div>
+                      <div class="mt-1 text-[13px] text-ink-3">{t('не настроено (нет ключа)')}</div>
                     {:else if 'error' in d.cwv}
                       <div class="text-err mt-1">{d.cwv.error}</div>
                     {:else}
                       <div class="mt-1 flex flex-wrap gap-x-3 text-[12.5px]">
-                        <span>Perf <b class="app-num">{Math.round(d.cwv.score * 100)}</b></span>
+                        <span>{t('Скорость')} <b class="app-num">{Math.round(d.cwv.score * 100)}</b></span>
                         <span>LCP <b class="app-num">{(d.cwv.lcpMs / 1000).toFixed(1)}s</b></span>
                         <span>CLS <b class="app-num">{d.cwv.cls.toFixed(2)}</b></span>
                         <span>TBT <b class="app-num">{Math.round(d.cwv.tbtMs)}ms</b></span>
@@ -695,21 +727,21 @@
                   </div>
                 </div>
               {:else if !healthLoading}
-                <p class="loading">No check yet — press “Check now”.</p>
+                <p class="loading">{t('Проверок ещё не было — нажмите «Проверить сейчас».')}</p>
               {/if}
             </div>
 
           {:else if tab === 'decay'}
-            {#if decayLoading}<p class="loading p-3">Loading…</p>{/if}
-            {#if decayErr}<p class="text-err p-3">{decayErr}</p>{/if}
+            {#if decayLoading}<p class="loading p-3">{t('Загрузка…')}</p>{/if}
+            {#if decayErr}<p class="text-err p-3">{tx(decayErr)}</p>{/if}
             {#if decay}
               {#if decay.decay.length === 0}
-                <p class="loading p-3">No decaying pages found — no page lost ≥20% vs the previous period (from ≥20 prior clicks, or ≥50 prior impressions).</p>
+                <p class="loading p-3">{t('Падающих страниц нет: ни одна не потеряла ≥20% к прошлому периоду (от ≥20 кликов или ≥50 показов раньше).')}</p>
               {:else}
                 <div class="overflow-x-auto">
                   <table class="app-table">
                     <thead>
-                      <tr><th>Page</th><th class="num">Clicks prior → recent</th><th class="num">Δ clicks</th><th class="num">Impr prior → recent</th><th class="num">Δ impr</th></tr>
+                      <tr><th>{t('Страница')}</th><th class="num">{t('Клики было → стало')}</th><th class="num">{t('Δ кликов')}</th><th class="num">{t('Показы было → стало')}</th><th class="num">{t('Δ показов')}</th></tr>
                     </thead>
                     <tbody>
                       {#each decay.decay as d (d.page)}
@@ -729,48 +761,48 @@
 
           {:else}
             <!-- analytics-backed tabs -->
-            {#if analyticsLoading}<p class="loading p-3">Loading…</p>{/if}
-            {#if analyticsErr}<p class="text-err p-3">{analyticsErr}</p>{/if}
+            {#if analyticsLoading}<p class="loading p-3">{t('Загрузка…')}</p>{/if}
+            {#if analyticsErr}<p class="text-err p-3">{tx(analyticsErr)}</p>{/if}
             {#if analytics}
               {#if tab === 'keywords'}
                 <div class="border-b border-line p-3 space-y-3">
                   <form class="flex flex-wrap items-center gap-2" onsubmit={(e) => { e.preventDefault(); filterUrls(); }}>
-                    <select class="input" bind:value={urlMode} aria-label="Условие фильтра URL"><option value="contains">URL содержит</option><option value="not_contains">URL не содержит</option></select>
-                    <input class="input min-w-0 flex-1" bind:value={urlMask} maxlength="2000" placeholder="Часть URL: /b/ или маска */b/*" aria-label="Фильтр URL" />
-                    <button class="btn btn-sec" type="submit" disabled={analyticsLoading}>Применить</button>
-                    <button class="btn btn-ghost" type="button" onclick={() => { urlMask = ''; filterUrls(); }} disabled={analyticsLoading}>Сбросить</button>
-                    <span class="text-xs text-ink-3">Показано {strikingRows.length}</span>
+                    <select class="input" bind:value={urlMode} aria-label={t('Условие фильтра URL')}><option value="contains">{t('URL содержит')}</option><option value="not_contains">{t('URL не содержит')}</option></select>
+                    <input class="input min-w-0 flex-1" bind:value={urlMask} maxlength="2000" placeholder={t('Часть URL: /b/ или маска */b/*')} aria-label={t('Фильтр URL')} />
+                    <button class="btn btn-sec" type="submit" disabled={analyticsLoading}>{t('Применить')}</button>
+                    <button class="btn btn-ghost" type="button" onclick={() => { urlMask = ''; filterUrls(); }} disabled={analyticsLoading}>{t('Сбросить')}</button>
+                    <span class="text-xs text-ink-3">{t('Показано')} {strikingRows.length}</span>
                   </form>
-                  {#if viewSaveError}<p class="text-err text-xs" role="alert">{viewSaveError}</p>{/if}
+                  {#if viewSaveError}<p class="text-err text-xs" role="alert">{tx(viewSaveError)}</p>{/if}
                   <details>
-                    <summary class="cursor-pointer text-xs font-medium">Исключения домена ({exclusions.length})</summary>
-                    <p class="mt-2 text-xs text-ink-3">Сохраняются для {siteHost}, для всех периодов и Google-аккаунтов. URL, подходящие хотя бы под одно правило исключения, скрываются в Striking Distance. * — любой текст, ? — один символ.</p>
+                    <summary class="cursor-pointer text-xs font-medium">{t('Исключения домена (')}{exclusions.length})</summary>
+                    <p class="mt-2 text-xs text-ink-3">{t('Сохраняются для')} {siteHost}{t(', для всех периодов и Google-аккаунтов. URL, подходящие хотя бы под одно правило исключения, скрываются в Striking Distance. * — любой текст, ? — один символ.')}</p>
                     <form class="mt-2 flex gap-2" onsubmit={(e) => { e.preventDefault(); updateExclusions('POST', { pattern: exclusionInput, kind: exclusionKind }); }}>
-                      <select class="input" bind:value={exclusionKind} aria-label="Условие исключения"><option value="mask">URL содержит</option><option value="not_contains">URL не содержит</option></select>
-                      <input class="input min-w-0 flex-1" bind:value={exclusionInput} placeholder="Не показывать URL, содержащие /b/" maxlength="2000" aria-label="Исключаемая часть URL" required />
-                      <button class="btn btn-sec" type="submit" disabled={exclusionBusy || !exclusionInput.trim()}>Исключить</button>
+                      <select class="input" bind:value={exclusionKind} aria-label={t('Условие исключения')}><option value="mask">{t('URL содержит')}</option><option value="not_contains">{t('URL не содержит')}</option></select>
+                      <input class="input min-w-0 flex-1" bind:value={exclusionInput} placeholder={t('Не показывать URL, содержащие /b/')} maxlength="2000" aria-label={t('Исключаемая часть URL')} required />
+                      <button class="btn btn-sec" type="submit" disabled={exclusionBusy || !exclusionInput.trim()}>{t('Исключить')}</button>
                     </form>
                     {#each exclusions as ex (ex.id)}
-                      <div class="mt-1 flex items-center gap-2 text-xs"><span class="min-w-0 flex-1 break-all">{ex.kind === 'exact' ? 'Точный URL' : ex.kind === 'not_contains' ? 'URL не содержит' : 'URL содержит'}: {ex.pattern}</span><button class="btn btn-ghost btn-sm" disabled={exclusionBusy} onclick={() => updateExclusions('DELETE', { id: ex.id })}>Удалить</button></div>
+                      <div class="mt-1 flex items-center gap-2 text-xs"><span class="min-w-0 flex-1 break-all">{ex.kind === 'exact' ? t('Точный URL') : ex.kind === 'not_contains' ? t('URL не содержит') : t('URL содержит')}: {ex.pattern}</span><button class="btn btn-ghost btn-sm" disabled={exclusionBusy} onclick={() => updateExclusions('DELETE', { id: ex.id })}>{t('Удалить')}</button></div>
                     {/each}
                   </details>
-                  {#if exclusionError}<p class="text-err text-xs" role="alert">{exclusionError}</p>{/if}
+                  {#if exclusionError}<p class="text-err text-xs" role="alert">{tx(exclusionError)}</p>{/if}
                 </div>
                 {#if strikingRows.length === 0}
-                  <p class="loading p-3">Нет запросов с учётом фильтра и исключений.</p>
+                  <p class="loading p-3">{t('Нет запросов с учётом фильтра и исключений.')}</p>
                 {:else}
                   <div class="overflow-x-auto">
                     <table class="app-table">
                       <thead>
                         <tr><th class="w-8"></th>
-                          <th class="sort-th" aria-sort={sortAria('query')}><button type="button" class="hover:text-ink" onclick={() => sortBy('query')}>Query<SortCaret dir={sortArrow('query')} /></button></th>
-                          <th class="sort-th" aria-sort={sortAria('page')}><button type="button" class="hover:text-ink" onclick={() => sortBy('page')}>Page<SortCaret dir={sortArrow('page')} /></button></th>
-                          <th class="sort-th num" aria-sort={sortAria('position')}><button type="button" class="hover:text-ink" onclick={() => sortBy('position')}>Pos<SortCaret dir={sortArrow('position')} /></button></th>
+                          <th class="sort-th" aria-sort={sortAria('query')}><button type="button" class="hover:text-ink" onclick={() => sortBy('query')}>{t('Запрос')}<SortCaret dir={sortArrow('query')} /></button></th>
+                          <th class="sort-th" aria-sort={sortAria('page')}><button type="button" class="hover:text-ink" onclick={() => sortBy('page')}>{t('Страница')}<SortCaret dir={sortArrow('page')} /></button></th>
+                          <th class="sort-th num" aria-sort={sortAria('position')}><button type="button" class="hover:text-ink" onclick={() => sortBy('position')}>{t('Поз.')}<SortCaret dir={sortArrow('position')} /></button></th>
                           <th class="sort-th num" aria-sort={sortAria('serp')}><button type="button" class="hover:text-ink" onclick={() => sortBy('serp')}>SERP<SortCaret dir={sortArrow('serp')} /></button></th>
-                          <th class="sort-th num" aria-sort={sortAria('impressions')}><button type="button" class="hover:text-ink" onclick={() => sortBy('impressions')}>Impr<SortCaret dir={sortArrow('impressions')} /></button></th>
-                          <th class="sort-th num" aria-sort={sortAria('clicks')}><button type="button" class="hover:text-ink" onclick={() => sortBy('clicks')}>Clicks<SortCaret dir={sortArrow('clicks')} /></button></th>
+                          <th class="sort-th num" aria-sort={sortAria('impressions')}><button type="button" class="hover:text-ink" onclick={() => sortBy('impressions')}>{t('Показы')}<SortCaret dir={sortArrow('impressions')} /></button></th>
+                          <th class="sort-th num" aria-sort={sortAria('clicks')}><button type="button" class="hover:text-ink" onclick={() => sortBy('clicks')}>{t('Клики')}<SortCaret dir={sortArrow('clicks')} /></button></th>
                           <th class="sort-th num" aria-sort={sortAria('ctr')}><button type="button" class="hover:text-ink" onclick={() => sortBy('ctr')}>CTR<SortCaret dir={sortArrow('ctr')} /></button></th>
-                          <th class="sort-th num" aria-sort={sortAria('bought')}><button type="button" class="hover:text-ink" onclick={() => sortBy('bought')}>Куплено<SortCaret dir={sortArrow('bought')} /></button></th>
+                          <th class="sort-th num" aria-sort={sortAria('bought')}><button type="button" class="hover:text-ink" onclick={() => sortBy('bought')}>{t('Куплено')}<SortCaret dir={sortArrow('bought')} /></button></th>
                           <th class="num w-20"></th></tr>
                       </thead>
                       <tbody>
@@ -778,10 +810,10 @@
                           {@const k = pairKey(r.page, r.query)}
                           <tr class:is-selected={selectedPairs.has(k)}>
                             <td>
-                              <input type="checkbox" checked={selectedPairs.has(k)} onchange={() => togglePair(r.page, r.query)} aria-label="Выделить строку" />
+                              <input type="checkbox" checked={selectedPairs.has(k)} onchange={() => togglePair(r.page, r.query)} aria-label={t('Выделить строку')} />
                             </td>
                             <td class="font-medium"><span class="pii">{r.query}</span></td>
-                            <td class="max-w-xs text-ink-3"><div class="flex items-center gap-1"><span class="pii min-w-0 truncate" title={r.page}>{shortUrl(r.page)}</span><button class="btn btn-ghost btn-sm shrink-0" title="Исключить этот URL для домена" aria-label="Исключить {r.page}" disabled={exclusionBusy} onclick={() => updateExclusions('POST', { pattern: r.page, kind: 'exact' })}>×</button></div></td>
+                            <td class="max-w-xs text-ink-3"><div class="flex items-center gap-1"><span class="pii min-w-0 truncate" title={r.page}>{shortUrl(r.page)}</span><button class="btn btn-ghost btn-sm shrink-0" title={t('Исключить этот URL для домена')} aria-label="Исключить {r.page}" disabled={exclusionBusy} onclick={() => updateExclusions('POST', { pattern: r.page, kind: 'exact' })}>×</button></div></td>
                             <td class="num app-num">{pos(r.position)}</td>
                             {@render serpCell(r.query)}
                             <td class="num app-num pii">{fmt(r.impressions)}</td>
@@ -791,17 +823,17 @@
                               {#if boughtFor(r.page, r.query)}
                                 <button
                                   class="chip chip-up hover:brightness-95"
-                                  title="Показать заказы по этой связке"
+                                  title={t('Показать заказы по этой связке')}
                                   aria-expanded={historyOpen === k}
                                   onclick={() => (historyOpen = historyOpen === k ? null : k)}
-                                >{boughtFor(r.page, r.query)!.quantity} шт · {dayfmt(boughtFor(r.page, r.query)!.lastAt)}</button>
+                                >{boughtFor(r.page, r.query)!.quantity} {t('шт ·')} {dayfmt(boughtFor(r.page, r.query)!.lastAt)}</button>
                               {:else}
                                 <span class="text-ink-4">—</span>
                               {/if}
                             </td>
                             <td class="num">
                               {#if data.magicLinksReady}
-                                <button class="btn btn-sec btn-sm" title="Купить ссылки на эту связку" onclick={() => buyOne(r.page, r.query)}>Купить</button>
+                                <button class="btn btn-sec btn-sm" title={t('Купить ссылки на эту связку')} onclick={() => buyOne(r.page, r.query)}>{t('Купить')}</button>
                               {/if}
                             </td>
                           </tr>
@@ -812,7 +844,7 @@
                                 {#each boughtFor(r.page, r.query)!.orders as o (o.orderId)}
                                   <a class="mr-4 text-acc hover:underline"
                                     href="/magiclinks/{o.orderId}?url={encodeURIComponent(r.page)}&q={encodeURIComponent(r.query)}">
-                                    <span class="app-num">{o.quantity}</span> шт · {dayfmt(o.createdAt)} · заказ <span class="app-num">{o.orderId.slice(0, 8)}</span>
+                                    <span class="app-num">{o.quantity}</span> {t('шт ·')} {dayfmt(o.createdAt)} {t('· заказ')} <span class="app-num">{o.orderId.slice(0, 8)}</span>
                                   </a>
                                 {/each}
                               </td>
@@ -823,15 +855,15 @@
                     </table>
                   </div>
                   {#if selectedVisible > 0}
-                    <div class="sticky bottom-3 z-20 m-3 flex flex-wrap items-center gap-3 rounded-sm border border-acc/30 bg-pane px-3 py-2 shadow-[0_6px_20px_-6px_rgb(19_23_34/0.25)]">
-                      <span class="text-[12.5px]">Выбрано пар: <b class="app-num">{selectedVisible}</b></span>
-                      <span class="text-xs text-ink-3">одним заданием; провайдер выбирается в окне покупки</span>
+                    <div class="sticky bottom-3 z-20 m-3 flex flex-wrap items-center gap-3 rounded-sm border border-acc/30 bg-pane px-3 py-2 shadow-pop">
+                      <span class="text-[12.5px]">{t('Выбрано пар:')} <b class="app-num">{selectedVisible}</b></span>
+                      <span class="text-xs text-ink-3">{t('одним заданием; провайдер выбирается в окне покупки')}</span>
                       <span class="flex-1"></span>
-                      <button class="btn btn-ghost" onclick={() => (selectedPairs = new Set())}>Снять выделение</button>
+                      <button class="btn btn-ghost" onclick={() => (selectedPairs = new Set())}>{t('Снять выделение')}</button>
                       {#if data.magicLinksReady}
-                        <button class="btn btn-pri" onclick={() => buySelected(strikingRows)}>Купить ссылки</button>
+                        <button class="btn btn-pri" onclick={() => buySelected(strikingRows)}>{t('Купить ссылки')}</button>
                       {:else}
-                        <a class="btn btn-sec" href="/magiclinks">Сначала введи ключ провайдера на MagicLinks</a>
+                        <a class="btn btn-sec" href="/magiclinks">{t('Сначала введи ключ провайдера в разделе «Меджики»')}</a>
                       {/if}
                     </div>
                   {/if}
@@ -839,15 +871,15 @@
 
               {:else if tab === 'cannibal'}
                 {#if analytics.cannibalization.length === 0}
-                  <p class="loading p-3">No cannibalization detected.</p>
+                  <p class="loading p-3">{t('Каннибализации не найдено.')}</p>
                 {:else}
                   <div class="overflow-x-auto">
                     <table class="app-table">
-                      <thead><tr><th>Query / competing pages</th><th class="num">Clicks</th><th class="num">Impr</th><th class="num">Pos</th></tr></thead>
+                      <thead><tr><th>{t('Запрос / конкурирующие страницы')}</th><th class="num">{t('Клики')}</th><th class="num">{t('Показы')}</th><th class="num">{t('Поз.')}</th></tr></thead>
                       {#each analytics.cannibalization as g (g.query)}
                         <tbody>
                           <tr class="bg-sunk hover:bg-sunk">
-                            <td colspan="4" class="font-semibold"><span class="pii">{g.query}</span> <span class="ml-1 text-xs font-normal text-ink-3">{g.pages.length} pages</span></td>
+                            <td colspan="4" class="font-semibold"><span class="pii">{g.query}</span> <span class="ml-1 text-xs font-normal text-ink-3">{t('{n} стр.', { n: g.pages.length })}</span></td>
                           </tr>
                           {#each g.pages as p, i (p.page)}
                             <tr>
@@ -869,9 +901,9 @@
               {:else if tab === 'ctr'}
                 <div class="grid gap-px bg-line lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
                   <div class="bg-pane">
-                    <div class="pane-head">CTR by position</div>
+                    <div class="pane-head">{t('CTR по позициям')}</div>
                     <table class="app-table">
-                      <thead><tr><th>Pos</th><th class="num">Your CTR</th><th class="num">Benchmark</th><th class="num">Impr</th></tr></thead>
+                      <thead><tr><th>{t('Поз.')}</th><th class="num">{t('Ваш CTR')}</th><th class="num">{t('Бенчмарк')}</th><th class="num">{t('Показы')}</th></tr></thead>
                       <tbody>
                         {#each analytics.ctr.buckets as b (b.position)}
                           <tr>
@@ -885,13 +917,13 @@
                     </table>
                   </div>
                   <div class="min-w-0 bg-pane">
-                    <div class="pane-head">Opportunities <span class="aside">below-benchmark CTR</span></div>
+                    <div class="pane-head">{t('Возможности')} <span class="aside">{t('CTR ниже бенчмарка')}</span></div>
                     {#if analytics.ctr.opportunities.length === 0}
-                      <p class="loading p-3">None.</p>
+                      <p class="loading p-3">{t('Нет.')}</p>
                     {:else}
                       <div class="overflow-x-auto">
                         <table class="app-table">
-                          <thead><tr><th>Query</th><th>Page</th><th class="num">Pos</th><th class="num">Impr</th><th class="num">CTR</th><th class="num">Bench</th></tr></thead>
+                          <thead><tr><th>{t('Запрос')}</th><th>{t('Страница')}</th><th class="num">{t('Поз.')}</th><th class="num">{t('Показы')}</th><th class="num">CTR</th><th class="num">{t('Бенчмарк')}</th></tr></thead>
                           <tbody>
                             {#each analytics.ctr.opportunities as o (o.query + o.page)}
                               <tr>
@@ -918,17 +950,17 @@
                   </div>
                   <div class="grid max-w-xl grid-cols-2 gap-px overflow-hidden rounded-sm border border-line bg-line">
                     <div class="bg-pane p-3">
-                      <div class="stat-label">Branded · {pct(b.brandedPct)}</div>
-                      <div class="stat-value pii">{fmt(b.branded.clicks)} <span class="text-xs font-normal text-ink-3">clicks</span></div>
-                      <div class="app-num pii text-ink-3">{fmt(b.branded.impressions)} impr</div>
+                      <div class="stat-label">{t('Брендовые')} · {pct(b.brandedPct)}</div>
+                      <div class="stat-value pii">{fmt(b.branded.clicks)} <span class="text-xs font-normal text-ink-3">{t('кликов')}</span></div>
+                      <div class="app-num pii text-ink-3">{t('{n} показов', { n: fmt(b.branded.impressions) })}</div>
                     </div>
                     <div class="bg-pane p-3">
-                      <div class="stat-label">Non-branded</div>
-                      <div class="stat-value pii">{fmt(b.nonBranded.clicks)} <span class="text-xs font-normal text-ink-3">clicks</span></div>
-                      <div class="app-num pii text-ink-3">{fmt(b.nonBranded.impressions)} impr</div>
+                      <div class="stat-label">{t('Небрендовые')}</div>
+                      <div class="stat-value pii">{fmt(b.nonBranded.clicks)} <span class="text-xs font-normal text-ink-3">{t('кликов')}</span></div>
+                      <div class="app-num pii text-ink-3">{t('{n} показов', { n: fmt(b.nonBranded.impressions) })}</div>
                     </div>
                   </div>
-                  <p class="mt-2 text-xs text-ink-3">Terms: {(analytics.brandedTerms ?? []).join(', ')} — edit in the Brand terms panel.</p>
+                  <p class="mt-2 text-xs text-ink-3">{t('Термины')}: {(analytics.brandedTerms ?? []).join(', ')} — {t('меняются в панели «Брендовые термины».')}</p>
                 </div>
               {/if}
             {/if}
@@ -942,15 +974,15 @@
       {#if serpActive}{@render serpPane()}{/if}
 
       <section class="pane">
-        <div class="pane-head">Site events <span class="aside">{data.eventRows.length}</span></div>
+        <div class="pane-head">{t('События сайта')} <span class="aside">{data.eventRows.length}</span></div>
         {#if data.eventRows.length > 0}
           <ul class="divide-y divide-line-soft border-b border-line">
             {#each data.eventRows as ev (ev.id)}
               <li class="group flex items-center gap-2 px-3 py-1.5 text-[12.5px]">
                 <span class="inline-block h-2 w-2 shrink-0 rotate-45 rounded-[1px]" style:background={data.eventTypes[ev.type]?.color ?? 'rgb(var(--ink-3))'}></span>
-                <span class="app-num shrink-0 text-ink-3">{ev.date.slice(5).split('-').reverse().join('.')}</span>
+                <span class="app-num shrink-0 text-ink-3">{ev.date}</span>
                 {#if ev.orderHref}
-                  <a class="min-w-0 flex-1 truncate font-medium hover:underline" href={ev.orderHref} title="{ev.note} · открыть заказ">{ev.note}</a>
+                  <a class="min-w-0 flex-1 truncate font-medium hover:underline" href={ev.orderHref} title={`${ev.note} · ${t('открыть заказ')}`}>{ev.note}</a>
                 {:else}
                   <span class="min-w-0 flex-1 truncate font-medium pii" title={ev.note}>{ev.note}</span>
                 {/if}
@@ -958,7 +990,7 @@
                 <button
                   type="button"
                   class="btn btn-ghost btn-sm btn-icon text-ink-4 opacity-0 hover:text-dn focus:opacity-100 group-hover:opacity-100"
-                  title="Delete event"
+                  title={t('Удалить событие')}
                   aria-label="Delete event {ev.note}"
                   onclick={() => removeEvent(ev.id)}
                 ><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
@@ -969,43 +1001,42 @@
         {/if}
         <form class="pane-body flex flex-col gap-2" onsubmit={(e) => { e.preventDefault(); addEvent(); }}>
           <div class="flex gap-2">
-            <input type="date" bind:value={evDate} required disabled={evSaving} class="input app-num w-34" aria-label="Event date" />
-            <select bind:value={evType} disabled={evSaving} class="input min-w-0 flex-1" aria-label="Event type">
-              {#each Object.entries(data.eventTypes) as [id, t] (id)}
-                {#if id === 'merge' || id === 'custom'}<option value={id}>{t.label}</option>{/if}
+            <input type="date" bind:value={evDate} required disabled={evSaving} class="input app-num w-34" aria-label={t('Дата события')} />
+            <select bind:value={evType} disabled={evSaving} class="input min-w-0 flex-1" aria-label={t('Тип события')}>
+              {#each Object.entries(data.eventTypes) as [id, et] (id)}
+                {#if id === 'merge' || id === 'custom'}<option value={id}>{tx(et.label)}</option>{/if}
               {/each}
             </select>
           </div>
           <div class="flex gap-2">
             <input
               bind:value={evNote}
-              placeholder={evType === 'custom' ? 'Переезд в подпапку' : '← donordomain.com'}
-              aria-label={evType === 'custom' ? 'Event name' : 'Donor domain'}
+              placeholder={evType === 'custom' ? t('Переезд в подпапку') : t('← домен-донор.com')}
+              aria-label={evType === 'custom' ? t('Название события') : t('Домен-донор')}
               maxlength={evType === 'custom' ? 200 : undefined}
               required
               disabled={evSaving}
               class="input min-w-0 flex-1"
             />
-            <button type="submit" disabled={evSaving || !evNote.trim() || !evDate} class="btn btn-pri">{evSaving ? 'Saving…' : 'Add'}</button>
+            <button type="submit" disabled={evSaving || !evNote.trim() || !evDate} class="btn btn-pri">{evSaving ? t('Сохраняем…') : t('Добавить')}</button>
           </div>
-          {#if evError}<p class="text-dn text-xs" role="alert">{evError}</p>{/if}
-          <p class="text-[11px] text-ink-3">Покупки автоматически из <a href="/magiclinks" class="hover:underline">Magiclinks</a>, по дате заказа. Маркеры видны также на дашборде и в portfolio pulse.</p>
+          {#if evError}<p class="text-dn text-xs" role="alert">{tx(evError)}</p>{/if}
+          <p class="text-[11px] text-ink-3">{t('Покупки автоматически из раздела')} <a href="/magiclinks" class="hover:underline">«{t('Меджики')}»</a>{t(', по дате заказа. Маркеры видны также на дашборде и в portfolio pulse.')}</p>
         </form>
       </section>
 
       <section class="pane">
-        <div class="pane-head">Brand terms</div>
+        <div class="pane-head">{t('Брендовые термины')}</div>
         <div class="pane-body flex flex-col gap-2">
           <div class="flex gap-2">
-            <input bind:value={brandInput} placeholder="ikea, ikea chair" class="input min-w-0 flex-1" />
-            <button onclick={saveBrand} disabled={brandSaving} class="btn btn-sec">{brandSaving ? 'Saving…' : 'Save'}</button>
+            <input bind:value={brandInput} placeholder={t('ikea, ikea chair')} class="input min-w-0 flex-1" />
+            <button onclick={saveBrand} disabled={brandSaving} class="btn btn-sec">{brandSaving ? t('Сохраняем…') : t('Сохранить')}</button>
           </div>
-          <p class="text-[11px] text-ink-3">Через запятую. Пусто — термин по домену.</p>
+          <p class="text-[11px] text-ink-3">{t('Через запятую. Пусто — термин по домену.')}</p>
           {#if shortTerms.length > 0}
             <p class="notice notice-warn text-xs">
-              {shortTerms.map((t) => `“${t}”`).join(', ')}
-              {shortTerms.length === 1 ? 'is' : 'are'} matched as whole words only —
-              a term this short would otherwise appear inside ordinary ones.
+              {shortTerms.map((term) => `“${term}”`).join(', ')}
+              {t('ищутся только как целые слова: такой короткий термин иначе находился бы внутри обычных слов.')}
             </p>
           {/if}
         </div>

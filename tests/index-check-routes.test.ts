@@ -8,17 +8,17 @@ const { listSites, listMaps, collect, start, get, cancel, history, startBatch, g
 vi.mock('../src/lib/server/google', () => ({ listSitesForAllAccounts: listSites, listSitemaps: listMaps }));
 vi.mock('../src/lib/server/index-check-sitemap', () => ({ collectCheckSitemap: collect }));
 vi.mock('../src/lib/server/index-check-jobs', () => ({ indexCheckJobs: { start,get,cancel,history,startBatch,getBatch,cancelBatch,addDraft: (input: any) => ({...input,id:'draft'}) } }));
-import { GET as BALANCE } from '../src/routes/settings/integrations/balance/+server';
+import { GET as BALANCE } from '../src/routes/settings/index-check/balance/+server';
 import { GET, POST } from '../src/routes/index-check/api/+server';
 import { load } from '../src/routes/index-check/+page.server';
-import { load as settingsLoad, actions } from '../src/routes/settings/integrations/+page.server';
+import { load as settingsLoad, actions } from '../src/routes/settings/index-check/+page.server';
 import { saveIndexCheckRun } from '../src/lib/server/index-check-history';
 const site='sc-domain:example.com';
 const locals={user:{role:'admin'}};
 const post=(body:unknown,role='admin')=>POST({locals:{user:{role}},request:new Request('http://localhost/index-check/api',{method:'POST',body:JSON.stringify(body)})} as any);
 const formEvent=(entries:Record<string,string>,role='admin')=>{
   const form=new FormData();for(const [k,v] of Object.entries(entries))form.set(k,v);
-  return {locals:{user:{role}},request:new Request('http://localhost/settings/integrations',{method:'POST',body:form})} as any;
+  return {locals:{user:{role}},request:new Request('http://localhost/settings/index-check',{method:'POST',body:form})} as any;
 };
 beforeEach(()=>{
   database=openDb(':memory:');
@@ -119,7 +119,7 @@ it('saves bounded execution settings separately from credentials and protects mu
 });
 
 it('protects balance reads and returns only balance metadata', async () => {
- const url=new URL('http://localhost/settings/integrations/balance?provider=xmlriver');
+ const url=new URL('http://localhost/settings/index-check/balance?provider=xmlriver');
  await expect(BALANCE({locals:{user:{role:'manager'}},url} as any)).rejects.toMatchObject({status:403});
  setConfigValue(database,'XMLRIVER_USER','123');setConfigValue(database,'XMLRIVER_KEY','private-xml-key');
  vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response('12.5')));

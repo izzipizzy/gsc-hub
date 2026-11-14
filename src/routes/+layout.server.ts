@@ -4,6 +4,8 @@ import { appVersion } from '$lib/server/version';
 export const load: LayoutServerLoad = async ({ locals }) => {
   return {
     user: locals.user,
+    locale: locals.locale,
+    theme: locals.theme,
     version: appVersion,
     // Opt-out for a public self-host that does not want its visitors' browsers
     // talking to github.com. Anything other than the exact 'off' keeps it on.

@@ -16,5 +16,5 @@ export const POST: RequestHandler = async ({ params, locals }) => {
     }
     deleteAccount(db(), params.id!);
   }
-  throw redirect(303, '/');
+  throw redirect(303, '/settings/accounts');
 };

@@ -5,6 +5,70 @@ All notable changes to this project are documented here. Format loosely follows
 
 Русская версия — [CHANGELOG.ru.md](CHANGELOG.ru.md).
 
+## [0.11.0] - 2026-11-14
+
+### How to update / Как обновиться
+
+Back up SQLite, then:
+
+```bash
+git pull --ff-only
+docker compose up -d --build
+```
+
+A new `user_prefs` table is created automatically. Reload open browser tabs.
+Old addresses keep working: `/` opens the Dashboard, `/settings/integrations`
+redirects to the new settings pages.
+
+### Added
+
+- **Interface language: Russian or English.** Choose it in the profile; the
+  choice is saved per user and follows you to any browser. Until you choose,
+  the browser language is used. Numbers follow the language (1 908 852 /
+  1,908,852); dates are ISO and time is 24-hour in both.
+- **Light, dark and system theme**, also in the profile. The dark theme is the
+  same trading desk on graphite; charts switch with it.
+- **Profile menu** behind a round icon in the top right: Profile (language,
+  theme), Settings, Sign out.
+- **Settings in one place**, grouped by meaning: Access (Google accounts, Users,
+  API and MCP), Services (Indexers, Index check services, MagicLinks keys),
+  Data (Portfolio rows). Forced indexing (NeuralIndexer) and index checking
+  (XML River, DataForSEO) are now separate pages.
+- **One period picker** on every screen: 1, 7, 28, 90 days, 1 year, 16 months,
+  plus any number of days up to 480. The portfolio pulse period is kept in the URL.
+- **Top queries / Top pages rows per site** in Settings → Portfolio; empty means
+  automatic by portfolio size, plus “Show more” in the tables.
+- A new icon: a stack of terminals, in the browser tab and the header.
+
+### Changed
+
+- The top menu is split into **Overview** (Dashboard, Sites, Portfolio) and
+  **Work** (Events, MagicLinks, Index check); on narrow screens it folds into
+  one button. The home page is now the Dashboard.
+- One freshness stamp (`live HH:MM`) with Refresh on every screen with live data,
+  including Portfolio.
+- Settings and MagicLinks pages are laid out as one desk like the rest of the
+  app; one primary button per page.
+- Google accounts: no owner ID column, the label saves on Enter, Delete and
+  Reconnect sit at the end of the row.
+- “Partial — N read errors” on the Dashboard opens a list naming the account,
+  the site and a link to reconnect.
+- Portfolio striking table shows 100 rows at a time with “Show more”.
+- Better contrast for secondary text, active periods and up/down chips (WCAG AA).
+
+### Performance
+
+- `/dashboard` and `/properties` are served from an in-memory portfolio snapshot:
+  one Search Console request per site per pass instead of five, and pages never
+  wait for a pass. Measured on 10,000 domains.
+- `/magiclinks` opens from the saved provider data and refreshes it in the
+  background instead of waiting on FieldLink and 369Team every visit.
+
+### Fixed
+
+- No sideways scroll on phones on the Sites page; the site header no longer
+  clips its buttons.
+
 ## [0.10.0] - 2026-11-12
 
 ### Added

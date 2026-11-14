@@ -1,16 +1,8 @@
-import type { PageServerLoad, Actions } from './$types';
-import { error } from '@sveltejs/kit';
-import { db } from '$lib/server/db';
-import { listAccounts } from '$lib/server/accounts';
-import { signIn } from '../auth';
+import { redirect } from '@sveltejs/kit';
+import type { PageServerLoad } from './$types';
 
-export const load: PageServerLoad = async ({ locals }) => {
-  const user = locals.user;
-  if (!user) throw error(401, 'unauthorized');
-  const ownerId = user.role === 'admin' ? undefined : user.id;
-  return { accounts: listAccounts(db(), ownerId), user };
-};
-
-export const actions: Actions = {
-  connect: signIn
+// Home is the Dashboard. A manager (no dashboard access) lands on the Google
+// accounts list, which used to live here.
+export const load: PageServerLoad = ({ locals }) => {
+  throw redirect(303, locals.user?.role === 'admin' ? '/dashboard' : '/settings/accounts');
 };

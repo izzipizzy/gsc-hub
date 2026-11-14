@@ -1,10 +1,11 @@
 <script lang="ts">
+  import { t, tx, plural, fmtNum, fmtPct, fmtDec, fmtDay, getLocale, fmtCompact } from '$lib/i18n/index.svelte';
   // Site traffic chart in the trading-desk grammar: clicks are the price line with
   // its scale on the right, impressions are the volume pane underneath, Google
   // updates are shaded rollout bands with a label strip, site events are marked
   // days. Hover draws a crosshair with axis tags; the legend row reads out the
   // hovered day, so nothing floats over the data. Hand-rolled SVG — no chart lib.
-  import { SERIES, UPDATE_COLORS, eventPosition } from '$lib/chart-theme';
+  import { SERIES, UPDATE_COLORS, AXIS, EVENT_COLOR, updateColor, eventPosition } from '$lib/chart-theme';
 
   export interface ChartUpdate {
     date: string; // ISO, clipped to the chart window
@@ -77,20 +78,18 @@
     return out;
   });
 
+  // Month and weekday names follow the interface language; numbers too.
   function dayLabel(iso: string): string {
-    return new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+    return fmtDay(iso);
   }
   function fullDay(iso: string): string {
-    return new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+    return fmtDay(iso, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
   }
-  const nf = new Intl.NumberFormat('en-US');
-  function fmtNum(v: number): string {
-    return nf.format(Math.round(v));
+  function fmtInt(v: number): string {
+    return fmtNum(Math.round(v));
   }
   function fmtShort(v: number): string {
-    if (v >= 1e6) return `${(v / 1e6).toFixed(v >= 1e7 ? 0 : 1)}M`;
-    if (v >= 1e4) return `${Math.round(v / 1e3)}k`;
-    return fmtNum(v);
+    return v >= 1e4 ? fmtCompact(v) : fmtInt(v);
   }
 
   // ── annotations ──
@@ -107,7 +106,7 @@
           const x0 = x(i0);
           const x1 = Math.max(x(i1), x0 + 3);
           const impact = u.ongoing
-            ? 'идёт'
+            ? t('идёт')
             : u.impact?.clicks != null
               ? `${u.impact.confident ? '' : '≈'}${u.impact.clicks > 0 ? '+' : '−'}${Math.abs(u.impact.clicks)}%`
               : null;
@@ -161,7 +160,7 @@
       else groups.push({ x: p.x, items: [p.ev] });
     }
     return groups.map((g) => {
-      const label = g.items.length === 1 ? g.items[0].label : `${g.items.length} events`;
+      const label = g.items.length === 1 ? g.items[0].label : plural('событие', g.items.length);
       const w = label.length * 6.4 + 12;
       const anchor = g.x > innerW - w - 12 ? 'end' : 'start';
       return {
@@ -202,9 +201,9 @@
     n ? `${clicksPath}L${x(n - 1).toFixed(1)},${priceH}L${x(0).toFixed(1)},${priceH}Z` : ''
   );
   const last = $derived(n ? points[n - 1] : null);
-  const eventSwatch = $derived(events[0]?.color ?? 'rgb(19 23 34)');
+  const eventSwatch = $derived(events[0]?.color ?? EVENT_COLOR);
   const eventLegend = $derived([...new Map(events.map((ev) =>
-    [ev.color, { color: ev.color, label: ev.typeLabel ?? 'Events' }]
+    [ev.color, { color: ev.color, label: ev.typeLabel ? tx(ev.typeLabel) : t('События') }]
   )).values()]);
 
   // ── hover ──
@@ -244,32 +243,32 @@
   <div class="mb-1 flex min-h-[26px] flex-wrap items-center gap-x-1 gap-y-1 text-xs">
     <span class="mr-2 font-mono text-[11.5px] text-ink-3">{shown ? fullDay(shown.date) : ''}</span>
     <span class="legend-item" style:--c={SERIES.clicks}>
-      <i></i>Clicks <b class="font-mono">{shown ? fmtNum(shown.clicks) : '—'}</b>
+      <i></i>{t('Клики')} <b class="font-mono">{shown ? fmtInt(shown.clicks) : '—'}</b>
     </span>
     <button type="button" class="legend-item" class:is-off={!showImpr} style:--c={SERIES.impr}
       onclick={() => (showImpr = !showImpr)} aria-pressed={showImpr}>
-      <i></i>Impressions <b class="font-mono">{shown ? fmtNum(shown.impressions) : '—'}</b>
+      <i></i>{t('Показы')} <b class="font-mono">{shown ? fmtInt(shown.impressions) : '—'}</b>
     </button>
     <button type="button" class="legend-item" class:is-off={!showUpdates} style:--c={UPDATE_COLORS.core}
       onclick={() => (showUpdates = !showUpdates)} aria-pressed={showUpdates}
-      title="Google algorithm update rollouts (feed: status.search.google.com, fallback to built-in list)">
-      <i></i>Updates <span class="text-ink-3">{updates.length}</span>
+      title={t('Раскатки апдейтов Google (лента status.search.google.com, запасной список встроен)')}>
+      <i></i>{t('Апдейты')} <span class="text-ink-3">{updates.length}</span>
     </button>
     {#if events.length > 0}
       <button type="button" class="legend-item" class:is-off={!showEvents} style:--c={eventSwatch}
         onclick={() => (showEvents = !showEvents)} aria-pressed={showEvents}
-        title="События сайта: склейки доменов и покупки ссылок">
-        <i></i>Events <span class="text-ink-3">{events.length}</span>
+        title={t('События сайта: склейки доменов и покупки ссылок')}>
+        <i></i>{t('События')} <span class="text-ink-3">{events.length}</span>
       </button>
       {#each eventLegend as kind (kind.color)}
         <span class="legend-item" style:--c={kind.color}><i></i>{kind.label}</span>
       {/each}
     {/if}
     {#each hoverUpdates as u (u.date + u.name)}
-      <span class="rounded-[3px] px-1.5 py-px text-[11px] font-medium" style:background="{UPDATE_COLORS[u.type] ?? u.color}22" style:color="rgb(var(--upd-ink))">{u.name}</span>
+      <span class="rounded-[3px] px-1.5 py-px text-[11px] font-medium" style:background={updateColor(u.type, 0.13)} style:color="rgb(var(--upd-ink))">{u.name}</span>
     {/each}
     {#each hoverEvents as ev, i (i)}
-      <span class="rounded-[3px] px-1.5 py-px text-[11px] font-medium text-white" style:background={ev.color}>{ev.label}</span>
+      <span class="rounded-[3px] px-1.5 py-px text-[11px] font-medium text-pane" style:background={ev.color}>{ev.label}</span>
     {/each}
   </div>
 
@@ -282,7 +281,7 @@
     onkeydown={onKey}
     tabindex="0"
     role="application"
-    aria-label="Daily clicks and impressions. Use left and right arrows to read single days."
+    aria-label={t('Клики и показы по дням. Стрелки влево и вправо читают отдельные дни.')}
   >
     <defs>
       <linearGradient id="gc-{uid}" x1="0" y1="0" x2="0" y2="1">
@@ -310,33 +309,33 @@
           y={ly + 11}
           font-size="10"
           font-weight="600"
-          fill="rgb(138 74 12)"
+          fill="rgb(var(--upd-ink))"
           text-anchor="start"
           class="font-mono"
-        >{b.name}{#if b.impact}<tspan fill={b.impactTone === 'up' ? 'rgb(8 135 113)' : b.impactTone === 'dn' ? 'rgb(224 42 58)' : 'rgb(138 74 12)'}>{' · '}{b.impact}</tspan>{/if}</text>
+        >{b.name}{#if b.impact}<tspan fill={b.impactTone === 'up' ? 'rgb(var(--up))' : b.impactTone === 'dn' ? 'rgb(var(--dn))' : 'rgb(var(--upd-ink))'}>{' · '}{b.impact}</tspan>{/if}</text>
         {/if}
       {/each}
 
       <!-- price grid + right axis -->
       {#each yTicks as tv, i (i)}
-        <line x1="0" x2={innerW} y1={yC(tv)} y2={yC(tv)} stroke="rgb(238 240 243)" />
+        <line x1="0" x2={innerW} y1={yC(tv)} y2={yC(tv)} stroke={AXIS.grid} />
         {#if !tagY || Math.abs(yC(tv) - tagY) > 12}
-          <text x={innerW + 8} y={yC(tv) + 3.5} font-size="10.5" fill="rgb(110 118 132)" class="font-mono">{fmtShort(tv)}</text>
+          <text x={innerW + 8} y={yC(tv) + 3.5} font-size="10.5" fill={AXIS.text} class="font-mono">{fmtShort(tv)}</text>
         {/if}
       {/each}
 
       <!-- volume pane -->
       {#if showImpr}
-        <line x1="0" x2={innerW} y1={innerH - volH - gap / 2} y2={innerH - volH - gap / 2} stroke="rgb(228 231 236)" />
-        <text x={innerW + 8} y={innerH - volH + 7} font-size="10.5" fill="rgb(110 118 132)" class="font-mono">{fmtShort(maxImpr)}</text>
-        <text x="4" y={innerH - volH + 8} font-size="10" fill="rgb(110 118 132)">Impressions</text>
+        <line x1="0" x2={innerW} y1={innerH - volH - gap / 2} y2={innerH - volH - gap / 2} stroke={AXIS.line} />
+        <text x={innerW + 8} y={innerH - volH + 7} font-size="10.5" fill={AXIS.text} class="font-mono">{fmtShort(maxImpr)}</text>
+        <text x="4" y={innerH - volH + 8} font-size="10" fill={AXIS.text}>{t('Показы')}</text>
         {#each points as p, i (p.date)}
           <rect
             x={x(i) - barW / 2}
             y={yV(p.impressions)}
             width={barW}
             height={Math.max(0.5, innerH - yV(p.impressions))}
-            fill={hoverI === i ? 'rgb(67 74 87)' : SERIES.impr}
+            fill={hoverI === i ? AXIS.hover : SERIES.impr}
             fill-opacity={hoverI === i ? 0.9 : 0.45}
           />
         {/each}
@@ -356,15 +355,15 @@
         <!-- solid hairline: the dashed rule belongs to the hover crosshair -->
         <line x1={markX} x2={markX} y1="0" y2={innerH} stroke={color} stroke-width="1" stroke-opacity="0.28" />
         <g transform="translate({markX},{priceH - 4})">
-          <rect x={ev.count > 1 ? -6.5 : -5} y={ev.count > 1 ? -14.5 : -13} width={ev.count > 1 ? 13 : 10} height={ev.count > 1 ? 13 : 10} rx="1.5" fill={color} transform="rotate(45 0 -8)" stroke="#fff" stroke-width="1.5" />
+          <rect x={ev.count > 1 ? -6.5 : -5} y={ev.count > 1 ? -14.5 : -13} width={ev.count > 1 ? 13 : 10} height={ev.count > 1 ? 13 : 10} rx="1.5" fill={color} transform="rotate(45 0 -8)" stroke={AXIS.onInk} stroke-width="1.5" />
           {#if ev.count > 1 && i === 0}
-            <text y="-5" font-size="8.5" font-weight="700" fill="#fff" text-anchor="middle" class="font-mono">{ev.count}</text>
+            <text y="-5" font-size="8.5" font-weight="700" fill={AXIS.onInk} text-anchor="middle" class="font-mono">{ev.count}</text>
           {/if}
         </g>
         {/each}
         {#if labelledEvents.has(ev.key)}
         {@const tw = ev.label.length * 6.3 + 8}
-        <rect x={ev.anchor === 'end' ? ev.x - 8 - tw : ev.x + 8} y={priceH - 20} width={tw} height="16" rx="2" fill="#fff" fill-opacity="0.94" stroke="rgb(228 231 236)" />
+        <rect x={ev.anchor === 'end' ? ev.x - 8 - tw : ev.x + 8} y={priceH - 20} width={tw} height="16" rx="2" fill={AXIS.plate} fill-opacity="0.94" stroke={AXIS.line} />
         <text
           x={ev.anchor === 'end' ? ev.x - 12 : ev.x + 12}
           y={priceH - 8}
@@ -382,14 +381,14 @@
         <line x1="0" x2={innerW} y1={yC(last.clicks)} y2={yC(last.clicks)} stroke={SERIES.clicks} stroke-dasharray="1 3" stroke-opacity="0.7" />
         <g transform="translate({innerW + 2},{yC(last.clicks)})">
           <rect y="-9" width={M.right - 4} height="18" rx="2" fill={SERIES.clicks} />
-          <text x={(M.right - 4) / 2} y="3.5" font-size="10.5" font-weight="600" fill="#fff" text-anchor="middle" class="font-mono">{fmtShort(last.clicks)}</text>
+          <text x={(M.right - 4) / 2} y="3.5" font-size="10.5" font-weight="600" fill={AXIS.onAcc} text-anchor="middle" class="font-mono">{fmtShort(last.clicks)}</text>
         </g>
       {/if}
 
       <!-- x axis -->
-      {#each xTicks as t (t.i)}
-        {#if hoverI === null || Math.abs(x(t.i) - x(hoverI)) > 58}
-        <text x={Math.min(Math.max(x(t.i), 22), innerW - 22)} y={innerH + 15} font-size="10.5" fill="rgb(110 118 132)" text-anchor="middle" class="font-mono">{t.label}</text>
+      {#each xTicks as it (it.i)}
+        {#if hoverI === null || Math.abs(x(it.i) - x(hoverI)) > 58}
+        <text x={Math.min(Math.max(x(it.i), 22), innerW - 22)} y={innerH + 15} font-size="10.5" fill={AXIS.text} text-anchor="middle" class="font-mono">{it.label}</text>
         {/if}
       {/each}
 
@@ -397,16 +396,16 @@
       {#if hoverI !== null}
         {@const hx = x(hoverI)}
         {@const hy = yC(points[hoverI].clicks)}
-        <line x1={hx} x2={hx} y1="0" y2={innerH} stroke="rgb(67 74 87)" stroke-dasharray="3 3" />
-        <line x1="0" x2={innerW} y1={hy} y2={hy} stroke="rgb(67 74 87)" stroke-dasharray="3 3" stroke-opacity="0.6" />
-        <circle cx={hx} cy={hy} r="3.5" fill={SERIES.clicks} stroke="#fff" stroke-width="1.5" />
+        <line x1={hx} x2={hx} y1="0" y2={innerH} stroke={AXIS.hover} stroke-dasharray="3 3" />
+        <line x1="0" x2={innerW} y1={hy} y2={hy} stroke={AXIS.hover} stroke-dasharray="3 3" stroke-opacity="0.6" />
+        <circle cx={hx} cy={hy} r="3.5" fill={SERIES.clicks} stroke={AXIS.onInk} stroke-width="1.5" />
         <g transform="translate({innerW + 2},{hy})">
-          <rect y="-9" width={M.right - 4} height="18" rx="2" fill="rgb(19 23 34)" />
-          <text x={(M.right - 4) / 2} y="3.5" font-size="10.5" font-weight="600" fill="#fff" text-anchor="middle" class="font-mono">{fmtShort(points[hoverI].clicks)}</text>
+          <rect y="-9" width={M.right - 4} height="18" rx="2" fill={AXIS.ink} />
+          <text x={(M.right - 4) / 2} y="3.5" font-size="10.5" font-weight="600" fill={AXIS.onInk} text-anchor="middle" class="font-mono">{fmtShort(points[hoverI].clicks)}</text>
         </g>
         <g transform="translate({Math.min(Math.max(hx, 34), innerW - 34)},{innerH + 3})">
-          <rect x="-34" width="68" height="17" rx="2" fill="rgb(19 23 34)" />
-          <text y="12" font-size="10.5" fill="#fff" text-anchor="middle" class="font-mono">{dayLabel(points[hoverI].date)}</text>
+          <rect x="-34" width="68" height="17" rx="2" fill={AXIS.ink} />
+          <text y="12" font-size="10.5" fill={AXIS.onInk} text-anchor="middle" class="font-mono">{dayLabel(points[hoverI].date)}</text>
         </g>
       {/if}
     </g>

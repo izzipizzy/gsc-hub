@@ -4,6 +4,7 @@ import { env as privateEnv } from '$env/dynamic/private';
 import { db } from '$lib/server/db';
 import { upsertAccount } from '$lib/server/accounts';
 import { gscCacheInvalidate } from '$lib/server/gsc-cache';
+import { portfolio } from '$lib/server/portfolio';
 import { als } from '$lib/server/request-context';
 import {
   getGoogleClientId, getGoogleClientSecret, ensureAuthSecret
@@ -65,6 +66,8 @@ export const { handle, signIn, signOut } = SvelteKitAuth(async () => {
         // A (re)connected account may present a different site list — the cached
         // one must not outlive the tokens it was fetched with.
         gscCacheInvalidate(`sites:${profile.sub}`);
+        // …and its sites belong in the portfolio snapshot from the next pass on.
+        portfolio.invalidate();
 
         // Возвращаем редирект-URL → Auth.js не создаёт сессию, кидает на /.
         return '/';

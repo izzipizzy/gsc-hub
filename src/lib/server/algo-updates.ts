@@ -27,10 +27,10 @@ export interface AlgoUpdate {
 }
 
 export const ALGO_UPDATE_COLORS: Record<AlgoUpdateType, string> = {
-  core: '#f5923c',
-  spam: '#e0a324',
-  discover: '#f0b35a',
-  other: '#d9a066'
+  core: 'rgb(var(--upd-core))',
+  spam: 'rgb(var(--upd-spam))',
+  discover: 'rgb(var(--upd-discover))',
+  other: 'rgb(var(--upd-other))'
 };
 
 export const ALGO_UPDATES: AlgoUpdate[] = [

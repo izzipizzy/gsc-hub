@@ -11,7 +11,12 @@
 // many sites/windows cannot grow it forever — eviction is oldest-first.
 
 const DEFAULT_TTL_MS = 60 * 60 * 1000;
-const MAX_ENTRIES = 5_000;
+// A fan-out over the whole portfolio needs one entry per site. At 5,000 a
+// 10,000-domain portfolio evicted its own first half while fetching the second,
+// so every load refetched everything. The date series behind /dashboard and
+// /properties no longer live here (see portfolio.ts); this bound covers the
+// remaining per-site fan-outs (striking, exports, MCP) twice over.
+export const MAX_ENTRIES = 25_000;
 
 interface Entry {
   at: number;
@@ -20,6 +25,9 @@ interface Entry {
 }
 
 const store = new Map<string, Entry>();
+// Single flight: callers asking for a key that is already being fetched share
+// that fetch instead of each spending a request on it.
+const inflight = new Map<string, Promise<unknown>>();
 
 function evictOverflow() {
   // Map iterates in insertion order, so the first keys are the oldest.
@@ -41,17 +49,33 @@ export async function gscCached<T>(
     store.set(key, hit);
     return hit.value as T;
   }
-  const value = await fetcher();
-  // Delete-then-set also upgrades a stale entry's position.
-  store.delete(key);
-  store.set(key, { at: Date.now(), expires: Date.now() + ttlMs, value });
-  evictOverflow();
-  return value;
+  const pending = inflight.get(key);
+  if (pending) return pending as Promise<T>;
+  // Started on a later microtask so `p` exists before the fetcher can settle.
+  const p: Promise<T> = Promise.resolve()
+    .then(fetcher)
+    .then((value) => {
+      // Invalidation drops the in-flight marker, so a fetch started before a
+      // Refresh does not write its now-stale answer back over the cleared cache.
+      if (inflight.get(key) === p) {
+        // Delete-then-set also upgrades a stale entry's position.
+        store.delete(key);
+        store.set(key, { at: Date.now(), expires: Date.now() + ttlMs, value });
+        evictOverflow();
+      }
+      return value;
+    })
+    .finally(() => {
+      if (inflight.get(key) === p) inflight.delete(key);
+    });
+  inflight.set(key, p);
+  return p;
 }
 
 /** Drop everything, or only keys starting with `prefix` (`sites:acc123`). */
 export function gscCacheInvalidate(prefix = ''): number {
   let n = 0;
+  for (const key of [...inflight.keys()]) if (key.startsWith(prefix)) inflight.delete(key);
   if (prefix === '') {
     n = store.size;
     store.clear();

@@ -24,7 +24,7 @@ export function isPublicPath(path: string): boolean {
 }
 
 export function isManagerAllowed(path: string): boolean {
-  return path === '/' || path === '/logout' || path.startsWith('/auth/');
+  return path === '/' || path === '/settings/accounts' || path === '/profile' || path === '/logout' || path.startsWith('/auth/');
 }
 
 export function requireAdmin(locals: App.Locals): void {

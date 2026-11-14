@@ -1,33 +1,56 @@
 // One colour per metric on every chart in the app (site chart, dashboard
-// sparklines, query history). Mirrors the --series-* variables in app.css;
-// SVG attributes need literal values, so the source of truth lives here too.
+// sparklines, query history). Colours live as RGB-channel variables in
+// app.css so they follow the theme; SVG presentation attributes accept var().
+
+/** `rgb(var(--name))`, or with alpha `rgb(var(--name) / a)`, for a token in app.css. */
+export function tok(name: string, alpha?: number): string {
+  return alpha === undefined ? `rgb(var(--${name}))` : `rgb(var(--${name}) / ${alpha})`;
+}
+
 export const SERIES = {
-  clicks: '#2962ff',
-  impr: '#9aa3b2',
+  clicks: tok('series-clicks'),
+  impr: tok('series-impr'),
   /** position is a level, not a direction: ink, never the up/down colours */
-  pos: '#131722',
-  ctr: '#6b7684',
+  pos: tok('series-pos'),
+  ctr: tok('series-ctr'),
   /** previous period, drawn dashed behind the current one */
-  prev: '#c3c9d3'
+  prev: tok('series-prev')
 } as const;
 
 /** Google update bands: amber is reserved for updates, so every type stays in
  *  the amber family; the label names the type (Core, Spam, Discover). */
-export const UPDATE_COLORS: Record<string, string> = {
-  core: '#f5923c',
-  spam: '#e0a324',
-  discover: '#f0b35a',
-  other: '#d9a066'
+export const UPDATE_TOKENS: Record<string, string> = {
+  core: 'upd-core',
+  spam: 'upd-spam',
+  discover: 'upd-discover',
+  other: 'upd-other'
 };
 
+export const UPDATE_COLORS: Record<string, string> = Object.fromEntries(
+  Object.entries(UPDATE_TOKENS).map(([type, name]) => [type, tok(name)])
+);
+
+/** Update band colour with alpha; unknown types fall back to `other`. */
+export function updateColor(type: string, alpha?: number): string {
+  return tok(UPDATE_TOKENS[type] ?? UPDATE_TOKENS.other, alpha);
+}
+
 /** Site events (merges, migrations) are drawn in ink so they never read as a drop. */
-export const EVENT_COLOR = '#131722';
+export const EVENT_COLOR = tok('event-merge');
 
 export const AXIS = {
-  grid: 'rgb(238 240 243)',
-  line: 'rgb(228 231 236)',
-  text: 'rgb(110 118 132)',
-  ink: 'rgb(19 23 34)'
+  grid: tok('line-soft'),
+  line: tok('line'),
+  text: tok('ink-3'),
+  /** crosshair and the volume bar under the pointer */
+  hover: tok('ink-2'),
+  ink: tok('ink'),
+  /** text on the filled clicks (acc) tag */
+  onAcc: tok('on-acc'),
+  /** text on ink tags and marker outlines: the chart surface colour, so it inverts with the theme */
+  onInk: tok('pane'),
+  /** label plates behind event names */
+  plate: tok('pane')
 } as const;
 
 /** Position an event on an index-spaced daily series, interpolating calendar gaps.

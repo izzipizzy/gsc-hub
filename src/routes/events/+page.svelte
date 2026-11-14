@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { t, tx, plural, fmtNum, fmtPct, fmtDec, fmtDay, getLocale } from '$lib/i18n/index.svelte';
+  import { isoDate, dateTime, clock } from '$lib/utils/time';
   import SortCaret from '$lib/components/SortCaret.svelte';
   import type { PageData } from './$types';
   let { data }: { data: PageData } = $props();
@@ -32,30 +34,29 @@
 
   const sites = $derived(new Set(data.rows.map((r) => r.site)).size);
   const arrow = (k: Key): 'asc' | 'desc' | '' => (sortKey === k ? dir : '');
-  const fmt = (ms: number) => new Date(ms).toISOString().replace('T', ' ').slice(0, 16);
+  const fmt = (ms: number) => dateTime(ms);
   const ext = (host: string) => `https://${host}/`;
 </script>
 
-<svelte:head><title>Events · gsc-hub</title></svelte:head>
+<svelte:head><title>{t('События')} · gsc-hub</title></svelte:head>
 
 <main class="page">
   <header class="app-toolbar">
     <div class="app-toolbar-left">
-      <nav class="app-breadcrumbs"><a href="/properties">Properties</a><span aria-hidden="true">/</span><span class="text-ink-2">Events</span></nav>
-      <h1 class="app-pagetitle">Склейки и события</h1>
+      <nav class="app-breadcrumbs"><span>{t('Работа')}</span><span aria-hidden="true">/</span><span class="text-ink-2">{t('События')}</span></nav>
+      <h1 class="app-pagetitle">{t('Склейки и события')}</h1>
       <p class="text-xs text-ink-3">
-        <span class="app-num">{data.rows.length}</span> событий на <span class="app-num">{sites}</span> сайтах. Те же маркеры, что на графиках сайтов, на дашборде и в portfolio pulse.
-        Склейки и кастомные события добавляются на странице сайта или через <a class="text-acc hover:underline" href="/api">API</a>; покупки — автоматически из <a class="text-acc hover:underline" href="/magiclinks">Magiclinks</a>, по дате заказа.
+        {t('{events} на {sites}.', { events: plural('событие', data.rows.length), sites: plural('сайт', sites) })} {t('Те же маркеры, что на графиках сайтов, на дашборде и в portfolio pulse. Склейки и свои события добавляются на странице сайта или через')} <a class="link" href="/api">API</a>{t('; покупки — автоматически из раздела')} <a class="link" href="/magiclinks">«{t('Меджики')}»</a>{t(', по дате заказа.')}
       </p>
     </div>
     <div class="app-toolbar-right">
-      <select bind:value={eventType} class="input" aria-label="Тип события">
-        <option value="">Все события</option>
-        <option value="merge">Склейки</option>
-        <option value="custom">Кастомные события</option>
-        <option value="link_purchase">Покупки ссылок</option>
+      <select bind:value={eventType} class="input" aria-label={t('Тип события')}>
+        <option value="">{t('Все события')}</option>
+        <option value="merge">{t('Склейки')}</option>
+        <option value="custom">{t('Свои события')}</option>
+        <option value="link_purchase">{t('Покупки ссылок')}</option>
       </select>
-      <input bind:value={q} placeholder="сайт, донор или описание" aria-label="Фильтр событий" class="input w-72" />
+      <input bind:value={q} placeholder={t('сайт, донор или описание')} aria-label={t('Фильтр событий')} class="input w-72" />
     </div>
   </header>
 
@@ -64,11 +65,11 @@
       <table class="app-table">
         <thead>
           <tr>
-            <th class="sort-th"><button type="button" class="hover:text-ink" onclick={() => sortBy('site')}>сайт<SortCaret dir={arrow('site')} /></button></th>
-            <th class="sort-th"><button type="button" class="hover:text-ink" onclick={() => sortBy('typeLabel')}>событие<SortCaret dir={arrow('typeLabel')} /></button></th>
-            <th class="sort-th"><button type="button" class="hover:text-ink" onclick={() => sortBy('donor')}>описание<SortCaret dir={arrow('donor')} /></button></th>
-            <th class="sort-th"><button type="button" class="hover:text-ink" onclick={() => sortBy('date')}>дата<SortCaret dir={arrow('date')} /></button></th>
-            <th class="sort-th"><button type="button" class="hover:text-ink" onclick={() => sortBy('addedAt')}>внесено<SortCaret dir={arrow('addedAt')} /></button></th>
+            <th class="sort-th"><button type="button" class="hover:text-ink" onclick={() => sortBy('site')}>{t('сайт')}<SortCaret dir={arrow('site')} /></button></th>
+            <th class="sort-th"><button type="button" class="hover:text-ink" onclick={() => sortBy('typeLabel')}>{t('событие')}<SortCaret dir={arrow('typeLabel')} /></button></th>
+            <th class="sort-th"><button type="button" class="hover:text-ink" onclick={() => sortBy('donor')}>{t('описание')}<SortCaret dir={arrow('donor')} /></button></th>
+            <th class="sort-th"><button type="button" class="hover:text-ink" onclick={() => sortBy('date')}>{t('дата')}<SortCaret dir={arrow('date')} /></button></th>
+            <th class="sort-th"><button type="button" class="hover:text-ink" onclick={() => sortBy('addedAt')}>{t('внесено')}<SortCaret dir={arrow('addedAt')} /></button></th>
           </tr>
         </thead>
         <tbody>
@@ -76,13 +77,13 @@
             <tr>
               <td>
                 {#if r.href}<a class="font-medium text-ink hover:text-acc hover:underline" href={r.href}>{r.site}</a>{:else}<span class="font-medium text-ink">{r.site}</span>{/if}
-                <a class="ml-1 text-ink-4 hover:text-acc" href={ext(r.site)} target="_blank" rel="noopener noreferrer" title="Открыть {r.site}" aria-label="Открыть {r.site}"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" class="inline h-3 w-3 align-[-1px]" aria-hidden="true"><path d="M6.5 3.5h-3v9h9v-3M9 3.5h3.5V7M12.5 3.5 7 9"/></svg></a>
+                <a class="ml-1 text-ink-4 hover:text-acc" href={ext(r.site)} target="_blank" rel="noopener noreferrer" title={t('Открыть {name}', { name: r.site })} aria-label={t('Открыть {name}', { name: r.site })}><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" class="inline h-3 w-3 align-[-1px]" aria-hidden="true"><path d="M6.5 3.5h-3v9h9v-3M9 3.5h3.5V7M12.5 3.5 7 9"/></svg></a>
               </td>
-              <td><span class="inline-block mr-1.5 h-2 w-2 rounded-xs" style:background={r.color}></span>{r.typeLabel}</td>
+              <td><span class="inline-block mr-1.5 h-2 w-2 rounded-xs" style:background={r.color}></span>{tx(r.typeLabel)}</td>
               <td>
                 {#if r.donor}
                   ← {r.donor}
-                  <a class="ml-1 text-ink-4 hover:text-acc" href={ext(r.donor)} target="_blank" rel="noopener noreferrer" title="Открыть {r.donor}" aria-label="Открыть {r.donor}"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" class="inline h-3 w-3 align-[-1px]" aria-hidden="true"><path d="M6.5 3.5h-3v9h9v-3M9 3.5h3.5V7M12.5 3.5 7 9"/></svg></a>
+                  <a class="ml-1 text-ink-4 hover:text-acc" href={ext(r.donor)} target="_blank" rel="noopener noreferrer" title={t('Открыть {name}', { name: r.donor })} aria-label={t('Открыть {name}', { name: r.donor })}><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" class="inline h-3 w-3 align-[-1px]" aria-hidden="true"><path d="M6.5 3.5h-3v9h9v-3M9 3.5h3.5V7M12.5 3.5 7 9"/></svg></a>
                 {:else if r.orderHref}
                   <a href={r.orderHref} class="font-medium hover:underline" style:color={r.color}>{r.note} →</a>
                 {:else}
@@ -93,7 +94,7 @@
               <td class="app-num text-ink-3">{fmt(r.addedAt)}</td>
             </tr>
           {:else}
-            <tr><td colspan="5" class="py-3 text-ink-3">{q || eventType ? 'Ничего не нашлось.' : 'Событий пока нет.'}</td></tr>
+            <tr><td colspan="5" class="py-3 text-ink-3">{q || eventType ? t('Ничего не нашлось.') : t('Событий пока нет.')}</td></tr>
           {/each}
         </tbody>
       </table>

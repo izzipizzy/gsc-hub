@@ -1,11 +1,16 @@
 <script lang="ts">
+  import PeriodPicker from '$lib/components/PeriodPicker.svelte';
+  import { t, tx, plural, fmtNum, fmtPct, fmtDec, fmtDay, getLocale } from '$lib/i18n/index.svelte';
   import SiteSearch from '$lib/components/SiteSearch.svelte';
+  import Pager from '$lib/components/Pager.svelte';
+  import SnapshotStatus from '$lib/components/SnapshotStatus.svelte';
   import { page } from '$app/state';
   import SortCaret from '$lib/components/SortCaret.svelte';
   import { onMount } from 'svelte';
-  import { goto, invalidateAll } from '$app/navigation';
+  import { goto, invalidateAll, replaceState } from '$app/navigation';
+  import { parsePeriod } from '$lib/utils/periods';
   import { env as pubenv } from '$env/dynamic/public';
-  import { displaySite, matchesSiteDomain, siteDomain, siteHref, siteSearchHref, bingWebmasterHref, gscHref } from '$lib/utils/site';
+  import { displaySite, siteHref, siteSearchHref, bingWebmasterHref, gscHref } from '$lib/utils/site';
   import googleIcon from '$lib/assets/google.svg';
   import bingIcon from '$lib/assets/bing.svg';
   import TrendChart from '$lib/components/TrendChart.svelte';
@@ -18,10 +23,9 @@
   // sends them to another origin of the same hub when one is configured.
   const aiBase = pubenv.PUBLIC_AI_BASE || '';
 
-  const nf = new Intl.NumberFormat('en-US');
-  function fmtNum(n: number) { return nf.format(n); }
-  function fmtCtr(c: number) { return (c * 100).toFixed(1) + '%'; }
-  function fmtPos(p: number) { return p.toFixed(1); }
+  // Numbers follow the interface language (fmtNum from i18n).
+  function fmtCtr(c: number) { return fmtPct(c); }
+  function fmtPos(p: number) { return fmtDec(p, 1); }
   function fmtDate(ts: number | null) { return ts ? new Date(ts * 1000).toISOString().slice(0, 10) : '—'; }
 
   // Inline sparkline path from a daily-clicks series.
@@ -52,10 +56,23 @@
     updates: PulseUpdate[];
     events: { date: string; label: string; color: string }[];
     errors: { accountId: string; accountEmail: string; reason: string }[];
+    status: { state: 'cold' | 'ready'; refreshing: boolean };
   };
 
-  const PULSE_OPTIONS = [30, 90, 180, 365, 480];
-  let pulseDays = $state(180);
+  // Pulse period lives in the URL (?pulse=), so a view can be bookmarked; the
+  // switch itself stays client-side and only rewrites the address.
+  let pulseDays = $state(parsePeriod(page.url.searchParams.get('pulse')) ?? 90);
+  function setPulse(d: number) {
+    pulseDays = d;
+    const url = new URL(page.url);
+    url.searchParams.set('pulse', String(d));
+    replaceState(url, page.state);
+  }
+  const pulseHref = (d: number) => {
+    const url = new URL(page.url);
+    url.searchParams.set('pulse', String(d));
+    return `${url.pathname}${url.search}`;
+  };
   let showPulseUpdates = $state(true);
   let showPulseEvents = $state(true);
   let pulseState = $state<
@@ -75,15 +92,21 @@
       const res = await fetch(`/properties/pulse?days=${days}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data: PulseData = await res.json();
-      pulseCache.set(days, data);
+      // A pulse summed from a half-filled snapshot is not worth keeping.
+      if (!data.status.refreshing) pulseCache.set(days, data);
       if (pulseDays === days) pulseState = { kind: 'loaded', data };
     } catch (e) {
       if (pulseDays === days) pulseState = { kind: 'error', message: (e as Error).message };
     }
   }
 
-  // Tracks pulseDays: re-runs on switcher clicks, and once on mount for the initial 180d.
+  // Tracks pulseDays: re-runs on switcher clicks, and once on mount for the initial period.
+  // Also re-runs when the snapshot moves on (a pass finished or progressed),
+  // so the pulse follows the table rather than a session-old cache.
   $effect(() => {
+    void data.status.updatedAt;
+    void data.status.done;
+    pulseCache.clear();
     loadPulse(pulseDays);
   });
 
@@ -95,8 +118,8 @@
     return `${s.accountId}|${s.siteUrl}`;
   }
 
-  let hidden = $state<Set<string>>(new Set());
-  let showHidden = $state(false);
+  // Hidden sites live on the server; the load excludes them (or lists them
+  // with ?hidden=1) and marks each row.
 
   onMount(async () => {
     // One-time migration: push any sites hidden in the old localStorage store to
@@ -119,41 +142,32 @@
           );
         }
         localStorage.removeItem(STORAGE_KEY);
+        await invalidateAll();
       }
     } catch (e) {
       console.warn('[gsc-hub] hidden-sites migration failed:', e);
     }
-
-    try {
-      const res = await fetch('/properties/hidden-sites');
-      const j = await res.json();
-      if (Array.isArray(j.hidden)) hidden = new Set(j.hidden);
-    } catch (e) {
-      console.warn('[gsc-hub] Could not load hidden sites:', e);
-    }
   });
 
-  function hideSite(s: SiteWithSummary) {
-    hidden.add(keyOf(s));
-    hidden = new Set(hidden);
-    fetch('/properties/hidden-sites', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account: s.accountId, site: s.siteUrl })
-    }).catch((e) => console.warn('[gsc-hub] Could not hide site:', e));
+  let hideError = $state<string | null>(null);
+  async function setHidden(s: SiteWithSummary, hide: boolean) {
+    hideError = null;
+    try {
+      const r = await fetch('/properties/hidden-sites', {
+        method: hide ? 'POST' : 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account: s.accountId, site: s.siteUrl })
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    } catch (e) {
+      hideError = `Could not ${hide ? 'hide' : 'unhide'} ${displaySite(s.siteUrl)}: ${(e as Error).message}`;
+    }
+    await invalidateAll();
     invalidatePulse();
+    loadTop();
   }
-
-  function unhideSite(s: SiteWithSummary) {
-    hidden.delete(keyOf(s));
-    hidden = new Set(hidden);
-    fetch('/properties/hidden-sites', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account: s.accountId, site: s.siteUrl })
-    }).catch((e) => console.warn('[gsc-hub] Could not unhide site:', e));
-    invalidatePulse();
-  }
+  const hideSite = (s: SiteWithSummary) => setHidden(s, true);
+  const unhideSite = (s: SiteWithSummary) => setHidden(s, false);
 
   // The pulse aggregates visible sites only — after a hide/unhide the cached window
   // aggregates are stale. Server-side per-site responses are TTL-cached, so the
@@ -163,45 +177,23 @@
     loadPulse(pulseDays);
   }
 
-  const searchQuery = $derived(page.state.siteSearchQuery ?? page.url.searchParams.get('q') ?? '');
-  const searchParam = $derived(`&q=${encodeURIComponent(searchQuery)}`);
-
-  let visibleSites = $derived(
-    data.sites.filter(s => (!hidden.has(keyOf(s)) || showHidden) && matchesSiteDomain(s.siteUrl, searchQuery))
-  );
-
-  // Totals across non-hidden sites for the selected period.
-  let totals = $derived.by(() => {
-    let clicks = 0, impressions = 0, sites = 0;
-    for (const s of data.sites) {
-      if (hidden.has(keyOf(s))) continue;
-      sites++;
-      if (s.summary) { clicks += s.summary.clicks; impressions += s.summary.impressions; }
-    }
-    return { sites, clicks, impressions };
-  });
-
-  // Same totals, broken down per connected account (non-hidden sites only).
-  let perAccount = $derived.by(() => {
-    const map = new Map<string, { accountId: string; label: string; email: string; sites: number; clicks: number; impressions: number }>();
-    for (const s of data.sites) {
-      if (hidden.has(keyOf(s))) continue;
-      let a = map.get(s.accountId);
-      if (!a) {
-        a = { accountId: s.accountId, label: s.accountLabel ?? s.accountEmail, email: s.accountEmail, sites: 0, clicks: 0, impressions: 0 };
-        map.set(s.accountId, a);
-      }
-      a.sites++;
-      if (s.summary) { a.clicks += s.summary.clicks; a.impressions += s.summary.impressions; }
-    }
-    return [...map.values()].sort((x, y) => y.clicks - x.clicks);
-  });
-
-  function goToDays(raw: string | number) {
-    const n = Math.floor(Number(raw));
-    if (!Number.isFinite(n) || n < 1) return;
-    goto(`?days=${Math.min(n, 480)}&sort=${data.sort}&dir=${data.dir}${searchParam}`);
+  const searchQuery = $derived(data.q);
+  // Search and the hidden toggle ride along on every period/sort link.
+  const searchParam = $derived(`${data.q ? `&q=${encodeURIComponent(data.q)}` : ''}${data.showHidden ? '&hidden=1' : ''}`);
+  function showHiddenHref(on: boolean): string {
+    const url = new URL(page.url);
+    if (on) url.searchParams.set('hidden', '1');
+    else url.searchParams.delete('hidden');
+    url.searchParams.delete('page');
+    return `${url.pathname}${url.search}`;
   }
+
+  // One page of the table; totals and the per-account split are over the whole
+  // portfolio and come computed from the server.
+  let visibleSites = $derived(data.sites);
+  let totals = $derived(data.totals);
+  let perAccount = $derived(data.perAccount);
+
 
   function sortHref(field: string, currentSort: string, currentDir: 'asc' | 'desc', days: number) {
     const nextDir = currentSort === field && currentDir === 'desc' ? 'asc' : 'desc';
@@ -216,6 +208,10 @@
   // Queries table: client-side sort state
   let qSort = $state<'query' | 'page' | 'country' | 'clicks' | 'impressions' | 'ctr' | 'position' | 'bingClicks' | 'bingImpr'>('position');
   let qDir = $state<'asc' | 'desc'>('asc');
+  // Pages table sort. Declared up here: the Top-block effects below run as
+  // soon as they are declared and read it.
+  let pSort = $state<'page' | 'clicks' | 'impressions' | 'ctr' | 'position'>('impressions');
+  let pDir = $state<'asc' | 'desc'>('desc');
 
   // Junk-query filters (e.g. "site:") — stored server-side in SQLite, applied
   // here as case-insensitive substring matches.
@@ -287,132 +283,97 @@
     }
   }
 
-  const allQueries = $derived.by(() => {
-    // Bare-host domains of sites currently visible (not hidden). Bing data is merged
-    // only for these, so hidden sites don't leak back in via Bing.
-    const visibleDomains = new Set<string>();
-    for (const s of data.sites) if (!hidden.has(keyOf(s))) visibleDomains.add(siteDomain(s.siteUrl));
-    // Bing keys per visible domain, keyed by NORMALIZED query (lowercase + collapsed
-    // whitespace) so GSC↔Bing matching survives case/spacing diffs. Value keeps the
-    // original Bing query (for display of Bing-only rows).
-    const norm = (q: string) => q.toLowerCase().replace(/\s+/g, ' ').trim();
-    const bingByDomain = new Map<string, Map<string, { query: string; clicks: number; impressions: number; position: number }>>();
-    for (const b of data.bingQueries) {
-      if (!visibleDomains.has(b.host)) continue;
-      let m = bingByDomain.get(b.host);
-      if (!m) { m = new Map(); bingByDomain.set(b.host, m); }
-      m.set(norm(b.query), { query: b.query, clicks: b.clicks, impressions: b.impressions, position: b.position });
-    }
+  // ─── Top queries / top pages: summarised on the server (/properties/top) ───
+  // Loaded once the block scrolls into view, and again whenever a filter, the
+  // sort or the period changes. The browser holds the 200 rows it shows.
+  type TopStatus = { state: 'cold' | 'ready'; refreshing: boolean; done: number; total: number; error: string | null };
+  type QueryRow = {
+    query: string; page: string; country: string; domain: string;
+    gsc: { clicks: number; impressions: number; ctr: number; position: number } | null;
+    bing: { clicks: number; impressions: number; position: number } | null;
+  };
+  type TopQueries = { rows: QueryRow[]; sourceRows: number; filteredCount: number; matched: number; availableCountries: string[]; availableDomains: string[]; status: TopStatus };
+  type PageRow = { page: string; clicks: number; impressions: number; ctr: number; position: number };
+  type TopPages = { rows: PageRow[]; sourceRows: number; matched: number; status: TopStatus };
 
-    type Bucket = { query: string; page: string; country: string; domain: string; host: string; clicks: number; impressions: number; posSum: number; posWeight: number };
-    const map = new Map<string, Bucket>();
-    const gscCovered = new Set<string>(); // `${host}\n${normQuery}` — which Bing keys are GSC-only
-    for (const entry of data.queryEntries) {
-      const k = `${entry.accountId}|${entry.siteUrl}`;
-      if (hidden.has(k)) continue;
-      const domain = displaySite(entry.siteUrl);
-      const host = siteDomain(entry.siteUrl);
-      for (const r of entry.rows) {
-        if (!r.query) continue;
-        const key = `${r.query}|${r.page}|${r.country}`;
-        const cur = map.get(key) ?? { query: r.query, page: r.page, country: r.country, domain, host, clicks: 0, impressions: 0, posSum: 0, posWeight: 0 };
-        cur.clicks += r.clicks;
-        cur.impressions += r.impressions;
-        cur.posSum += r.position * r.impressions;
-        cur.posWeight += r.impressions;
-        map.set(key, cur);
-        gscCovered.add(`${host}\n${norm(r.query)}`);
-      }
-    }
-    type Row = {
-      query: string; page: string; country: string; domain: string;
-      gsc: { clicks: number; impressions: number; ctr: number; position: number } | null;
-      bing: { clicks: number; impressions: number; position: number } | null;
+  // "Show more" grows the slice by a page; any filter or sort change starts over.
+  const TOP_STEP = 200;
+  const TOP_MAX = 5000;
+  let qLimit = $state(TOP_STEP);
+  let pLimit = $state(TOP_STEP);
+
+  let topVisible = $state(false);
+  let topQueriesState = $state<{ kind: 'idle' | 'loading' } | { kind: 'error'; message: string } | { kind: 'loaded'; data: TopQueries }>({ kind: 'idle' });
+  let topPagesState = $state<{ kind: 'idle' | 'loading' } | { kind: 'error'; message: string } | { kind: 'loaded'; data: TopPages }>({ kind: 'idle' });
+  let topTimer: ReturnType<typeof setTimeout> | null = null;
+  let topSeq = 0;
+
+  function topQueryUrl(): string {
+    const p = new URLSearchParams({ kind: 'queries', days: String(data.days), sort: qSort, dir: qDir, source: querySource, limit: String(qLimit) });
+    if (selectedCountries.size) p.set('countries', [...selectedCountries].join(','));
+    if (selectedDomains.size) p.set('domains', [...selectedDomains].join(','));
+    if (posMin != null && posMin > 0) p.set('posMin', String(posMin));
+    if (posMax != null) p.set('posMax', String(posMax));
+    if (showFilteredQueries) p.set('showFiltered', '1');
+    return `/properties/top?${p}`;
+  }
+
+  async function loadTop() {
+    if (!topVisible) return;
+    const seq = ++topSeq;
+    if (topTimer) clearTimeout(topTimer);
+    if (topQueriesState.kind !== 'loaded') topQueriesState = { kind: 'loading' };
+    if (topPagesState.kind !== 'loaded') topPagesState = { kind: 'loading' };
+    const get = async <T,>(u: string): Promise<T> => {
+      const r = await fetch(u);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
     };
-    const arr: Row[] = [];
-    for (const b of map.values()) {
-      const bq = bingByDomain.get(b.host)?.get(norm(b.query));
-      arr.push({
-        query: b.query, page: b.page, country: b.country, domain: b.domain,
-        gsc: {
-          clicks: b.clicks,
-          impressions: b.impressions,
-          ctr: b.impressions > 0 ? b.clicks / b.impressions : 0,
-          position: b.posWeight > 0 ? b.posSum / b.posWeight : 0
-        },
-        bing: bq ? { clicks: bq.clicks, impressions: bq.impressions, position: bq.position } : null
-      });
-    }
-    // Bing-only keys (no GSC row for that domain) → rows showing the domain, no page URL.
-    for (const [host, m] of bingByDomain) {
-      for (const [nq, v] of m) {
-        if (gscCovered.has(`${host}\n${nq}`)) continue;
-        arr.push({
-          query: v.query, page: '', country: '', domain: host,
-          gsc: null,
-          bing: { clicks: v.clicks, impressions: v.impressions, position: v.position }
-        });
+    const [qr, pr] = await Promise.allSettled([
+      get<TopQueries>(topQueryUrl()),
+      get<TopPages>(`/properties/top?kind=pages&days=${data.days}&sort=${pSort}&dir=${pDir}&limit=${pLimit}`)
+    ]);
+    if (seq !== topSeq) return; // a newer request superseded this one
+    topQueriesState = qr.status === 'fulfilled' ? { kind: 'loaded', data: qr.value } : { kind: 'error', message: (qr.reason as Error).message };
+    topPagesState = pr.status === 'fulfilled' ? { kind: 'loaded', data: pr.value } : { kind: 'error', message: (pr.reason as Error).message };
+    // While the pass that fills these rows runs, look again now and then.
+    const running = (qr.status === 'fulfilled' && qr.value.status.refreshing) || (pr.status === 'fulfilled' && pr.value.status.refreshing);
+    if (running) topTimer = setTimeout(loadTop, 5_000);
+  }
+
+  // Re-query on any input change; typing in the position boxes is debounced.
+  let topDebounce: ReturnType<typeof setTimeout> | null = null;
+  let qKey = '';
+  let pKey = '';
+  $effect.pre(() => {
+    const nq = JSON.stringify([data.days, qSort, qDir, querySource, posMin, posMax, showFilteredQueries, [...selectedCountries], [...selectedDomains], queryFilters.length]);
+    const np = JSON.stringify([data.days, pSort, pDir]);
+    if (nq !== qKey) { qKey = nq; qLimit = TOP_STEP; }
+    if (np !== pKey) { pKey = np; pLimit = TOP_STEP; }
+  });
+  $effect(() => {
+    void [data.days, qSort, qDir, pSort, pDir, querySource, posMin, posMax, showFilteredQueries, selectedCountries, selectedDomains, queryFilters, topVisible, qLimit, pLimit];
+    if (topDebounce) clearTimeout(topDebounce);
+    topDebounce = setTimeout(loadTop, 200);
+  });
+
+  function observeTop(node: HTMLElement) {
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) {
+        topVisible = true;
+        io.disconnect();
       }
-    }
-    const dirMul = qDir === 'desc' ? -1 : 1;
-    const val = (q: Row) => {
-      switch (qSort) {
-        case 'clicks': return q.gsc?.clicks ?? -1;
-        case 'impressions': return q.gsc?.impressions ?? -1;
-        case 'ctr': return q.gsc?.ctr ?? -1;
-        case 'position': return q.gsc?.position ?? q.bing?.position ?? 99999;
-        case 'bingClicks': return q.bing?.clicks ?? -1;
-        case 'bingImpr': return q.bing?.impressions ?? -1;
-        default: return 0;
-      }
-    };
-    arr.sort((a, b) => {
-      if (qSort === 'query') return dirMul * a.query.localeCompare(b.query);
-      if (qSort === 'page') return dirMul * a.page.localeCompare(b.page);
-      if (qSort === 'country') return dirMul * a.country.localeCompare(b.country);
-      return dirMul * (val(a) - val(b));
-    });
-    return arr;
-  });
+    }, { rootMargin: '400px' });
+    io.observe(node);
+    return { destroy: () => io.disconnect() };
+  }
 
-  const hiddenQueryCount = $derived(
-    showFilteredQueries ? 0 : allQueries.filter((q) => isQueryFiltered(q.query)).length
-  );
-
-  // Facet option lists — only countries/domains actually present in the data.
-  const availableCountries = $derived.by(() => {
-    const s = new Set<string>();
-    for (const q of allQueries) if (q.country) s.add(q.country);
-    return Array.from(s).sort();
-  });
-  const availableDomains = $derived.by(() => {
-    const s = new Set<string>();
-    for (const q of allQueries) if (q.domain) s.add(q.domain);
-    return Array.from(s).sort();
-  });
-
-  const aggregatedQueries = $derived.by(() => {
-    let base = showFilteredQueries ? allQueries : allQueries.filter((q) => !isQueryFiltered(q.query));
-    if (selectedCountries.size > 0) base = base.filter((q) => selectedCountries.has(q.country));
-    if (selectedDomains.size > 0) base = base.filter((q) => selectedDomains.has(q.domain));
-    if (querySource === 'gsc') base = base.filter((q) => q.gsc && !q.bing);
-    else if (querySource === 'bing') base = base.filter((q) => q.bing && !q.gsc);
-    else if (querySource === 'both') base = base.filter((q) => q.gsc && q.bing);
-    // Avg-position range (inclusive). Uses the row's effective position (GSC, else Bing).
-    // Default (from 0, no 'to') = no filtering.
-    const hasMin = posMin != null && posMin > 0;
-    const hasMax = posMax != null;
-    if (hasMin || hasMax) {
-      base = base.filter((q) => {
-        const p = q.gsc?.position ?? q.bing?.position ?? 0;
-        if (p <= 0) return false; // no real position
-        if (hasMin && p < (posMin as number)) return false;
-        if (hasMax && p > (posMax as number)) return false;
-        return true;
-      });
-    }
-    return base.slice(0, 200);
-  });
+  const topQ = $derived(topQueriesState.kind === 'loaded' ? topQueriesState.data : null);
+  const aggregatedQueries = $derived(topQ?.rows ?? []);
+  const hiddenQueryCount = $derived(topQ?.filteredCount ?? 0);
+  const availableCountries = $derived(topQ?.availableCountries ?? []);
+  const availableDomains = $derived(topQ?.availableDomains ?? []);
+  const topP = $derived(topPagesState.kind === 'loaded' ? topPagesState.data : null);
 
   function toggleQSort(field: typeof qSort) {
     if (qSort === field) {
@@ -428,40 +389,8 @@
     return qDir;
   }
 
-  // Pages table: client-side sort state
-  let pSort = $state<'page' | 'clicks' | 'impressions' | 'ctr' | 'position'>('impressions');
-  let pDir = $state<'asc' | 'desc'>('desc');
 
-  const aggregatedPages = $derived.by(() => {
-    type Bucket = { clicks: number; impressions: number; posSum: number; posWeight: number };
-    const map = new Map<string, Bucket>();
-    for (const entry of data.pageEntries) {
-      const k = `${entry.accountId}|${entry.siteUrl}`;
-      if (hidden.has(k)) continue;
-      for (const r of entry.rows) {
-        if (!r.page) continue;
-        const cur = map.get(r.page) ?? { clicks: 0, impressions: 0, posSum: 0, posWeight: 0 };
-        cur.clicks += r.clicks;
-        cur.impressions += r.impressions;
-        cur.posSum += r.position * r.impressions;
-        cur.posWeight += r.impressions;
-        map.set(r.page, cur);
-      }
-    }
-    const arr = Array.from(map.entries()).map(([page, b]) => ({
-      page,
-      clicks: b.clicks,
-      impressions: b.impressions,
-      ctr: b.impressions > 0 ? b.clicks / b.impressions : 0,
-      position: b.posWeight > 0 ? b.posSum / b.posWeight : 0
-    }));
-    const dirMul = pDir === 'desc' ? -1 : 1;
-    arr.sort((a, b) => {
-      if (pSort === 'page') return dirMul * a.page.localeCompare(b.page);
-      return dirMul * (a[pSort] - b[pSort]);
-    });
-    return arr.slice(0, 200);
-  });
+  const aggregatedPages = $derived(topP?.rows ?? []);
 
   function togglePSort(field: typeof pSort) {
     if (pSort === field) {
@@ -510,10 +439,8 @@
       const res = await fetch(`/properties/query-history?q=${encodeURIComponent(query)}&days=480`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      // Filter out hidden sites and aggregate by date.
-      const visible = (data.entries as QueryHistoryEntry[]).filter(
-        (e) => !hidden.has(`${e.accountId}|${e.siteUrl}`)
-      );
+      // Hidden sites are already dropped by the server; aggregate by date.
+      const visible = data.entries as QueryHistoryEntry[];
       type Bucket = { impressions: number; clicks: number; posWeightedSum: number };
       const map = new Map<string, Bucket>();
       for (const e of visible) {
@@ -579,11 +506,15 @@
   async function collectUrlsForSite(
     s: { accountId: string; siteUrl: string }
   ): Promise<{ urls: string[]; source: 'page-entries' | 'page-entries+sitemap' | 'sitemap'; sitemapErr?: string }> {
-    const entry = data.pageEntries.find(
-      (e) => e.accountId === s.accountId && e.siteUrl === s.siteUrl
-    );
-    const fromPages = entry
-      ? entry.rows
+    let rows: { page: string; impressions: number }[] = [];
+    try {
+      const r = await fetch(`/properties/top?kind=site-pages&days=${data.days}&account=${encodeURIComponent(s.accountId)}&site=${encodeURIComponent(s.siteUrl)}`);
+      if (r.ok) rows = (await r.json()).pages;
+    } catch {
+      // fall through to the sitemap
+    }
+    const fromPages = rows.length
+      ? rows
           .slice()
           .sort((a, b) => b.impressions - a.impressions)
           .map((r) => r.page)
@@ -1028,16 +959,16 @@
     refreshError = null;
     try {
       const r = await fetch('/cache/clear', { method: 'POST' });
-      if (!r.ok) refreshError = `Кеш не сброшен (HTTP ${r.status}) - цифры могут быть до часа старыми.`;
+      if (!r.ok) refreshError = t('Кеш не сброшен (HTTP {status}) - цифры могут быть до часа старыми.', { status: r.status });
     } catch {
-      refreshError = 'Кеш не сброшен: сервер не ответил - цифры могут быть до часа старыми.';
+      refreshError = t('Кеш не сброшен: сервер не ответил - цифры могут быть до часа старыми.');
     }
     await invalidateAll();
     invalidatePulse();
   }
 </script>
 
-<svelte:head><title>Sites — gsc-hub</title></svelte:head>
+<svelte:head><title>{t('Сайты · gsc-hub')}</title></svelte:head>
 <svelte:window
   onkeydown={(e) => { if (e.key === 'Escape') { if (sitemapModal) closeSitemapModal(); closeFacets(); } }}
   onpointerdown={(e) => closeFacets(e.target as Element)}
@@ -1057,72 +988,54 @@
   <header class="app-toolbar">
     <div class="app-toolbar-left">
       <nav class="app-breadcrumbs">
-        <a href="/">Accounts</a>
+        <span>{t('Обзор')}</span>
         <span aria-hidden="true">/</span>
-        <span class="text-ink-2">Sites</span>
+        <span class="text-ink-2">{t('Сайты')}</span>
       </nav>
-      <h1 class="app-pagetitle">All sites</h1>
-      <p class="hidden text-xs text-ink-3 print:block">Period: last {data.days === 1 ? '24 hours' : `${data.days} days`}</p>
+      <h1 class="app-pagetitle">{t('Все сайты')}</h1>
+      <p class="hidden text-xs text-ink-3 print:block">{t('Период')}: {data.days === 1 ? t('последние 24 часа') : plural('день', data.days)}</p>
     </div>
     <div class="app-toolbar-right">
-      <div class="app-segmented" aria-label="Period">
-        {#each [1, 3, 7, 28, 60] as d}
-          <a class:is-active={data.days === d} href="?days={d}&sort={data.sort}&dir={data.dir}{searchParam}">{d}D</a>
-        {/each}
-        <input
-          type="number"
-          min="1"
-          max="480"
-          placeholder="days"
-          value={[1, 3, 7, 28, 60].includes(data.days) ? '' : data.days}
-          class="input app-num ml-1 h-6 w-16 px-1.5 text-[11.5px]"
-          title="Custom day range, up to 480 (16 months)"
-          onkeydown={(e) => { if (e.key === 'Enter') goToDays(e.currentTarget.value); }}
-          onchange={(e) => goToDays(e.currentTarget.value)}
-        />
-      </div>
+      <PeriodPicker days={data.days} label={false} href={(d) => `?days=${d}&sort=${data.sort}&dir=${data.dir}${searchParam}`} />
       <span class="app-toolbar-divider" aria-hidden="true"></span>
-      <a href="/dashboard?days={data.days}" class="btn btn-ghost">Dashboard</a>
-      <a href="/properties/striking?days={data.days}" class="btn btn-ghost" title="Portfolio analytics across all sites — striking distance, cannibalization, CTR, branded, decay">Portfolio</a>
-      <div class="btn-group" role="group" aria-label="Submit all sites">
-        <span class="btn-group-label">Submit all</span>
-        <button type="button" class="btn btn-ghost" onclick={() => window.open(`${aiBase}/properties/submit-all?op=sitemap`, '_blank')} title="Resubmit every site's sitemaps to Google">Sitemaps</button>
-        <button type="button" class="btn btn-ghost" onclick={() => window.open(`${aiBase}/properties/submit-all?op=bing`, '_blank')} title="Submit every sitemap to Bing">Bing</button>
-        <button type="button" class="btn btn-ghost" onclick={() => window.open(`${aiBase}/properties/submit-all?op=indexnow`, '_blank')} title="Push every site's URLs to IndexNow">IndexNow</button>
+      <a href="/dashboard?days={data.days}" class="btn btn-ghost">{t('Дашборд')}</a>
+      <a href="/properties/striking?days={data.days}" class="btn btn-ghost" title={t('Аналитика по всем сайтам: striking distance, каннибализация, CTR, branded, decay')}>{t('Портфель')}</a>
+      <div class="btn-group" role="group" aria-label={t('Отправить все сайты')}>
+        <span class="btn-group-label">{t('Отправить все')}</span>
+        <button type="button" class="btn btn-ghost" onclick={() => window.open(`${aiBase}/properties/submit-all?op=sitemap`, '_blank')} title={t('Переотправить карты сайта всех сайтов в Google')}>{t('Карты сайта')}</button>
+        <button type="button" class="btn btn-ghost" onclick={() => window.open(`${aiBase}/properties/submit-all?op=bing`, '_blank')} title={t('Отправить все карты сайта в Bing')}>Bing</button>
+        <button type="button" class="btn btn-ghost" onclick={() => window.open(`${aiBase}/properties/submit-all?op=indexnow`, '_blank')} title={t('Отправить URL всех сайтов в IndexNow')}>IndexNow</button>
       </div>
-      <button type="button" class="btn btn-pri" onclick={refreshAll}>
+      <button type="button" class="btn btn-sec" onclick={refreshAll}>
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M13.5 8A5.5 5.5 0 1 1 11.8 4M13.5 2v3h-3"/></svg>
-        Refresh
+        {t('Обновить')}
       </button>
     </div>
   </header>
-  {#if refreshError}<p class="app-errors">{refreshError}</p>{/if}
+  {#if refreshError}<p class="app-errors">{tx(refreshError)}</p>{/if}
+  <SnapshotStatus status={data.status} />
 
   <div class="desk">
     <!-- Portfolio pulse — all domains combined, own period switcher, Google update bands. -->
     <section class="pane">
       <div class="pane-head">
-        <span>Portfolio pulse <span class="aside ml-1 text-ink-3">all domains combined</span></span>
-        <div class="app-segmented normal-case tracking-normal" aria-label="Pulse period">
-          {#each PULSE_OPTIONS as d (d)}
-            <button type="button" class:is-active={pulseDays === d} onclick={() => (pulseDays = d)}>{d === 480 ? '16M' : d === 365 ? '1Y' : `${d}D`}</button>
-          {/each}
-        </div>
+        <span>{t('Пульс портфеля')} <span class="aside ml-1 hidden text-ink-3 sm:inline">{t('все домены вместе')}</span></span>
+        <div class="normal-case tracking-normal"><PeriodPicker days={pulseDays} label={false} custom={false} href={pulseHref} onpick={setPulse} /></div>
       </div>
       {#if pulseState.kind === 'loading'}
-        <p class="loading py-16 text-center">Loading {pulseDays}-day pulse…</p>
+        <p class="loading py-16 text-center">{t('Загружаем пульс за {n} дн.…', { n: pulseDays })}</p>
       {:else if pulseState.kind === 'error'}
         <div class="flex items-center justify-center gap-2 py-16">
           <span class="text-err">{pulseState.message}</span>
-          <button type="button" class="btn btn-sec btn-sm" onclick={() => loadPulse(pulseDays)}>Retry</button>
+          <button type="button" class="btn btn-sec btn-sm" onclick={() => loadPulse(pulseDays)}>{t('Повторить')}</button>
         </div>
       {:else if pulseState.kind === 'loaded'}
         <div class="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-line px-3 py-2">
-          <div class="stat border-l-0 pl-0"><span class="stat-label">Impressions</span><span class="stat-value">{fmtNum(pulseState.data.totals.impressions)}</span></div>
-          <div class="stat"><span class="stat-label">Clicks</span><span class="stat-value">{fmtNum(pulseState.data.totals.clicks)}</span></div>
+          <div class="stat border-l-0 pl-0"><span class="stat-label">{t('Показы')}</span><span class="stat-value">{fmtNum(pulseState.data.totals.impressions)}</span></div>
+          <div class="stat"><span class="stat-label">{t('Клики')}</span><span class="stat-value">{fmtNum(pulseState.data.totals.clicks)}</span></div>
           <div class="stat"><span class="stat-label">CTR</span><span class="stat-value">{fmtCtr(pulseState.data.totals.ctr)}</span></div>
           {#if pulseState.data.updates.length > 0}
-            <div class="stat" title="Google algorithm updates in this window (toggle below)"><span class="stat-label">Updates</span><span class="stat-value">{pulseState.data.updates.length}</span></div>
+            <div class="stat" title={t('Апдейты Google в этом окне (переключаются ниже)')}><span class="stat-label">{t('Апдейты')}</span><span class="stat-value">{pulseState.data.updates.length}</span></div>
           {/if}
         </div>
         <div class="px-3 pb-2 pt-2">
@@ -1138,15 +1051,16 @@
       {/if}
     </section>
 
+    {#if hideError}<p class="app-errors">{tx(hideError)}</p>{/if}
     {#if data.errors.length > 0}
       <div class="app-errors mb-0">
         <div class="app-errors-title">
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="6" cy="6" r="5"/><path d="M6 3.5v3M6 8.5v.01"/></svg>
-          Errors
+          {t('Ошибки')}
         </div>
         <ul class="ml-4 list-disc">
           {#each data.errors as e}
-            <li><span class="font-medium">{e.accountEmail}</span>: {e.reason}</li>
+            <li><span class="font-medium">{e.accountEmail}</span>: {tx(e.reason)}</li>
           {/each}
         </ul>
       </div>
@@ -1155,18 +1069,18 @@
     <!-- Watchlist: every site of every connected account for the selected period. -->
     <section class="pane min-w-0">
       <div class="pane-head">
-        <span>Watchlist <span class="aside ml-1 text-ink-3">{data.days === 1 ? '24 hours' : `${data.days} days`}</span></span>
-        {#if hidden.size > 0}
-          <button type="button" class="btn btn-ghost btn-sm normal-case tracking-normal" onclick={() => showHidden = !showHidden}>
-            {showHidden ? 'Hide hidden again' : `Show ${hidden.size} hidden site${hidden.size === 1 ? '' : 's'}`}
-          </button>
+        <span>{t('Список сайтов')} <span class="aside ml-1 text-ink-3">{data.days === 1 ? t('24 часа') : plural('день', data.days)}</span></span>
+        {#if data.hiddenCount > 0}
+          <a class="btn btn-ghost btn-sm normal-case tracking-normal" href={showHiddenHref(!data.showHidden)}>
+            {data.showHidden ? t('Снова спрятать скрытые') : t('Показать скрытые: {n}', { n: data.hiddenCount })}
+          </a>
         {/if}
       </div>
 
       <div class="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-line px-3 py-2">
-        <div class="stat border-l-0 pl-0"><span class="stat-label">Sites</span><span class="stat-value">{fmtNum(totals.sites)}</span></div>
-        <div class="stat"><span class="stat-label">Impressions</span><span class="stat-value">{fmtNum(totals.impressions)}</span></div>
-        <div class="stat"><span class="stat-label">Clicks</span><span class="stat-value">{fmtNum(totals.clicks)}</span></div>
+        <div class="stat border-l-0 pl-0"><span class="stat-label">{t('Сайты')}</span><span class="stat-value">{fmtNum(totals.sites)}</span></div>
+        <div class="stat"><span class="stat-label">{t('Показы')}</span><span class="stat-value">{fmtNum(totals.impressions)}</span></div>
+        <div class="stat"><span class="stat-label">{t('Клики')}</span><span class="stat-value">{fmtNum(totals.clicks)}</span></div>
       </div>
 
       <div class="border-b border-line px-3 py-2"><SiteSearch /></div>
@@ -1177,26 +1091,28 @@
             <div class="min-w-0 bg-pane px-3 py-1.5">
               <div class="pii truncate text-[12.5px] font-medium text-ink">{a.label}</div>
               <div class="pii flex gap-3 font-mono text-[11px] tabular-nums text-ink-3">
-                <span>{fmtNum(a.sites)} sites</span>
-                <span>{fmtNum(a.impressions)} impr</span>
-                <span>{fmtNum(a.clicks)} clicks</span>
+                <span>{plural('сайт', a.sites)}</span>
+                <span>{t('{n} показов', { n: fmtNum(a.impressions) })}</span>
+                <span>{t('{n} кликов', { n: fmtNum(a.clicks) })}</span>
               </div>
             </div>
           {/each}
         </div>
       {/if}
 
-      {#if data.sites.length === 0}
+      {#if data.totalSites === 0 && data.status.state === 'cold'}
+        <!-- The status line above says what is loading or what failed. -->
+      {:else if data.totalSites === 0}
         <div class="p-3">
           <div class="app-empty">
-            <div class="app-empty-title">No sites yet</div>
-            <p class="app-empty-sub">Connect a Google account on <a class="text-acc hover:underline" href="/">Accounts</a>.</p>
+            <div class="app-empty-title">{t('Сайтов пока нет')}</div>
+            <p class="app-empty-sub">{t('Подключите Google-аккаунт в')} <a class="link" href="/settings/accounts">{t('Настройках')}</a>.</p>
           </div>
         </div>
-      {:else if visibleSites.length === 0 && searchQuery.trim()}
+      {:else if data.total === 0 && searchQuery.trim()}
         <div class="app-empty" role="status">
-          <div class="app-empty-title">No matching sites</div>
-          <p class="app-empty-sub">Try another domain, clear the search or show hidden sites.</p>
+          <div class="app-empty-title">{t('Подходящих сайтов нет')}</div>
+          <p class="app-empty-sub">{t('Попробуйте другой домен, сбросьте поиск или покажите скрытые сайты.')}</p>
         </div>
       {:else}
         <div class="overflow-x-auto">
@@ -1204,53 +1120,53 @@
             <thead>
               <tr>
                 <th>
-                  <a class="sort-th" href={sortHref('site', data.sort, data.dir, data.days)}>Site URL<SortCaret dir={sortIndicator('site', data.sort, data.dir)} /></a>
+                  <a class="sort-th" href={sortHref('site', data.sort, data.dir, data.days)}>{t('URL сайта')}<SortCaret dir={sortIndicator('site', data.sort, data.dir)} /></a>
                   <span class="text-ink-4" aria-hidden="true"> · </span>
-                  <a class="sort-th" href={sortHref('account', data.sort, data.dir, data.days)}>Account<SortCaret dir={sortIndicator('account', data.sort, data.dir)} /></a>
+                  <a class="sort-th" href={sortHref('account', data.sort, data.dir, data.days)}>{t('Аккаунт')}<SortCaret dir={sortIndicator('account', data.sort, data.dir)} /></a>
                 </th>
-                <th class="print:hidden"><span class="sr-only">Trend</span></th>
+                <th class="print:hidden"><span class="sr-only">{t('Тренд')}</span></th>
                 <th class="num">
-                  <a class="sort-th" href={sortHref('clicks', data.sort, data.dir, data.days)}>Clicks<SortCaret dir={sortIndicator('clicks', data.sort, data.dir)} /></a>
+                  <a class="sort-th" href={sortHref('clicks', data.sort, data.dir, data.days)}>{t('Клики')}<SortCaret dir={sortIndicator('clicks', data.sort, data.dir)} /></a>
                 </th>
                 <th class="num hidden sm:table-cell">
-                  <a class="sort-th" href={sortHref('impressions', data.sort, data.dir, data.days)}>Impressions<SortCaret dir={sortIndicator('impressions', data.sort, data.dir)} /></a>
+                  <a class="sort-th" href={sortHref('impressions', data.sort, data.dir, data.days)}>{t('Показы')}<SortCaret dir={sortIndicator('impressions', data.sort, data.dir)} /></a>
                 </th>
                 <th class="num hidden md:table-cell">
                   <a class="sort-th" href={sortHref('ctr', data.sort, data.dir, data.days)}>CTR<SortCaret dir={sortIndicator('ctr', data.sort, data.dir)} /></a>
                 </th>
                 <th class="num">
-                  <a class="sort-th" href={sortHref('position', data.sort, data.dir, data.days)}>Avg Pos<SortCaret dir={sortIndicator('position', data.sort, data.dir)} /></a>
+                  <a class="sort-th" href={sortHref('position', data.sort, data.dir, data.days)}>{t('Ср. поз.')}<SortCaret dir={sortIndicator('position', data.sort, data.dir)} /></a>
                 </th>
-                <th class="num hidden lg:table-cell" title="Дата создания сайта (таблица site_dates, заполняется внешним импортом)">
-                  <a class="sort-th" href={sortHref('date', data.sort, data.dir, data.days)}>Created<SortCaret dir={sortIndicator('date', data.sort, data.dir)} /></a>
+                <th class="num hidden lg:table-cell" title={t('Дата создания сайта (таблица site_dates, заполняется внешним импортом)')}>
+                  <a class="sort-th" href={sortHref('date', data.sort, data.dir, data.days)}>{t('Создан')}<SortCaret dir={sortIndicator('date', data.sort, data.dir)} /></a>
                 </th>
-                <th class="num hidden md:table-cell" title="Bing clicks · последние ~2 недели (не зависит от фильтра дней)">Bing Clk</th>
-                <th class="num hidden md:table-cell" title="Bing impressions · последние ~2 недели (не зависит от фильтра дней)">Bing Impr</th>
-                <th class="w-0 p-0 print:hidden"><span class="sr-only">Actions</span></th>
+                <th class="num hidden md:table-cell" title={t('Bing clicks · последние ~2 недели (не зависит от фильтра дней)')}>{t('Bing клики')}</th>
+                <th class="num hidden md:table-cell" title={t('Bing impressions · последние ~2 недели (не зависит от фильтра дней)')}>{t('Bing показы')}</th>
+                <th class="w-0 p-0 print:hidden"><span class="sr-only">{t('Действия')}</span></th>
               </tr>
             </thead>
             <tbody>
               {#each visibleSites as s}
                 {@const sKey = `${s.accountId}|${s.siteUrl}`}
                 {@const expanded = expandedSite === sKey}
-                {@const isHidden = hidden.has(keyOf(s))}
+                {@const isHidden = s.hidden}
                 {@const subSt = submitStates.get(sKey)}
                 {@const bSt = bingStates.get(sKey)}
                 {@const iSt = indexnowStates.get(sKey)}
-                <tr class="cursor-pointer {s.hasIndexNow ? '' : 'bg-warn-t/60 hover:bg-warn-t'} {isHidden ? 'is-hidden-row' : ''}" class:is-selected={expanded} class:has-status={!!(subSt || bSt || iSt)} onclick={() => toggleSite(s)} title={s.hasIndexNow ? undefined : 'Нет IndexNow-ключа ({key}.txt) — не настроен для Bing/IndexNow'}>
+                <tr class="cursor-pointer {s.hasIndexNow ? '' : 'bg-warn-t/60 hover:bg-warn-t'} {isHidden ? 'is-hidden-row' : ''}" class:is-selected={expanded} class:has-status={!!(subSt || bSt || iSt)} onclick={() => toggleSite(s)} title={s.hasIndexNow ? undefined : t('Нет IndexNow-ключа ({key}.txt) — не настроен для Bing/IndexNow', { key: '{key}' })}>
                   <td class="min-w-56">
                     <div class="flex items-center gap-1.5 whitespace-nowrap">
                       {@render chevron(expanded)}
                       <!-- Имя ведёт на страницу сайта внутри хаба: туда ходят чаще, чем на сам сайт.
                            Внешний сайт — отдельной иконкой ↗, как у остальных внешних ссылок строки. -->
-                      <a class="pii font-semibold text-ink hover:text-acc hover:underline" href={detailHref(s)} title="Site analytics — striking distance, cannibalization, decay, CTR, health" onclick={(e) => e.stopPropagation()}>{displaySite(s.siteUrl)}</a>
+                      <a class="pii font-semibold text-ink hover:text-acc hover:underline" href={detailHref(s)} title={t('Аналитика сайта: striking distance, каннибализация, decay, CTR, здоровье')} onclick={(e) => e.stopPropagation()}>{displaySite(s.siteUrl)}</a>
                       <a
                         class="inline-flex h-4 items-center text-ink-4 hover:text-acc print:hidden"
                         href={siteHref(s.siteUrl)}
                         target="_blank"
                         rel="noopener noreferrer"
-                        title="Открыть {displaySite(s.siteUrl)} в новой вкладке"
-                        aria-label="Open site in a new tab"
+                        title={t('Открыть {name} в новой вкладке', { name: displaySite(s.siteUrl) })}
+                        aria-label={t('Открыть сайт в новой вкладке')}
                         onclick={(e) => e.stopPropagation()}
                       ><svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6.5 3.5h-3v9h9v-3M9 3.5h3.5V7M12.5 3.5 7 9"/></svg></a>
                       <a
@@ -1258,8 +1174,8 @@
                         href={gscHref(s.siteUrl, s.accountEmail)}
                         target="_blank"
                         rel="noopener noreferrer"
-                        title="Открыть в Google Search Console ({s.accountEmail})"
-                        aria-label="Open in Google Search Console"
+                        title={t('Открыть в Google Search Console ({email})', { email: s.accountEmail })}
+                        aria-label={t('Открыть в Google Search Console')}
                         onclick={(e) => e.stopPropagation()}
                       >GSC</a>
                       <a
@@ -1267,8 +1183,8 @@
                         href={siteSearchHref(s.siteUrl)}
                         target="_blank"
                         rel="noopener noreferrer"
-                        title="Google site:{displaySite(s.siteUrl)} — проверить индексацию"
-                        aria-label="Google site search"
+                        title={t('Google site:{name} — проверить индексацию', { name: displaySite(s.siteUrl) })}
+                        aria-label={t('Поиск site: в Google')}
                         onclick={(e) => e.stopPropagation()}
                       ><img src={googleIcon} alt="Google" class="h-3.5 w-auto" /></a>
                       <a
@@ -1277,7 +1193,7 @@
                         target="_blank"
                         rel="noopener noreferrer"
                         title="Bing Webmaster — {displaySite(s.siteUrl)}"
-                        aria-label="Open Bing Webmaster"
+                        aria-label={t('Открыть Bing Webmaster')}
                         onclick={(e) => e.stopPropagation()}
                       ><img src={bingIcon} alt="Bing" class="h-3.5 w-auto" /></a>
                     </div>
@@ -1297,6 +1213,9 @@
                     <td class="num app-num pii hidden sm:table-cell">{fmtNum(s.summary.impressions)}</td>
                     <td class="num app-num pii hidden md:table-cell">{fmtCtr(s.summary.ctr)}</td>
                     <td class="num app-num pii">{fmtPos(s.summary.position)}</td>
+                  {:else if s.pending}
+                    <td class="print:hidden"></td>
+                    <td class="num loading text-[11px] text-ink-4" colspan="4">{t('загрузка…')}</td>
                   {:else}
                     <td class="print:hidden"></td>
                     <td class="num app-num text-ink-4" title={s.summaryError ?? ''}>—</td>
@@ -1306,27 +1225,27 @@
                       <span class="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-dn align-middle" title={s.summaryError ?? 'error'}></span>—
                     </td>
                   {/if}
-                  <td class="num app-num hidden whitespace-nowrap text-ink-3 lg:table-cell" title="Дата создания сайта">{fmtDate(s.createdAt)}</td>
-                  <td class="num app-num hidden md:table-cell {s.bing ? '' : 'text-ink-4'}" title="Bing · последние ~2 недели">{s.bing ? fmtNum(s.bing.clicks) : '—'}</td>
-                  <td class="num app-num hidden md:table-cell {s.bing ? '' : 'text-ink-4'}" title="Bing · последние ~2 недели">{s.bing ? fmtNum(s.bing.impressions) : '—'}</td>
+                  <td class="num app-num hidden whitespace-nowrap text-ink-3 lg:table-cell" title={t('Дата создания сайта')}>{fmtDate(s.createdAt)}</td>
+                  <td class="num app-num hidden md:table-cell {s.bing ? '' : 'text-ink-4'}" title={t('Bing · последние ~2 недели')}>{s.bing ? fmtNum(s.bing.clicks) : '—'}</td>
+                  <td class="num app-num hidden md:table-cell {s.bing ? '' : 'text-ink-4'}" title={t('Bing · последние ~2 недели')}>{s.bing ? fmtNum(s.bing.impressions) : '—'}</td>
                   <td class="row-tray print:hidden" onclick={(e) => e.stopPropagation()}>
                     <div class="row-tray-body">
                       <button
                         type="button"
                         class="btn btn-ghost btn-sm"
-                        title="Resubmit sitemap(s) to Google"
+                        title={t('Переотправить карты сайта в Google')}
                         disabled={subSt?.kind === 'loading'}
                         onclick={(e) => { e.stopPropagation(); submitSitemapFor({ accountId: s.accountId, siteUrl: s.siteUrl }); }}
-                      >{subSt?.kind === 'loading' ? '…' : 'Submit sitemap'}</button>
+                      >{subSt?.kind === 'loading' ? '…' : t('Отправить карту сайта')}</button>
                       {#if subSt?.kind === 'done'}
-                        <span class="app-num text-[11px] {subSt.failed > 0 ? 'text-warn' : 'text-up'}" title={subSt.failed > 0 ? subSt.failReasons.join('\n') : `source: ${subSt.source}`}><svg viewBox="0 0 12 12" class="inline-block h-3 w-3 align-[-2px]" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 6.5 5 9l4.5-6"/></svg> {subSt.submitted}{#if subSt.failed > 0} · <svg viewBox="0 0 12 12" class="inline-block h-3 w-3 align-[-2px]" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 3l6 6M9 3l-6 6"/></svg> {subSt.failed}{/if}</span>
+                        <span class="app-num text-[11px] {subSt.failed > 0 ? 'text-warn' : 'text-up'}" title={subSt.failed > 0 ? subSt.failReasons.join('\n') : `${t('источник')}: ${subSt.source}`}><svg viewBox="0 0 12 12" class="inline-block h-3 w-3 align-[-2px]" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 6.5 5 9l4.5-6"/></svg> {subSt.submitted}{#if subSt.failed > 0} · <svg viewBox="0 0 12 12" class="inline-block h-3 w-3 align-[-2px]" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 3l6 6M9 3l-6 6"/></svg> {subSt.failed}{/if}</span>
                       {:else if subSt?.kind === 'error'}
                         <span class="text-[11px] text-dn" title={subSt.message}><svg viewBox="0 0 12 12" class="inline-block h-3 w-3 align-[-2px]" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 3l6 6M9 3l-6 6"/></svg> failed</span>
                       {/if}
                       <button
                         type="button"
                         class="btn btn-ghost btn-sm"
-                        title="Submit sitemap to Bing"
+                        title={t('Отправить карту сайта в Bing')}
                         disabled={bSt?.kind === 'loading'}
                         onclick={(e) => { e.stopPropagation(); submitBingFor({ accountId: s.accountId, siteUrl: s.siteUrl }); }}
                       >{bSt?.kind === 'loading' ? '…' : 'Bing'}</button>
@@ -1338,7 +1257,7 @@
                       <button
                         type="button"
                         class="btn btn-ghost btn-sm"
-                        title="Push sitemap URLs to IndexNow (Bing)"
+                        title={t('Отправить URL из карты в IndexNow (Bing)')}
                         disabled={iSt?.kind === 'loading'}
                         onclick={(e) => { e.stopPropagation(); indexNowFor({ accountId: s.accountId, siteUrl: s.siteUrl }); }}
                       >{iSt?.kind === 'loading' ? '…' : 'IndexNow'}</button>
@@ -1350,25 +1269,25 @@
                       <button
                         type="button"
                         class="btn btn-ghost btn-sm"
-                        title="View and manage sitemaps"
+                        title={t('Карты сайта: просмотр и управление')}
                         onclick={(e) => { e.stopPropagation(); openSitemapModal({ accountId: s.accountId, siteUrl: s.siteUrl }); }}
-                      >Sitemaps</button>
+                      >{t('Карты сайта')}</button>
                       <span class="app-toolbar-divider hidden md:block" aria-hidden="true"></span>
                       <span class="hidden items-center gap-0.5 md:flex">
                       <a
                         class="btn btn-ghost btn-sm"
                         href="/properties/export?account={encodeURIComponent(s.accountId)}&site={encodeURIComponent(s.siteUrl)}&days={data.days}&dim=query"
-                      >{@render dlIcon()}query CSV</a>
+                      >{@render dlIcon()}{t('CSV запросов')}</a>
                       <a
                         class="btn btn-ghost btn-sm"
                         href="/properties/export?account={encodeURIComponent(s.accountId)}&site={encodeURIComponent(s.siteUrl)}&days={data.days}&dim=page"
-                      >{@render dlIcon()}page CSV</a>
+                      >{@render dlIcon()}{t('CSV страниц')}</a>
                       </span>
                       <span class="hidden md:inline-flex">
                     {#if !isHidden}
-                      <button type="button" class="btn btn-ghost btn-sm" onclick={() => hideSite(s)}>Hide</button>
+                      <button type="button" class="btn btn-ghost btn-sm" onclick={() => hideSite(s)}>{t('Скрыть')}</button>
                     {:else}
-                      <button type="button" class="btn btn-sec btn-sm" onclick={() => unhideSite(s)}>Unhide</button>
+                      <button type="button" class="btn btn-sec btn-sm" onclick={() => unhideSite(s)}>{t('Вернуть')}</button>
                     {/if}
                       </span>
                     </div>
@@ -1378,7 +1297,7 @@
                   <tr class="bg-sunk hover:bg-sunk">
                     <td class="px-3 py-3" colspan="12">
                       {#if inspectState.kind === 'loading'}
-                        <p class="loading">Inspecting {inspectState.total} top URLs (URL Inspection API, ~3-5s)…</p>
+                        <p class="loading">{t('Проверяем {n} главных URL (URL Inspection API, ~3–5 с)…', { n: inspectState.total })}</p>
                       {:else if inspectState.kind === 'error'}
                         <p class="text-err">{inspectState.message}</p>
                       {:else if inspectState.kind === 'loaded'}
@@ -1386,18 +1305,18 @@
                         <div class="mb-2 flex items-center justify-between gap-3 text-xs text-ink-3">
                           <span>
                             {#if loadedState.source === 'page-entries'}
-                              Top {loadedState.results.length} URLs by impressions in current period.
+                              {t('Топ-{n} URL по показам за текущий период.', { n: loadedState.results.length })}
                             {:else if loadedState.source === 'page-entries+sitemap'}
-                              {loadedState.results.length} URLs (top by impressions plus sitemap fill-in).
+                              {t('{n} URL (топ по показам плюс добор из карты сайта).', { n: loadedState.results.length })}
                             {:else}
-                              {loadedState.results.length} URLs from sitemap (no impressions in current period).
+                              {t('{n} URL из карты сайта (без показов за текущий период).', { n: loadedState.results.length })}
                             {/if}
-                            {#if loadedState.cached}<span class="ml-1 text-ink-4">· Cached {fmtCacheTime(loadedState.fetchedAt)}</span>{:else}<span class="ml-1 text-ink-4">· Fresh</span>{/if}
-                            {#if loadedState.sitemapNote}<span class="ml-2 text-warn" title={loadedState.sitemapNote}>(sitemap note)</span>{/if}
+                            {#if loadedState.cached}<span class="ml-1 text-ink-4">· {t('из кеша')} {fmtCacheTime(loadedState.fetchedAt)}</span>{:else}<span class="ml-1 text-ink-4">· {t('свежие')}</span>{/if}
+                            {#if loadedState.sitemapNote}<span class="ml-2 text-warn" title={tx(loadedState.sitemapNote)}>({t('заметка по карте сайта')})</span>{/if}
                           </span>
                           <button type="button" class="btn btn-sec btn-sm" onclick={(e) => { e.stopPropagation(); refreshInspection({ accountId: loadedState.accountId, siteUrl: loadedState.site }); }}>
                             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M13.5 8A5.5 5.5 0 1 1 11.8 4M13.5 2v3h-3"/></svg>
-                            Force refresh
+                            {t('Обновить принудительно')}
                           </button>
                         </div>
                         <div class="overflow-x-auto rounded-sm border border-line bg-pane">
@@ -1405,11 +1324,11 @@
                             <thead>
                               <tr>
                                 <th>URL</th>
-                                <th>Status</th>
-                                <th>Coverage</th>
-                                <th>Robots</th>
-                                <th>Last crawl</th>
-                                <th>Canonical</th>
+                                <th>{t('Статус')}</th>
+                                <th>{t('Охват')}</th>
+                                <th>{t('Robots')}</th>
+                                <th>{t('Последний обход')}</th>
+                                <th>{t('Canonical')}</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -1419,7 +1338,7 @@
                                     <a class="font-mono text-[11.5px] text-acc hover:underline" href={r.inspectionUrl} target="_blank" rel="noopener noreferrer">{shortUrl(r.inspectionUrl, loadedState.site)}</a>
                                   </td>
                                   {#if r.status === 'error'}
-                                    <td colspan="5" class="text-err">{r.error}</td>
+                                    <td colspan="5" class="text-err">{tx(r.error)}</td>
                                   {:else if r.index}
                                     {@const v = verdictBadge(r.index.verdict)}
                                     <td><span class="badge {v.cls}">{v.label}</span></td>
@@ -1428,7 +1347,7 @@
                                     <td class="app-num text-ink-3">{fmtCrawlTime(r.index.lastCrawlTime)}</td>
                                     <td class="text-ink-3">
                                       {#if r.index.googleCanonical && r.index.userCanonical && r.index.googleCanonical !== r.index.userCanonical}
-                                        <span class="badge badge-warn" title="Google: {r.index.googleCanonical}\nUser: {r.index.userCanonical}">Mismatch</span>
+                                        <span class="badge badge-warn" title={`Google: ${r.index.googleCanonical}\n${t('Вы')}: ${r.index.userCanonical}`}>{t('Расхождение')}</span>
                                       {:else if r.index.googleCanonical}
                                         <span class="font-mono text-[11px]">{shortUrl(r.index.googleCanonical, loadedState.site)}</span>
                                       {:else}
@@ -1450,47 +1369,61 @@
           </table>
         </div>
       {/if}
+      <div class="px-3 pb-3"><Pager page={data.page} pageCount={data.pageCount} total={data.total} /></div>
     </section>
 
-    {#if data.queryEntries.length > 0}
-      <section class="pane min-w-0">
+    {#snippet topStatus(state: { kind: string; message?: string }, st: TopStatus | undefined)}
+      {#if state.kind === 'error'}
+        <p class="border-b border-line-soft px-3 py-1.5 text-[11px] text-err">{t('Не удалось загрузить:')} {state.message} <button type="button" class="btn btn-ghost btn-sm" onclick={loadTop}>{t('Повторить')}</button></p>
+      {:else if state.kind !== 'loaded'}
+        <p class="loading border-b border-line-soft px-3 py-1.5 text-[11px]">{t('Загрузка…')}</p>
+      {:else if st?.refreshing}
+        <p class="loading border-b border-line-soft px-3 py-1.5 text-[11px]">{st.state === 'cold' ? t('Собираем') : t('Обновляем')} {t('строки: {done} из {total} сайтов', { done: st.done, total: st.total || '…' })}</p>
+      {:else if st?.error}
+        <p class="border-b border-line-soft px-3 py-1.5 text-[11px] text-err">{t('Последнее обновление не удалось:')} {st.error}</p>
+      {/if}
+    {/snippet}
+
+    {#if data.totalSites > 0}
+      <section class="pane min-w-0" use:observeTop>
         <div class="pane-head">
-          <span>Top queries <span class="aside ml-1 font-mono text-ink-3">{aggregatedQueries.length} of {data.queryEntries.length > 0 ? data.queryEntries.reduce((a, e) => a + e.rows.length, 0) : 0}</span></span>
+          <span>{t('Топ запросов')} <span class="aside ml-1 font-mono text-ink-3">{aggregatedQueries.length} of {topQ ? topQ.sourceRows : '…'}</span></span>
           <div class="flex items-center gap-1.5 normal-case tracking-normal">
             <button
               type="button"
               class="btn btn-ghost btn-sm"
               onclick={copyKeys}
-              title="Copy all unique queries of the current (filtered) view to the clipboard, one per line"
-            >{keysCopied ? 'Copied' : 'Copy keys'}</button>
+              title={t('Скопировать все уникальные запросы текущего (отфильтрованного) вида, по одному на строку')}
+            >{keysCopied ? t('Скопировано') : t('Скопировать запросы')}</button>
             <a
               class="btn btn-sec btn-sm"
-              href="/properties/queries-export?days={data.days}&hidden={encodeURIComponent([...hidden].join(','))}"
+              href="/properties/queries-export?days={data.days}"
               download
-              title="Download all queries (query · country · impressions · clicks), filters applied"
-            >{@render dlIcon()}Export all CSV</a>
+              title={t('Скачать все запросы (запрос · страна · показы · клики) с учётом фильтров')}
+            >{@render dlIcon()}{t('Выгрузить всё в CSV')}</a>
           </div>
         </div>
-        <p class="border-b border-line-soft px-3 py-1.5 font-mono text-[11px] tracking-tight text-ink-3">visible sites · query × page × country · rowLimit 1000 · click pos → SERP · click row → 16-mo history</p>
+        <p class="border-b border-line-soft px-3 py-1.5 font-mono text-[11px] tracking-tight text-ink-3">{t('видимые сайты · запрос × страница × страна · строк с сайта —')} <a class="underline hover:text-acc" href="/settings/portfolio">{t('настройки')}</a> · {t('клик по позиции → выдача · клик по строке → история за 16 мес.')}</p>
+        {@render topStatus(topQueriesState, topQ?.status)}
         {#snippet facet(label: string, options: string[], selected: Set<string>, onToggle: (v: string) => void, onClear: () => void, search: string, onSearch: (v: string) => void)}
           <details class="facet relative">
             <summary class="btn btn-sec btn-sm list-none [&::-webkit-details-marker]:hidden {selected.size > 0 ? 'border-acc/40 text-acc' : ''}">
               {label}<span class="font-normal text-ink-3">{selected.size > 0 ? ` · ${selected.size}` : ' · all'}</span>
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
             </summary>
-            <div class="absolute z-20 mt-1 flex max-h-72 w-52 flex-col rounded-sm border border-line bg-pane p-1 shadow-[0_6px_20px_-6px_rgb(19_23_34/0.25)]">
+            <div class="absolute z-20 mt-1 flex max-h-72 w-52 flex-col rounded-sm border border-line bg-pane p-1 shadow-pop">
               {#if options.length === 0}
                 <div class="px-2 py-1 text-ink-4">—</div>
               {:else}
                 {@const shown = search.trim() ? options.filter((o) => o.toLowerCase().includes(search.trim().toLowerCase())) : options}
                 <input
                   class="input mb-1 h-6 w-full text-[11.5px]"
-                  placeholder="search…"
+                  placeholder={t('поиск…')}
                   value={search}
                   oninput={(e) => onSearch(e.currentTarget.value)}
                 />
                 {#if selected.size > 0}
-                  <button type="button" class="btn btn-ghost btn-sm mb-1 w-full justify-start text-acc" onclick={onClear}>Clear ({selected.size})</button>
+                  <button type="button" class="btn btn-ghost btn-sm mb-1 w-full justify-start text-acc" onclick={onClear}>{t('Сбросить ({n})', { n: selected.size })}</button>
                 {/if}
                 <div class="overflow-auto">
                   {#each shown as opt}
@@ -1500,7 +1433,7 @@
                     </label>
                   {/each}
                   {#if shown.length === 0}
-                    <div class="px-2 py-1 text-ink-4">no match</div>
+                    <div class="px-2 py-1 text-ink-4">{t('нет совпадений')}</div>
                   {/if}
                 </div>
               {/if}
@@ -1508,38 +1441,38 @@
           </details>
         {/snippet}
         <div class="flex flex-wrap items-center gap-2 border-b border-line-soft px-3 py-2 text-xs print:hidden">
-          <span class="text-[11px] font-medium uppercase tracking-wide text-ink-3">Filter</span>
-          {@render facet('Country', availableCountries, selectedCountries, toggleCountry, () => (selectedCountries = new Set()), countrySearch, (v) => (countrySearch = v))}
-          {@render facet('Domain', availableDomains, selectedDomains, toggleDomain, () => (selectedDomains = new Set()), domainSearch, (v) => (domainSearch = v))}
-          <select class="input h-6 text-xs" bind:value={querySource} title="Откуда ключ — GSC и/или Bing">
-            <option value="all">Источник · все</option>
-            <option value="gsc">только GSC</option>
-            <option value="bing">только Bing</option>
-            <option value="both">в обоих</option>
+          <span class="text-[11px] font-medium uppercase tracking-wide text-ink-3">{t('Фильтр')}</span>
+          {@render facet(t('Страна'), availableCountries, selectedCountries, toggleCountry, () => (selectedCountries = new Set()), countrySearch, (v) => (countrySearch = v))}
+          {@render facet(t('Домен'), availableDomains, selectedDomains, toggleDomain, () => (selectedDomains = new Set()), domainSearch, (v) => (domainSearch = v))}
+          <select class="input h-6 text-xs" bind:value={querySource} title={t('Откуда ключ — GSC и/или Bing')}>
+            <option value="all">{t('Источник · все')}</option>
+            <option value="gsc">{t('только GSC')}</option>
+            <option value="bing">{t('только Bing')}</option>
+            <option value="both">{t('в обоих')}</option>
           </select>
           <span class="inline-flex items-center gap-1 text-ink-3">
-            Avg Pos
-            <input type="number" min="0" step="0.1" class="input app-num h-6 w-14 px-1.5 text-xs" placeholder="от" bind:value={posMin} title="Avg Pos от (включительно)" />
+            {t('Ср. поз.')}
+            <input type="number" min="0" step="0.1" class="input app-num h-6 w-14 px-1.5 text-xs" placeholder={t('от')} bind:value={posMin} title={t('Avg Pos от (включительно)')} />
             <span>–</span>
-            <input type="number" min="0" step="0.1" class="input app-num h-6 w-14 px-1.5 text-xs" placeholder="до" bind:value={posMax} title="Avg Pos до (включительно), пусто = без верхней границы" />
+            <input type="number" min="0" step="0.1" class="input app-num h-6 w-14 px-1.5 text-xs" placeholder={t('до')} bind:value={posMax} title={t('Avg Pos до (включительно), пусто = без верхней границы')} />
           </span>
           {#if selectedCountries.size > 0 || selectedDomains.size > 0 || querySource !== 'gsc' || (posMin ?? 0) > 0 || posMax != null}
-            <button type="button" class="btn btn-ghost btn-sm text-acc" onclick={() => { selectedCountries = new Set(); selectedDomains = new Set(); querySource = 'gsc'; posMin = 0; posMax = null; }}>reset all</button>
+            <button type="button" class="btn btn-ghost btn-sm text-acc" onclick={() => { selectedCountries = new Set(); selectedDomains = new Set(); querySource = 'gsc'; posMin = 0; posMax = null; }}>{t('сбросить всё')}</button>
           {/if}
         </div>
         <div class="flex flex-wrap items-center gap-1.5 border-b border-line px-3 py-2 text-xs print:hidden">
-          <span class="text-ink-3">Hide queries containing:</span>
+          <span class="text-ink-3">{t('Скрыть запросы, содержащие:')}</span>
           {#each queryFilters as f}
             <span class="badge badge-muted gap-0.5 pr-0.5 font-mono">
               {f.pattern}
-              <button type="button" class="inline-flex h-4 w-4 items-center justify-center rounded-xs text-ink-4 hover:bg-dn-t hover:text-dn" title="Remove filter" aria-label="Remove filter {f.pattern}" onclick={() => removeQueryFilter(f.id)}>
+              <button type="button" class="inline-flex h-4 w-4 items-center justify-center rounded-xs text-ink-4 hover:bg-dn-t hover:text-dn" title={t('Убрать фильтр')} aria-label={t('Убрать фильтр {pattern}', { pattern: f.pattern })} onclick={() => removeQueryFilter(f.id)}>
                 <svg viewBox="0 0 16 16" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>
               </button>
             </span>
           {/each}
           <form class="inline-flex items-center gap-1" onsubmit={(e) => { e.preventDefault(); addQueryFilter(newQueryFilter); }}>
             <input class="input h-6 w-24 px-1.5 font-mono text-xs" placeholder="site:" bind:value={newQueryFilter} />
-            <button type="submit" class="btn btn-sec btn-sm">Add</button>
+            <button type="submit" class="btn btn-sec btn-sm">{t('Добавить')}</button>
           </form>
           {#if hiddenQueryCount > 0 || showFilteredQueries}
             <button type="button" class="btn btn-ghost btn-sm ml-auto" onclick={() => (showFilteredQueries = !showFilteredQueries)}>
@@ -1551,15 +1484,15 @@
           <table class="app-table">
             <thead>
               <tr>
-                <th class="sort-th" onclick={() => toggleQSort('query')}>Query<SortCaret dir={qIndicator('query')} /></th>
-                <th class="sort-th hidden md:table-cell" onclick={() => toggleQSort('page')}>Page<SortCaret dir={qIndicator('page')} /></th>
-                <th class="sort-th" onclick={() => toggleQSort('country')}>Country<SortCaret dir={qIndicator('country')} /></th>
-                <th class="sort-th num" onclick={() => toggleQSort('clicks')}>GSC clk<SortCaret dir={qIndicator('clicks')} /></th>
-                <th class="sort-th num hidden sm:table-cell" onclick={() => toggleQSort('impressions')}>GSC imp<SortCaret dir={qIndicator('impressions')} /></th>
+                <th class="sort-th" onclick={() => toggleQSort('query')}>{t('Запрос')}<SortCaret dir={qIndicator('query')} /></th>
+                <th class="sort-th hidden md:table-cell" onclick={() => toggleQSort('page')}>{t('Страница')}<SortCaret dir={qIndicator('page')} /></th>
+                <th class="sort-th" onclick={() => toggleQSort('country')}>{t('Страна')}<SortCaret dir={qIndicator('country')} /></th>
+                <th class="sort-th num" onclick={() => toggleQSort('clicks')}>{t('GSC клики')}<SortCaret dir={qIndicator('clicks')} /></th>
+                <th class="sort-th num hidden sm:table-cell" onclick={() => toggleQSort('impressions')}>{t('GSC показы')}<SortCaret dir={qIndicator('impressions')} /></th>
                 <th class="sort-th num hidden md:table-cell" onclick={() => toggleQSort('ctr')}>CTR<SortCaret dir={qIndicator('ctr')} /></th>
-                <th class="sort-th num" onclick={() => toggleQSort('position')}>Avg Pos<SortCaret dir={qIndicator('position')} /></th>
-                <th class="sort-th num" onclick={() => toggleQSort('bingClicks')}>Bing clk<SortCaret dir={qIndicator('bingClicks')} /></th>
-                <th class="sort-th num hidden sm:table-cell" onclick={() => toggleQSort('bingImpr')}>Bing imp<SortCaret dir={qIndicator('bingImpr')} /></th>
+                <th class="sort-th num" onclick={() => toggleQSort('position')}>{t('Ср. поз.')}<SortCaret dir={qIndicator('position')} /></th>
+                <th class="sort-th num" onclick={() => toggleQSort('bingClicks')}>{t('Bing клики')}<SortCaret dir={qIndicator('bingClicks')} /></th>
+                <th class="sort-th num hidden sm:table-cell" onclick={() => toggleQSort('bingImpr')}>{t('Bing показы')}<SortCaret dir={qIndicator('bingImpr')} /></th>
               </tr>
             </thead>
             <tbody>
@@ -1573,13 +1506,13 @@
                     <div class="flex items-center gap-1.5">
                       {@render chevron(expandedQuery === qKey)}
                       <span class="text-ink">{q.query}</span>
-                      {#if q.gsc}<span class="badge badge-muted px-1 py-0 text-[10px]" title="Есть в Google Search Console">GSC</span>{/if}
-                      {#if q.bing}<span class="badge badge-acc px-1 py-0 text-[10px]" title="Есть в Bing">Bing</span>{/if}
+                      {#if q.gsc}<span class="badge badge-muted px-1 py-0 text-[10px]" title={t('Есть в Google Search Console')}>GSC</span>{/if}
+                      {#if q.bing}<span class="badge badge-acc px-1 py-0 text-[10px]" title={t('Есть в Bing')}>Bing</span>{/if}
                       <button
                         type="button"
                         class="btn btn-ghost btn-sm btn-icon h-5 w-5 text-ink-4 opacity-0 hover:text-dn focus:opacity-100 group-hover:opacity-100 print:hidden"
-                        title="Hide this query (adds it as a filter)"
-                        aria-label="Hide this query"
+                        title={t('Скрыть этот запрос (добавит его в фильтр)')}
+                        aria-label={t('Скрыть этот запрос')}
                         onclick={(e) => { e.stopPropagation(); addQueryFilter(q.query); }}
                       >{@render xIcon()}</button>
                     </div>
@@ -1588,7 +1521,7 @@
                     {#if q.page}
                       <a class="text-acc hover:underline" href={q.page} target="_blank" rel="noopener noreferrer" onclick={(e) => e.stopPropagation()}>{q.page}</a>
                     {:else}
-                      <span class="font-mono text-[11px] text-ink-3" title="Только Bing — страница неизвестна, показан домен">{q.domain}</span>
+                      <span class="font-mono text-[11px] text-ink-3" title={t('Только Bing — страница неизвестна, показан домен')}>{q.domain}</span>
                     {/if}
                   </td>
                   <td>
@@ -1602,7 +1535,7 @@
                   <td class="num app-num font-semibold {posTone}">
                     {#if q.gsc}
                       {#if serpUrl}
-                        <a class="group/serp inline-flex items-baseline gap-0.5 hover:text-acc hover:underline" href={serpUrl} target="_blank" rel="noopener noreferrer" onclick={(e) => e.stopPropagation()} title="Open Google SERP · {q.country.toUpperCase()}">{fmtPos(q.gsc.position)}<svg viewBox="0 0 16 16" class="h-2.5 w-2.5 self-center text-ink-4 group-hover/serp:text-acc" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M5 11 11 5M6 5h5v5"/></svg></a>
+                        <a class="group/serp inline-flex items-baseline gap-0.5 hover:text-acc hover:underline" href={serpUrl} target="_blank" rel="noopener noreferrer" onclick={(e) => e.stopPropagation()} title={t('Открыть выдачу Google · {country}', { country: q.country.toUpperCase() })}>{fmtPos(q.gsc.position)}<svg viewBox="0 0 16 16" class="h-2.5 w-2.5 self-center text-ink-4 group-hover/serp:text-acc" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M5 11 11 5M6 5h5v5"/></svg></a>
                       {:else}
                         {fmtPos(q.gsc.position)}
                       {/if}
@@ -1617,13 +1550,13 @@
                   <tr class="bg-sunk hover:bg-sunk">
                     <td class="px-3 py-3" colspan="9">
                       {#if historyState.kind === 'loading'}
-                        <p class="loading">Loading 16-month history…</p>
+                        <p class="loading">{t('Загружаем историю за 16 месяцев…')}</p>
                       {:else if historyState.kind === 'error'}
-                        <p class="text-err">Failed: {historyState.message}</p>
+                        <p class="text-err">{t('Ошибка:')} {historyState.message}</p>
                       {:else if historyState.kind === 'loaded'}
                         {@const chart = buildHistoryChart(historyState.aggregated)}
                         {#if historyState.aggregated.length === 0 || chart.rows.length === 0}
-                          <p class="loading">No data for this query in the last 16 months on visible sites.</p>
+                          <p class="loading">{t('По этому запросу на видимых сайтах нет данных за 16 месяцев.')}</p>
                         {:else}
                           {@const n = chart.rows.length}
                           {@const hi = histHover !== null && histHover < n ? histHover : null}
@@ -1633,14 +1566,14 @@
                             <div class="mb-1 flex min-h-[24px] flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-2">
                               <span class="font-mono text-[11.5px] text-ink-3">{shownRow.date}</span>
                               <span class="inline-flex items-center gap-1.5">
-                                <i class="inline-block h-0.5 w-3 rounded-full" style:background={SERIES.pos}></i>Position
+                                <i class="inline-block h-0.5 w-3 rounded-full" style:background={SERIES.pos}></i>{t('Позиция')}
                                 <b class="font-mono text-[11.5px] font-semibold text-ink">{shownRow.position > 0 ? fmtPos(shownRow.position) : '—'}</b>
                               </span>
                               <span class="inline-flex items-center gap-1.5">
-                                <i class="inline-block h-2.5 w-2.5 rounded-xs opacity-60" style:background={SERIES.impr}></i>Impressions
+                                <i class="inline-block h-2.5 w-2.5 rounded-xs opacity-60" style:background={SERIES.impr}></i>{t('Показы')}
                                 <b class="font-mono text-[11.5px] font-semibold text-ink">{fmtNum(shownRow.impressions)}</b>
                               </span>
-                              <span class="ml-auto text-[11px] text-ink-3">Aggregated across {historyState.entries.length} visible site{historyState.entries.length === 1 ? '' : 's'} · Position {chart.minPos.toFixed(1)}–{chart.maxPos.toFixed(1)} · Max impr {fmtNum(chart.maxImpr)}</span>
+                              <span class="ml-auto text-[11px] text-ink-3">{t('Сумма по {sites} · позиция {min}–{max} · макс. показов {impr}', { sites: plural('сайт', historyState.entries.length), min: fmtDec(chart.minPos, 1), max: fmtDec(chart.maxPos, 1), impr: fmtNum(chart.maxImpr) })}</span>
                             </div>
                             <!-- svelte-ignore a11y_no_noninteractive_element_interactions, a11y_no_noninteractive_tabindex -->
                             <svg
@@ -1648,22 +1581,22 @@
                               class="block w-full touch-none select-none outline-hidden focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-acc"
                               role="application"
                               tabindex="0"
-                              aria-label="16-month query history: position and impressions. Use left and right arrows to read single days."
+                              aria-label={t('История запроса за 16 месяцев: позиция и показы. Стрелки влево и вправо читают отдельные дни.')}
                               onpointermove={(e) => histMove(e, chart.xs, chart.width)}
                               onpointerleave={() => (histHover = null)}
                               onkeydown={(e) => histKey(e, n)}
                             >
                               <g transform="translate({HM.left},{HM.top})">
                                 <!-- position grid + right axis (inverted: 1 on top) -->
-                                {#each chart.posTicks as t, i (i)}
-                                  <line x1="0" x2={chart.innerW} y1={t.y} y2={t.y} stroke={AXIS.grid} />
-                                  <text x={chart.innerW + 8} y={t.y + 3.5} font-size="10.5" fill={AXIS.text} class="font-mono">{t.label}</text>
+                                {#each chart.posTicks as it, i (i)}
+                                  <line x1="0" x2={chart.innerW} y1={it.y} y2={it.y} stroke={AXIS.grid} />
+                                  <text x={chart.innerW + 8} y={it.y + 3.5} font-size="10.5" fill={AXIS.text} class="font-mono">{it.label}</text>
                                 {/each}
 
                                 <!-- volume band: impressions -->
                                 <line x1="0" x2={chart.innerW} y1={chart.innerH - chart.volH - chart.gap / 2} y2={chart.innerH - chart.volH - chart.gap / 2} stroke={AXIS.line} />
                                 <text x={chart.innerW + 8} y={chart.innerH - chart.volH + 7} font-size="10.5" fill={AXIS.text} class="font-mono">{fmtNum(chart.maxImpr)}</text>
-                                <text x="4" y={chart.innerH - chart.volH + 8} font-size="10" fill={AXIS.text}>Impressions</text>
+                                <text x="4" y={chart.innerH - chart.volH + 8} font-size="10" fill={AXIS.text}>{t('Показы')}</text>
                                 {#each chart.bars as bar, i (i)}
                                   <rect
                                     x={bar.x}
@@ -1687,18 +1620,18 @@
                                 {#if hi !== null}
                                   {@const hx = chart.xs[hi]}
                                   {@const hy = chart.ys[hi]}
-                                  <line x1={hx} x2={hx} y1="0" y2={chart.innerH} stroke="rgb(67 74 87)" stroke-dasharray="3 3" />
+                                  <line x1={hx} x2={hx} y1="0" y2={chart.innerH} stroke={AXIS.hover} stroke-dasharray="3 3" />
                                   {#if hy !== null}
-                                    <line x1="0" x2={chart.innerW} y1={hy} y2={hy} stroke="rgb(67 74 87)" stroke-dasharray="3 3" stroke-opacity="0.6" />
-                                    <circle cx={hx} cy={hy} r="3.5" fill={SERIES.pos} stroke="#fff" stroke-width="1.5" />
+                                    <line x1="0" x2={chart.innerW} y1={hy} y2={hy} stroke={AXIS.hover} stroke-dasharray="3 3" stroke-opacity="0.6" />
+                                    <circle cx={hx} cy={hy} r="3.5" fill={SERIES.pos} stroke={AXIS.onInk} stroke-width="1.5" />
                                     <g transform="translate({chart.innerW + 2},{hy})">
                                       <rect y="-9" width={HM.right - 4} height="18" rx="2" fill={AXIS.ink} />
-                                      <text x={(HM.right - 4) / 2} y="3.5" font-size="10.5" font-weight="600" fill="#fff" text-anchor="middle" class="font-mono">{fmtPos(chart.rows[hi].position)}</text>
+                                      <text x={(HM.right - 4) / 2} y="3.5" font-size="10.5" font-weight="600" fill={AXIS.onInk} text-anchor="middle" class="font-mono">{fmtPos(chart.rows[hi].position)}</text>
                                     </g>
                                   {/if}
                                   <g transform="translate({Math.min(Math.max(hx, 38), chart.innerW - 38)},{chart.innerH + 3})">
                                     <rect x="-38" width="76" height="17" rx="2" fill={AXIS.ink} />
-                                    <text y="12" font-size="10.5" fill="#fff" text-anchor="middle" class="font-mono">{chart.rows[hi].date}</text>
+                                    <text y="12" font-size="10.5" fill={AXIS.onInk} text-anchor="middle" class="font-mono">{chart.rows[hi].date}</text>
                                   </g>
                                 {/if}
                               </g>
@@ -1713,24 +1646,28 @@
             </tbody>
           </table>
         </div>
+        {#if topQ && aggregatedQueries.length < topQ.matched && qLimit < TOP_MAX}
+          <div class="border-t border-line-soft px-3 py-2"><button type="button" class="btn btn-sec btn-sm" onclick={() => (qLimit = Math.min(TOP_MAX, qLimit + TOP_STEP))}>{t('Показать ещё')} <span class="app-num text-ink-3">{aggregatedQueries.length} {t('из')} {topQ.matched}</span></button></div>
+        {/if}
       </section>
     {/if}
 
-    {#if data.pageEntries.length > 0}
+    {#if data.totalSites > 0}
       <section class="pane min-w-0">
         <div class="pane-head">
-          <span>Top pages <span class="aside ml-1 text-ink-3">Aggregated across visible sites only. Per-site rowLimit 200.</span></span>
-          <span class="aside font-mono">{aggregatedPages.length} of {data.pageEntries.length > 0 ? data.pageEntries.reduce((a, e) => a + e.rows.length, 0) : 0}</span>
+          <span>{t('Топ страниц')} <span class="aside ml-1 text-ink-3">{t('Только по видимым сайтам. Строк с сайта:')} <a class="underline hover:text-acc" href="/settings/portfolio">{t('настройки')}</a>.</span></span>
+          <span class="aside font-mono">{aggregatedPages.length} of {topP ? topP.sourceRows : '…'}</span>
         </div>
+        {@render topStatus(topPagesState, topP?.status)}
         <div class="overflow-x-auto">
           <table class="app-table">
             <thead>
               <tr>
-                <th class="sort-th" onclick={() => togglePSort('page')}>Page<SortCaret dir={pIndicator('page')} /></th>
-                <th class="sort-th num" onclick={() => togglePSort('clicks')}>Clicks<SortCaret dir={pIndicator('clicks')} /></th>
-                <th class="sort-th num hidden sm:table-cell" onclick={() => togglePSort('impressions')}>Impressions<SortCaret dir={pIndicator('impressions')} /></th>
+                <th class="sort-th" onclick={() => togglePSort('page')}>{t('Страница')}<SortCaret dir={pIndicator('page')} /></th>
+                <th class="sort-th num" onclick={() => togglePSort('clicks')}>{t('Клики')}<SortCaret dir={pIndicator('clicks')} /></th>
+                <th class="sort-th num hidden sm:table-cell" onclick={() => togglePSort('impressions')}>{t('Показы')}<SortCaret dir={pIndicator('impressions')} /></th>
                 <th class="sort-th num hidden md:table-cell" onclick={() => togglePSort('ctr')}>CTR<SortCaret dir={pIndicator('ctr')} /></th>
-                <th class="sort-th num" onclick={() => togglePSort('position')}>Avg Pos<SortCaret dir={pIndicator('position')} /></th>
+                <th class="sort-th num" onclick={() => togglePSort('position')}>{t('Ср. поз.')}<SortCaret dir={pIndicator('position')} /></th>
               </tr>
             </thead>
             <tbody>
@@ -1748,34 +1685,37 @@
             </tbody>
           </table>
         </div>
+        {#if topP && aggregatedPages.length < topP.matched && pLimit < TOP_MAX}
+          <div class="border-t border-line-soft px-3 py-2"><button type="button" class="btn btn-sec btn-sm" onclick={() => (pLimit = Math.min(TOP_MAX, pLimit + TOP_STEP))}>{t('Показать ещё')} <span class="app-num text-ink-3">{aggregatedPages.length} {t('из')} {topP.matched}</span></button></div>
+        {/if}
       </section>
     {/if}
   </div>
 
   {#if sitemapModal}
     <div class="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4" onclick={closeSitemapModal} role="presentation">
-      <div class="max-h-[85vh] w-full max-w-lg overflow-auto rounded-sm border border-line bg-pane shadow-[0_6px_20px_-6px_rgb(19_23_34/0.25)]" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
+      <div class="max-h-[85vh] w-full max-w-lg overflow-auto rounded-sm border border-line bg-pane shadow-pop" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
         <div class="pane-head sticky top-0 bg-pane">
-          <h2 class="truncate">Sitemaps — <span class="normal-case tracking-normal text-ink">{sitemapModal.title}</span></h2>
-          <button class="btn btn-ghost btn-sm btn-icon" onclick={closeSitemapModal} aria-label="Close">{@render xIcon()}</button>
+          <h2 class="truncate">{t('Карты сайта')} — <span class="normal-case tracking-normal text-ink">{sitemapModal.title}</span></h2>
+          <button class="btn btn-ghost btn-sm btn-icon" onclick={closeSitemapModal} aria-label={t('Закрыть')}>{@render xIcon()}</button>
         </div>
 
         <div class="pane-body">
           {#if sitemapModal.load === 'loading'}
-            <p class="loading">Loading…</p>
+            <p class="loading">{t('Загрузка…')}</p>
           {:else if sitemapModal.load === 'error'}
             <p class="text-err">{sitemapModal.loadError}</p>
           {:else}
             <div class="mb-4">
-              <div class="stat-label mb-1">Registered in Search Console ({sitemapModal.current.length})</div>
+              <div class="stat-label mb-1">{t('Зарегистрированы в Search Console ({n})', { n: sitemapModal.current.length })}</div>
               {#if sitemapModal.current.length === 0}
-                <p class="text-[12.5px] text-ink-4">None.</p>
+                <p class="text-[12.5px] text-ink-4">{t('Нет.')}</p>
               {:else}
                 <ul class="divide-y divide-line-soft rounded-sm border border-line">
                   {#each sitemapModal.current as sm}
                     <li class="break-all px-2 py-1 font-mono text-[11.5px]">
                       <span class="text-ink">{sm.path}</span>
-                      {#if sm.errors && sm.errors !== '0'}<span class="badge badge-bad ml-1 font-sans">{sm.errors} errors</span>{/if}
+                      {#if sm.errors && sm.errors !== '0'}<span class="badge badge-bad ml-1 font-sans">{t('ошибок: {n}', { n: sm.errors })}</span>{/if}
                       {#if sm.isPending}<span class="badge badge-warn ml-1 font-sans">pending</span>{/if}
                     </li>
                   {/each}
@@ -1784,11 +1724,11 @@
             </div>
 
             <div class="mb-4">
-              <div class="stat-label mb-1">Declared in robots.txt ({sitemapModal.robots.length})</div>
+              <div class="stat-label mb-1">{t('Указаны в robots.txt ({n})', { n: sitemapModal.robots.length })}</div>
               {#if sitemapModal.robotsError}
-                <p class="notice notice-warn">robots.txt: {sitemapModal.robotsError}</p>
+                <p class="notice notice-warn">robots.txt: {tx(sitemapModal.robotsError)}</p>
               {:else if sitemapModal.robots.length === 0}
-                <p class="text-[12.5px] text-ink-4">None found.</p>
+                <p class="text-[12.5px] text-ink-4">{t('Не найдено.')}</p>
               {:else}
                 <ul class="divide-y divide-line-soft rounded-sm border border-line">
                   {#each sitemapModal.robots as r}
@@ -1800,9 +1740,9 @@
 
             {#if sitemapModal.resync.kind === 'done'}
               <div class="mb-3 rounded-sm border border-up/25 bg-up-t px-3 py-2 text-[12.5px] text-up">
-                Deleted <span class="app-num">{sitemapModal.resync.deleted}</span>, submitted <span class="app-num">{sitemapModal.resync.submitted}</span>.
+                {t('Удалено')} <span class="app-num">{sitemapModal.resync.deleted}</span>, {t('отправлено')} <span class="app-num">{sitemapModal.resync.submitted}</span>.
                 {#if sitemapModal.resync.failed.length > 0}
-                  <div class="mt-1 text-dn">{sitemapModal.resync.failed.length} failed:
+                  <div class="mt-1 text-dn">{t('Не удалось: {n}', { n: sitemapModal.resync.failed.length })}
                     {#each sitemapModal.resync.failed as f}<div class="break-all text-xs">{f.op} {f.path}: {f.reason}</div>{/each}
                   </div>
                 {/if}
@@ -1812,13 +1752,13 @@
             {/if}
 
             <div class="flex items-center justify-between gap-2">
-              <button class="btn btn-ghost" onclick={closeSitemapModal}>Close</button>
+              <button class="btn btn-ghost" onclick={closeSitemapModal}>{t('Закрыть')}</button>
               <button
                 class="btn btn-danger"
                 disabled={sitemapModal.resync.kind === 'running' || sitemapModal.robots.length === 0}
-                title={sitemapModal.robots.length === 0 ? 'robots.txt declares no sitemaps' : 'Delete all registered sitemaps, then submit the ones from robots.txt'}
+                title={sitemapModal.robots.length === 0 ? t('В robots.txt нет карт сайта') : t('Удалить все зарегистрированные карты, затем отправить карты из robots.txt')}
                 onclick={resyncSitemaps}
-              >{sitemapModal.resync.kind === 'running' ? 'Resyncing…' : 'Delete all + add from robots.txt'}</button>
+              >{sitemapModal.resync.kind === 'running' ? t('Синхронизируем…') : t('Удалить все + добавить из robots.txt')}</button>
             </div>
           {/if}
         </div>

@@ -13,11 +13,8 @@ import {
   searchAnalyticsPages,
   listSitesWithSummary,
   fetchPerSiteQueries,
-  fetchPerSitePages,
-  fetchDailyBreakdown,
   fetchQueryHistory,
   fetchSiteDecayPages,
-  fetchTodayTotals,
   bulkInspect,
   type SearchAnalyticsRow
 } from '../src/lib/server/google';
@@ -586,134 +583,6 @@ describe('google.fetchPerSiteQueries', () => {
   });
 });
 
-describe('google.fetchPerSitePages', () => {
-  let dir: string;
-  let db: Db;
-
-  beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'gsc-hub-'));
-    db = openDb(join(dir, 'test.db'));
-    vi.stubEnv('GOOGLE_CLIENT_ID', 'cid');
-    vi.stubEnv('GOOGLE_CLIENT_SECRET', 'csec');
-  });
-
-  afterEach(() => {
-    db.close();
-    rmSync(dir, { recursive: true, force: true });
-    vi.unstubAllGlobals();
-    vi.unstubAllEnvs();
-  });
-
-  it('returns per-site page rows tagged with accountId and siteUrl', async () => {
-    const future = Math.floor(Date.now() / 1000) + 3600;
-    upsertAccount(db, {
-      id: 'a1', email: 'a1@x', access_token: 't1', refresh_token: 'r', expires_at: future, scope: 's'
-    });
-
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      if (url.endsWith('/sites')) {
-        return new Response(
-          JSON.stringify({
-            siteEntry: [{ siteUrl: 'https://a.com/', permissionLevel: 'siteOwner' }]
-          }),
-          { status: 200 }
-        );
-      }
-      // verify the request body asked for 'page' dimension
-      const body = init?.body ? JSON.parse(init.body as string) : {};
-      expect(body.dimensions).toEqual(['page']);
-      return new Response(
-        JSON.stringify({
-          rows: [
-            { keys: ['https://a.com/post-1'], clicks: 10, impressions: 200, ctr: 0.05, position: 4.2 },
-            { keys: ['https://a.com/post-2'], clicks: 5, impressions: 50, ctr: 0.1, position: 8.5 }
-          ]
-        }),
-        { status: 200 }
-      );
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    const result = await fetchPerSitePages(db, 28);
-    expect(result.errors).toEqual([]);
-    expect(result.entries).toHaveLength(1);
-    expect(result.entries[0].accountId).toBe('a1');
-    expect(result.entries[0].siteUrl).toBe('https://a.com/');
-    expect(result.entries[0].rows).toHaveLength(2);
-    expect(result.entries[0].rows[0].page).toBe('https://a.com/post-1');
-    expect(result.entries[0].rows[0].impressions).toBe(200);
-  });
-});
-
-describe('google.fetchDailyBreakdown', () => {
-  let dir: string;
-  let db: Db;
-
-  beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'gsc-hub-'));
-    db = openDb(join(dir, 'test.db'));
-    vi.stubEnv('GOOGLE_CLIENT_ID', 'cid');
-    vi.stubEnv('GOOGLE_CLIENT_SECRET', 'csec');
-  });
-
-  afterEach(() => {
-    db.close();
-    rmSync(dir, { recursive: true, force: true });
-    vi.unstubAllGlobals();
-    vi.unstubAllEnvs();
-  });
-
-  it('returns daily rows + period totals for current and previous windows', async () => {
-    const future = Math.floor(Date.now() / 1000) + 3600;
-    upsertAccount(db, {
-      id: 'a1', email: 'a1@x', access_token: 't1', refresh_token: 'r', expires_at: future, scope: 's'
-    });
-
-    let saCallCount = 0;
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      if (url.endsWith('/sites')) {
-        return new Response(
-          JSON.stringify({ siteEntry: [{ siteUrl: 'https://a.com/', permissionLevel: 'siteOwner' }] }),
-          { status: 200 }
-        );
-      }
-      // searchAnalytics — first call is current, second is previous
-      saCallCount++;
-      const body = init?.body ? JSON.parse(init.body as string) : {};
-      expect(body.dimensions).toEqual(['date']);
-      const isCurrent = saCallCount === 1;
-      return new Response(
-        JSON.stringify({
-          rows: isCurrent
-            ? [
-                { keys: ['2026-04-29'], clicks: 5, impressions: 50, ctr: 0.1, position: 4 },
-                { keys: ['2026-04-30'], clicks: 7, impressions: 70, ctr: 0.1, position: 5 }
-              ]
-            : [
-                { keys: ['2026-04-25'], clicks: 2, impressions: 20, ctr: 0.1, position: 6 },
-                { keys: ['2026-04-26'], clicks: 3, impressions: 30, ctr: 0.1, position: 7 }
-              ]
-        }),
-        { status: 200 }
-      );
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    const result = await fetchDailyBreakdown(db, 3);
-    expect(result.errors).toEqual([]);
-    expect(result.entries).toHaveLength(1);
-
-    const e = result.entries[0];
-    expect(e.siteUrl).toBe('https://a.com/');
-    expect(e.current).toHaveLength(2);
-    expect(e.previous).toHaveLength(2);
-    expect(e.currentTotals.clicks).toBe(12);
-    expect(e.currentTotals.impressions).toBe(120);
-    expect(e.previousTotals.clicks).toBe(5);
-    expect(e.error).toBeNull();
-  });
-});
-
 describe('google.fetchQueryHistory', () => {
   let dir: string;
   let db: Db;
@@ -1070,17 +939,6 @@ describe('google date windows', () => {
     expect(dateCount(windows[0].startDate, windows[0].endDate)).toBe(7);
   });
 
-  it('compares two equal, adjacent windows that share no date', async () => {
-    const windows = captureWindows();
-    await fetchDailyBreakdown(db, 7);
-    const [current, previous] = windows;
-    expect(current).toEqual({ startDate: '2026-08-15', endDate: '2026-08-21' });
-    expect(previous).toEqual({ startDate: '2026-08-08', endDate: '2026-08-14' });
-    expect(dateCount(current.startDate, current.endDate)).toBe(7);
-    expect(dateCount(previous.startDate, previous.endDate)).toBe(7);
-    expect(previous.endDate < current.startDate).toBe(true);
-  });
-
   it('gives the decay comparison equal windows with no shared date', async () => {
     const windows = captureWindows();
     await fetchSiteDecayPages(db, getAccount(db, 'a1')!, 'https://a.com/', 28);
@@ -1088,68 +946,5 @@ describe('google date windows', () => {
     expect(dateCount(recent.startDate, recent.endDate)).toBe(28);
     expect(dateCount(prior.startDate, prior.endDate)).toBe(28);
     expect(prior.endDate < recent.startDate).toBe(true);
-  });
-
-  it('skips the previous period when history cannot reach it', async () => {
-    const windows = captureWindows();
-    // Search Console keeps about 16 months. At 300 days the previous period
-    // would start ~600 days back, where there is nothing to compare against.
-    const result = await fetchDailyBreakdown(db, 300);
-    expect(result.comparable).toBe(false);
-    // One window per site instead of two: comparing against an empty period
-    // produces a confident -100%, and costs a second fan-out to do it.
-    expect(windows).toHaveLength(1);
-  });
-
-  it('still compares when the history covers both periods', async () => {
-    const windows = captureWindows();
-    const result = await fetchDailyBreakdown(db, 28);
-    expect(result.comparable).toBe(true);
-    expect(windows).toHaveLength(2);
-  });
-
-  it('reports todays partial totals separately from any comparison', async () => {
-    const windows = captureWindows();
-    const today = await fetchTodayTotals(db);
-    // Today only, and today is still filling — so there is nothing to compare
-    // it against and the window is a single date.
-    expect(windows[0]).toEqual({ startDate: '2026-08-22', endDate: '2026-08-22' });
-    expect(today.date).toBe('2026-08-22');
-    expect(today.totals.clicks).toBe(0);
-  });
-
-  it('reports the sites it could not read instead of quietly under-counting', async () => {
-    upsertAccount(db, {
-      id: 'a2', email: 'a2@x', access_token: 't2', refresh_token: 'r',
-      expires_at: Math.floor(Date.now() / 1000) + 3600, scope: 's'
-    });
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-      if (url.endsWith('/sites')) {
-        return new Response(JSON.stringify({
-          siteEntry: [{ siteUrl: 'https://a.com/', permissionLevel: 'siteOwner' }]
-        }));
-      }
-      return new Response('nope', { status: 500 });
-    }));
-
-    const today = await fetchTodayTotals(db);
-
-    // A total assembled from nothing is not a total.
-    expect(today.errors.length).toBeGreaterThan(0);
-    expect(today.partial).toBe(true);
-  });
-
-  it('is partial when a whole account\'s site list cannot be read', async () => {
-    // The per-site fetches all succeed — there just are not any, because
-    // discovery failed. Counting only site-level failures called that complete.
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-      if (url.endsWith('/sites')) return new Response('nope', { status: 500 });
-      return new Response(JSON.stringify({ rows: [] }));
-    }));
-
-    const today = await fetchTodayTotals(db);
-
-    expect(today.errors.length).toBeGreaterThan(0);
-    expect(today.partial).toBe(true);
   });
 });

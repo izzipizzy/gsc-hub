@@ -9,5 +9,5 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
   const form = await request.formData();
   const label = (form.get('label') as string | null)?.trim() || null;
   relabelAccount(db(), params.id!, label);
-  throw redirect(303, '/');
+  throw redirect(303, '/settings/accounts');
 };

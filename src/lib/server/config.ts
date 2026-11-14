@@ -21,7 +21,9 @@ export type ConfigKey =
   | 'DATAFORSEO_RETRIES'
   | 'DATAFORSEO_RETRY_DELAY_MINUTES'
   | 'DATAFORSEO_LOGIN'
-  | 'DATAFORSEO_PASSWORD';
+  | 'DATAFORSEO_PASSWORD'
+  | 'TOP_QUERY_ROWS'
+  | 'TOP_PAGE_ROWS';
 
 function envVal(key: ConfigKey): string | undefined {
   const v = process.env[key];

@@ -6,12 +6,16 @@ import { recordPurchases } from '../src/lib/server/magiclinks-purchases';
 
 let db: Db;
 vi.mock('../src/lib/server/db', async (original) => ({ ...await original<typeof import('../src/lib/server/db')>(), db: () => db }));
-const { portfolio } = vi.hoisted(() => ({ portfolio: vi.fn() }));
-vi.mock('../src/lib/server/google', () => ({ fetchPortfolioDaily: portfolio }));
+const { portfolioGet } = vi.hoisted(() => ({ portfolioGet: vi.fn() }));
+vi.mock('../src/lib/server/portfolio', async (original) => ({
+  ...await original<typeof import('../src/lib/server/portfolio')>(),
+  portfolio: { get: portfolioGet }
+}));
 vi.mock('../src/lib/server/algo-updates', () => ({ getAlgoUpdates: async () => ({ updates: [] }), updatesForChart: () => [] }));
 import { POST, DELETE } from '../src/routes/properties/site-events/+server';
 import { GET as pulse } from '../src/routes/properties/pulse/+server';
 import { eventPosition } from '../src/lib/chart-theme';
+import { slotOf, readyStatus } from './helpers/portfolio-slots';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -162,7 +166,7 @@ describe('custom site events', () => {
     const saved = await res.json();
     expect(saved).toMatchObject({ siteHost: 'example.com', date: custom.date, type: 'custom', note: custom.note });
     expect(toChartEvents(listSiteEventsForSite(db, 'sc-domain:example.com')))
-      .toEqual([expect.objectContaining({ label: custom.note, date: custom.date, typeLabel: 'Custom event' })]);
+      .toEqual([expect.objectContaining({ label: custom.note, date: custom.date, typeLabel: 'Своё событие' })]);
     expect(listSiteEventsForSite(db, 'other.com')).toEqual([]);
     await expect(POST(eventRequest(custom))).rejects.toMatchObject({ status: 409 });
     await DELETE(eventRequest({ id: saved.id }));
@@ -205,10 +209,17 @@ describe('custom site events', () => {
     addSiteEvent(db, { siteHost: 'example.com', date: '2026-11-07', type: 'custom', note: 'Outside' });
     addSiteEvent(db, { siteHost: 'other.com', date: custom.date, type: 'custom', note: 'Other' });
     addGluedDomain(db, { site: 'example.com', donor: 'donor.com', date: custom.date });
-    portfolio.mockResolvedValue({ daily: { series: [{ date: '2026-11-08' }, { date: '2026-11-10' }] }, hosts: ['example.com'], errors: [] });
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-11T20:00:00Z'));
+    portfolioGet.mockResolvedValue({
+      slots: [slotOf('sc-domain:example.com', [{ date: '2026-11-08', clicks: 1, impressions: 2 }, { date: '2026-11-10', clicks: 1, impressions: 2 }])],
+      accountErrors: [],
+      status: readyStatus
+    });
     const res = await pulse({ url: new URL('http://localhost/properties/pulse?days=3'), locals: { user: { role: 'admin' } } } as any);
     const result = await res.json();
     expect(result.events.map((e: any) => e.label)).toEqual([custom.note, '← donor.com']);
+    vi.useRealTimers();
   });
 });
 

@@ -6,12 +6,29 @@ const MINUTE = 60_000;
 const inflight = new WeakMap<Db, Map<string, Promise<unknown>>>();
 interface CacheRow { payload: string | null; fetched_at: number; expires_at: number; retry_after: number; error: string | null }
 
-export async function cachedProviderRead<T>(database: Db, key: string, load: () => Promise<T>, ttl: number | ((data: T) => number), force = false, now = Date.now()): Promise<T> {
+/**
+ * Read through the persistent provider cache.
+ *
+ * `swr` (stale-while-revalidate) is for pages: an expired entry with a payload
+ * is returned at once and refreshed in the background, so opening /magiclinks
+ * never waits on the providers once something has been read. Without it an
+ * expired entry is fetched before returning (background jobs, explicit refresh).
+ */
+export async function cachedProviderRead<T>(database: Db, key: string, load: () => Promise<T>, ttl: number | ((data: T) => number), force = false, now = Date.now(), swr = false): Promise<T> {
   const cached = database.prepare('SELECT * FROM magiclinks_read_cache WHERE cache_key=?').get(key) as CacheRow | undefined;
   if (!force && cached && (cached.expires_at > now || cached.retry_after > now)) {
     if (cached.payload !== null) return JSON.parse(cached.payload);
     throw new Error(cached.error ?? 'Сервис не ответил');
   }
+  if (swr && !force && cached?.payload != null) {
+    // Old numbers now, fresh ones on the next visit; a failed refresh is
+    // recorded (retry_after) by the fetch itself and never reaches the page.
+    void fetchAndStore().catch(() => undefined);
+    return JSON.parse(cached.payload) as T;
+  }
+  return fetchAndStore();
+
+  function fetchAndStore(): Promise<T> {
   let running = inflight.get(database);
   if (!running) { running = new Map(); inflight.set(database, running); }
   const existing = running.get(key);
@@ -37,10 +54,12 @@ export async function cachedProviderRead<T>(database: Db, key: string, load: () 
     }
   })();
   running.set(key, task);
-  try { return await task; } finally { running.delete(key); }
+  const map = running;
+  return task.finally(() => map.delete(key));
+  }
 }
 
-function cacheClient<T extends object>(database: Db, client: T | null, provider: string, token: string | undefined, base: string, force: boolean): T | null {
+function cacheClient<T extends object>(database: Db, client: T | null, provider: string, token: string | undefined, base: string, force: boolean, swr = false): T | null {
   if (!client) return null;
   const prefix = provider + ':' + createHash('sha256').update(base+'\n'+(token ?? '')).digest('hex').slice(0,24);
   const reads = new Set(['balance','listTasks','listOrders','order','taskRows','orderArticles','orderLinks']);
@@ -56,16 +75,17 @@ function cacheClient<T extends object>(database: Db, client: T | null, provider:
           if (property === 'orderArticles' || property === 'orderLinks' || property === 'taskRows') return 60*MINUTE;
           return 5*MINUTE;
         };
-        return cachedProviderRead(database, prefix+':'+String(property)+':'+JSON.stringify(args), () => value.apply(target,args), ttl, force);
+        return cachedProviderRead(database, prefix+':'+String(property)+':'+JSON.stringify(args), () => value.apply(target,args), ttl, force, Date.now(), swr);
       };
     }
   });
 }
-export function cachedMagicLinksClient(database: Db, force = false) {
-  return cacheClient(database, magicLinksClient(database), 'fieldlink', getMagicLinksToken(database), getMagicLinksBase(database), force);
+/** `swr`: pages pass true to get the last answer at once and refresh in the background. */
+export function cachedMagicLinksClient(database: Db, force = false, swr = false) {
+  return cacheClient(database, magicLinksClient(database), 'fieldlink', getMagicLinksToken(database), getMagicLinksBase(database), force, swr);
 }
-export function cachedMagic369Client(database: Db, force = false) {
-  return cacheClient(database, magic369Client(database), 'magic369', getMagic369Token(database), getMagic369Base(database), force);
+export function cachedMagic369Client(database: Db, force = false, swr = false) {
+  return cacheClient(database, magic369Client(database), 'magic369', getMagic369Token(database), getMagic369Base(database), force, swr);
 }
 export function providerCacheState(database: Db) {
   const row = database.prepare('SELECT MAX(fetched_at) AS at, SUM(CASE WHEN error IS NOT NULL THEN 1 ELSE 0 END) AS errors FROM magiclinks_read_cache').get() as { at: number | null; errors: number | null };

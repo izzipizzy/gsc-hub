@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t, tx, plural, fmtNum, fmtPct, fmtDec, fmtDay, getLocale } from '$lib/i18n/index.svelte';
   import { FIELDLINK_SIGNUP_URL, MAGIC369_CONTACT } from '$lib/utils/magiclinks-signup';
   import { fieldlinkAdmissionMessage } from '$lib/utils/fieldlink';
   import { customPurchaseUrl, siteHostname } from '$lib/utils/url-filters';
@@ -49,7 +50,7 @@
     if (!customSite) return rows;
     const targetUrl = customPurchaseUrl(path, customSite);
     const query = customText.trim();
-    if (!query || query.length > 300) throw new Error('Текст ссылки должен содержать от 1 до 300 символов');
+    if (!query || query.length > 300) throw new Error(t('Текст ссылки должен содержать от 1 до 300 символов'));
     return [{ targetUrl, query, siteHost: siteHostname(customSite) }];
   }
 
@@ -99,7 +100,7 @@
   let providersFailed = $state(false);
   const provider = $derived(providers.find((p) => p.id === providerId) ?? null);
   const configuredProviders = $derived(providers.filter((p) => p.configured));
-  const unit = $derived(provider?.unit ?? 'кр.');
+  const unit = $derived(provider?.unit ?? t('кр.'));
   const selectedTier = $derived(provider?.linkTiers?.find((t) => t.id === tier));
   const linkFieldsMissing = $derived(service === 'links' && !is369Links && (!selectedTier || !contentHint.trim()));
   const priceMinor = $derived(service === 'links' ? (is369Links ? provider?.linkPriceMinor ?? null : selectedTier?.priceMinor ?? null) : provider?.priceMinor ?? null);
@@ -166,7 +167,7 @@
     } catch {
       /* прокси мог вернуть не JSON */
     }
-    if (!res.ok) throw new Error(data?.message ?? `Ошибка ${res.status}`);
+    if (!res.ok) throw new Error(data?.message ?? t('Ошибка {status}', { status: res.status }));
     return data;
   }
 
@@ -248,14 +249,14 @@
   role="presentation"
   onclick={(e) => { if (e.target === e.currentTarget) onclose(); }}
 >
-  <div class="mt-10 w-full max-w-xl rounded-sm border border-line bg-pane text-[12.5px] shadow-[0_12px_40px_-12px_rgb(19_23_34/0.35)]" role="dialog" aria-modal="true" aria-labelledby="buylinks-title">
+  <div class="mt-10 w-full max-w-xl rounded-sm border border-line bg-pane text-[12.5px] shadow-modal" role="dialog" aria-modal="true" aria-labelledby="buylinks-title">
     <div class="pane-head">
-      <h2 id="buylinks-title">Купить размещения</h2>
+      <h2 id="buylinks-title">{t('Купить размещения')}</h2>
       <div class="flex items-center gap-2">
         {#if quote}
-          <span class="aside text-ink-2">Баланс <b class="app-num text-ink">{credits(quote.balanceMinor)}</b> {unit}</span>
+          <span class="aside text-ink-2">{t('Баланс')} <b class="app-num text-ink">{credits(quote.balanceMinor)}</b> {unit}</span>
         {/if}
-        <button type="button" class="btn btn-ghost btn-sm btn-icon" aria-label="Закрыть" onclick={onclose}>
+        <button type="button" class="btn btn-ghost btn-sm btn-icon" aria-label={t('Закрыть')} onclick={onclose}>
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>
         </button>
       </div>
@@ -264,32 +265,32 @@
     <div class="flex flex-col gap-3 p-3">
     {#if step === 'done'}
       <p class="notice border-up/25 bg-up-t text-up">
-        Заказ создан. Позиции появляются по мере публикации.
+        {t('Заказ создан. Позиции появляются по мере публикации.')}
       </p>
       <div class="flex items-center gap-2">
-        <button type="button" class="btn btn-sec" onclick={onclose}>Закрыть</button>
-        <a class="btn btn-pri ml-auto" href="/magiclinks/{orderId}">Смотреть заказ <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></a>
+        <button type="button" class="btn btn-sec" onclick={onclose}>{t('Закрыть')}</button>
+        <a class="btn btn-pri ml-auto" href="/magiclinks/{orderId}">{t('Смотреть заказ')} <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></a>
       </div>
     {:else}
       {#if customSite}
         <label class="flex flex-col gap-1">
-          <span class="text-[11px] text-ink-3">Путь страницы</span>
+          <span class="text-[11px] text-ink-3">{t('Путь страницы')}</span>
           <span class="pii break-all text-ink-2">{customOrigin}</span>
           <input class="input w-full disabled:bg-sunk disabled:text-ink-3" bind:value={path} oninput={resetQuote} placeholder="/page/" maxlength="2000" disabled={step === 'quote' || busy} />
         </label>
         <label class="flex flex-col gap-1">
-          <span class="text-[11px] text-ink-3">{service === 'links' ? 'Анкор ссылки' : 'Текст ссылки / ключевые слова статьи'}</span>
-          <input class="input w-full disabled:bg-sunk disabled:text-ink-3" bind:value={customText} oninput={resetQuote} placeholder="Текст для ссылки" maxlength="300" disabled={step === 'quote' || busy} />
+          <span class="text-[11px] text-ink-3">{service === 'links' ? t('Анкор ссылки') : t('Текст ссылки / ключевые слова статьи')}</span>
+          <input class="input w-full disabled:bg-sunk disabled:text-ink-3" bind:value={customText} oninput={resetQuote} placeholder={t('Текст для ссылки')} maxlength="300" disabled={step === 'quote' || busy} />
         </label>
       {:else}
         <p class="text-ink-2">
-          Выбрано строк: <b class="app-num text-ink">{rows.length}</b>.
-          {service === 'links' ? 'Анкор — запрос, акцептор — URL страницы из строки.' : 'Анкор и ключевые слова статьи — запрос, акцептор — URL страницы из строки.'}
+          {t('Выбрано строк:')} <b class="app-num text-ink">{rows.length}</b>.
+          {service === 'links' ? t('Анкор — запрос, акцептор — URL страницы из строки.') : t('Анкор и ключевые слова статьи — запрос, акцептор — URL страницы из строки.')}
         </p>
       {/if}
 
       <div class="flex flex-col gap-1">
-        <span class="text-[11px] text-ink-3">Провайдер</span>
+        <span class="text-[11px] text-ink-3">{t('Провайдер')}</span>
         <select
           bind:value={providerId}
           disabled={step === 'quote' || busy}
@@ -297,73 +298,70 @@
           class="input h-7 text-xs disabled:bg-sunk disabled:text-ink-3"
         >
           {#if providers.length === 0}
-            <option value="">загружаю балансы…</option>
+            <option value="">{t('загружаю балансы…')}</option>
           {/if}
           {#each configuredProviders as p (p.id)}
             <option value={p.id}>
-              {p.name} · {p.balanceMinor != null ? `${credits(p.balanceMinor)} ${p.unit}` : 'баланс не читается'}
+              {p.name} · {p.balanceMinor != null ? `${credits(p.balanceMinor)} ${p.unit}` : t('баланс не читается')}
             </option>
           {/each}
         </select>
         {#each providers.filter((p) => !p.configured) as p (p.id)}
           <p class="text-xs text-ink-3">
             {#if p.id === 'magic369'}
-              {p.name}: нет ключа - пиши в Telegram <a class="text-acc hover:underline" href={MAGIC369_CONTACT.url} target="_blank" rel="noopener">{MAGIC369_CONTACT.handle}</a>.
-              No API key - message <a class="text-acc hover:underline" href={MAGIC369_CONTACT.url} target="_blank" rel="noopener">{MAGIC369_CONTACT.handle}</a> on Telegram.
+              {p.name}{t(': нет ключа - пиши в Telegram')} <a class="text-acc hover:underline" href={MAGIC369_CONTACT.url} target="_blank" rel="noopener">{MAGIC369_CONTACT.handle}</a>.
             {:else}
-              {p.name}: нет ключа - <a class="text-acc hover:underline" href={FIELDLINK_SIGNUP_URL} target="_blank" rel="noopener">регистрация</a>, ключ потом на странице MagicLinks.
-              No API key - <a class="text-acc hover:underline" href={FIELDLINK_SIGNUP_URL} target="_blank" rel="noopener">sign up</a> first.
+              {p.name}{t(': нет ключа -')} <a class="text-acc hover:underline" href={FIELDLINK_SIGNUP_URL} target="_blank" rel="noopener">{t('регистрация')}</a>{t(', ключ потом в разделе «Меджики».')}
             {/if}
           </p>
         {/each}
         {#if providersFailed}
           <p class="text-xs text-warn">
-            Балансы провайдеров не загрузились, выбор недоступен. Закрой окно и открой снова;
-            если не поможет - проверь ключи на странице MagicLinks.
+            {t('Балансы провайдеров не загрузились, выбор недоступен. Закрой окно и открой снова; если не поможет - проверь ключи в разделе «Меджики».')}
           </p>
         {/if}
         {#if provider?.error}
-          <p class="text-xs text-warn">Баланс {provider.name} не читается: {provider.error}</p>
+          <p class="text-xs text-warn">{t('Баланс')} {provider.name} {t('не читается:')} {provider.error}</p>
         {/if}
       </div>
 
       <label class="flex flex-col gap-1">
-        <span class="text-[11px] text-ink-3">Тип размещения</span>
+        <span class="text-[11px] text-ink-3">{t('Тип размещения')}</span>
         <select class="input w-full disabled:bg-sunk disabled:text-ink-3" bind:value={service} disabled={step === 'quote' || busy} onchange={resetQuote}>
-          <option value="posts">Посты со ссылкой</option>
-          <option value="links" disabled={!supportedServices.includes('links')}>Ссылки с главных (морды){supportedServices.includes('links') ? '' : ' — пока недоступны'}</option>
+          <option value="posts">{t('Посты со ссылкой')}</option>
+          <option value="links" disabled={!supportedServices.includes('links')}>{t('Ссылки с главных (морды)')}{supportedServices.includes('links') ? '' : t(' — пока недоступны')}</option>
         </select>
       </label>
       {#if is369Links}
         <label class="flex flex-col gap-1">
-          <span class="text-[11px] text-ink-3">Околоссылочный текст для всех строк · необязательно</span>
-          <input class="input w-full disabled:bg-sunk disabled:text-ink-3" bind:value={linkText} placeholder="Подробнее: $LINK" maxlength="1000" disabled={step === 'quote' || busy} oninput={resetQuote} />
-          <span class="text-[11px] text-ink-3">Оставь пустым для размещения только ссылки. В своём тексте укажи $LINK ровно один раз — на его место встанет ссылка с анкором из строки. Без HTML и переносов строк.</span>
+          <span class="text-[11px] text-ink-3">{t('Околоссылочный текст для всех строк · необязательно')}</span>
+          <input class="input w-full disabled:bg-sunk disabled:text-ink-3" bind:value={linkText} placeholder={t('Подробнее: $LINK')} maxlength="1000" disabled={step === 'quote' || busy} oninput={resetQuote} />
+          <span class="text-[11px] text-ink-3">{t('Оставь пустым для размещения только ссылки. В своём тексте укажи $LINK ровно один раз — на его место встанет ссылка с анкором из строки. Без HTML и переносов строк.')}</span>
         </label>
-        <p class="text-[11px] text-ink-3">Морды на разных сайтах, единая цена. Бонус +30% по каждой строке с округлением вниз. Язык не требуется.</p>
+        <p class="text-[11px] text-ink-3">{t('Морды на разных сайтах, единая цена. Бонус +30% по каждой строке с округлением вниз. Язык не требуется.')}</p>
       {:else if service === 'links'}
         <label class="flex flex-col gap-1">
-          <span class="text-[11px] text-ink-3">Тариф по трафику донора</span>
+          <span class="text-[11px] text-ink-3">{t('Тариф по трафику донора')}</span>
           <select class="input w-full disabled:bg-sunk disabled:text-ink-3" bind:value={tier} disabled={step === 'quote' || busy} onchange={resetQuote}>
-            <option value="">Выбери тариф</option>
-            {#each provider?.linkTiers ?? [] as t (t.id)}
-              <option value={t.id}>{t.priceMinor !== null ? `${credits(t.priceMinor)} ${unit}` : 'Цена по расчёту'} · T {t.traffic}</option>
+            <option value="">{t('Выбери тариф')}</option>
+            {#each provider?.linkTiers ?? [] as tier_ (tier_.id)}
+              <option value={tier_.id}>{tier_.priceMinor !== null ? `${credits(tier_.priceMinor)} ${unit}` : t('Цена по расчёту')} · T {tier_.traffic}</option>
             {/each}
           </select>
-          <span class="text-[11px] text-ink-3">Донор подбирается автоматически. Язык относится к тексту, а не к стране площадки. Бонусных ссылок нет.</span>
+          <span class="text-[11px] text-ink-3">{t('Донор подбирается автоматически. Язык относится к тексту, а не к стране площадки. Бонусных ссылок нет.')}</span>
         </label>
         <label class="flex flex-col gap-1">
-          <span class="text-[11px] text-ink-3">Тема текста для всех строк · обязательно</span>
-          <input class="input w-full disabled:bg-sunk disabled:text-ink-3" bind:value={contentHint} required placeholder="Например: аренда квартир" maxlength="300" disabled={step === 'quote' || busy} oninput={resetQuote} />
-          <span class="text-[11px] text-ink-3">В двух словах, без URL и HTML. Анкор останется точным текстом ссылки.</span>
+          <span class="text-[11px] text-ink-3">{t('Тема текста для всех строк · обязательно')}</span>
+          <input class="input w-full disabled:bg-sunk disabled:text-ink-3" bind:value={contentHint} required placeholder={t('Например: аренда квартир')} maxlength="300" disabled={step === 'quote' || busy} oninput={resetQuote} />
+          <span class="text-[11px] text-ink-3">{t('В двух словах, без URL и HTML. Анкор останется точным текстом ссылки.')}</span>
         </label>
       {:else if providerId === 'fieldlink'}
-        <p class="text-[11px] text-ink-3">Тема каждой статьи определяется автоматически по URL, анкору и ключевым словам.</p>
+        <p class="text-[11px] text-ink-3">{t('Тема каждой статьи определяется автоматически по URL, анкору и ключевым словам.')}</p>
       {/if}
 
       {#if !customSite}
       <div class="flex flex-col gap-1">
-        <span class="text-[11px] text-ink-3">Позиции</span>
+        <span class="text-[11px] text-ink-3">{t('Позиции')}</span>
         <div class="max-h-40 overflow-y-auto rounded-sm border border-line">
           <table class="w-full text-[12px]">
             <tbody>
@@ -376,7 +374,7 @@
             </tbody>
           </table>
           {#if rows.length > 50}
-            <p class="px-2 py-1 text-xs text-ink-3">…и ещё {rows.length - 50}</p>
+            <p class="px-2 py-1 text-xs text-ink-3">{t('…и ещё')} {rows.length - 50}</p>
           {/if}
         </div>
       </div>
@@ -384,7 +382,7 @@
       {/if}
 
       <label class="flex flex-col gap-1">
-        <span class="text-[11px] text-ink-3">{service === 'links' ? 'Ссылок на строку' : 'Постов на строку'}</span>
+        <span class="text-[11px] text-ink-3">{service === 'links' ? t('Ссылок на строку') : t('Постов на строку')}</span>
         <input
           type="number"
           min="1"
@@ -398,13 +396,13 @@
 
       {#if needsLanguage}
       <div class="flex flex-col gap-1">
-        <span class="text-[11px] text-ink-3">{service === 'links' ? 'Язык текста по сайтам' : 'Язык статьи по сайтам'}</span>
+        <span class="text-[11px] text-ink-3">{service === 'links' ? t('Язык текста по сайтам') : t('Язык статьи по сайтам')}</span>
         <div class="flex flex-col divide-y divide-line-soft rounded-sm border border-line">
           {#each hosts as h (h)}
             <label class="flex items-center justify-between gap-2 px-2 py-1">
               <span class="pii min-w-0 truncate text-ink">{h}</span>
               <select bind:value={langs[h]} onchange={resetQuote} disabled={step === 'quote' || busy} class="input h-6 text-xs disabled:bg-sunk disabled:text-ink-3">
-                <option value="">выбери</option>
+                <option value="">{t('выбери')}</option>
                 {#each LANGUAGE_OPTIONS as l (l.code)}
                   <option value={l.code}>{l.label}</option>
                 {/each}
@@ -414,7 +412,7 @@
         </div>
         {#if missingLang.length > 0}
           <p class="text-xs text-warn">
-            Язык не угадывается по домену, выбери сам: {missingLang.join(', ')}
+            {t('Язык не угадывается по домену, выбери сам:')} {missingLang.join(', ')}
           </p>
         {/if}
       </div>
@@ -422,35 +420,35 @@
       {/if}
 
       {#if err}
-        <p class="app-errors mb-0">{err}</p>
+        <p class="app-errors mb-0">{tx(err)}</p>
       {/if}
 
       <div class="flex flex-col">
         {#if step === 'quote' && quote}
-          <div class="flex justify-between py-[3px]"><span>Заказано</span><span class="app-num">{quote.placementCount}</span></div>
+          <div class="flex justify-between py-[3px]"><span>{t('Заказано')}</span><span class="app-num">{quote.placementCount}</span></div>
           {#if quote.bonusCount > 0}
-            <div class="flex justify-between py-[3px] text-up"><span>Бонус</span><span class="app-num">+{quote.bonusCount}</span></div>
-            <div class="flex justify-between py-[3px]"><span>Итого позиций</span><span class="app-num">{quote.totalPlacementCount}</span></div>
+            <div class="flex justify-between py-[3px] text-up"><span>{t('Бонус')}</span><span class="app-num">+{quote.bonusCount}</span></div>
+            <div class="flex justify-between py-[3px]"><span>{t('Итого позиций')}</span><span class="app-num">{quote.totalPlacementCount}</span></div>
           {/if}
-          <div class="flex justify-between py-[3px] text-ink-3"><span>На балансе</span><span class="app-num">{credits(quote.balanceMinor)} {unit}</span></div>
+          <div class="flex justify-between py-[3px] text-ink-3"><span>{t('На балансе')}</span><span class="app-num">{credits(quote.balanceMinor)} {unit}</span></div>
           {#if quote.shortfallMinor > 0}
-            <div class="flex justify-between py-[3px] text-dn"><span>Не хватает</span><span class="app-num">{credits(quote.shortfallMinor)} {unit}</span></div>
+            <div class="flex justify-between py-[3px] text-dn"><span>{t('Не хватает')}</span><span class="app-num">{credits(quote.shortfallMinor)} {unit}</span></div>
           {/if}
-          <div class="mt-1 flex justify-between border-t border-line pt-2 font-bold text-ink"><span>Стоимость</span><span class="app-num text-[12.5px]">{credits(quote.amountMinor)} {unit}</span></div>
+          <div class="mt-1 flex justify-between border-t border-line pt-2 font-bold text-ink"><span>{t('Стоимость')}</span><span class="app-num text-[12.5px]">{credits(quote.amountMinor)} {unit}</span></div>
           {#if !quote.canSubmit && quote.shortfallMinor <= 0}
             <p class="notice notice-warn mt-2 text-xs">{fieldlinkAdmissionMessage(quote.admissionCode)}</p>
           {/if}
           {#if quote.indexingIncluded}
             <p class="notice notice-warn mt-2 text-xs">
-              Индексация включена: отправленный заказ нельзя отменить или убрать в корзину.
+              {t('Индексация включена: отправленный заказ нельзя отменить или убрать в корзину.')}
             </p>
           {/if}
         {:else}
-          <div class="flex justify-between py-[3px]"><span>Заказано</span><span class="app-num">{requested}</span></div>
+          <div class="flex justify-between py-[3px]"><span>{t('Заказано')}</span><span class="app-num">{requested}</span></div>
           {#if (providerId === 'fieldlink' && service === 'posts') || is369Links}
-            <div class="flex justify-between py-[3px] text-up"><span>Бонус</span><span class="app-num">+{estimateBonus}</span></div>
+            <div class="flex justify-between py-[3px] text-up"><span>{t('Бонус')}</span><span class="app-num">+{estimateBonus}</span></div>
           {/if}
-          <div class="mt-1 flex justify-between border-t border-line pt-2 font-bold text-ink"><span>Примерно</span><span class="app-num text-[12.5px]">{estimateMinor !== null ? `${credits(estimateMinor)} ${unit}` : '—'}</span></div>
+          <div class="mt-1 flex justify-between border-t border-line pt-2 font-bold text-ink"><span>{t('Примерно')}</span><span class="app-num text-[12.5px]">{estimateMinor !== null ? `${credits(estimateMinor)} ${unit}` : '—'}</span></div>
         {/if}
       </div>
 
@@ -461,24 +459,24 @@
             class="btn btn-sec w-full"
             disabled={busy || (!customSite && rows.length === 0) || !Number.isInteger(count) || count < 1 || count > 250 || missingLang.length > 0 || !providerId || linkFieldsMissing}
             onclick={getQuote}
-          >{busy ? 'Считаю…' : 'Посчитать цену'}</button>
+          >{busy ? t('Считаю…') : t('Посчитать цену')}</button>
         {:else if quote}
           <button
             type="button"
             class="btn btn-buy btn-lg w-full"
             disabled={busy || !quote.canSubmit}
             onclick={submit}
-          >{busy ? 'Отправляю…' : `Оплатить ${credits(quote.amountMinor)} ${unit} и запустить`}</button>
+          >{busy ? t('Отправляю…') : t('Оплатить {sum} {unit} и запустить', { sum: credits(quote.amountMinor), unit })}</button>
         {/if}
         <div class="flex items-center gap-2">
-          <button type="button" class="btn btn-ghost" onclick={onclose}>Отмена</button>
+          <button type="button" class="btn btn-ghost" onclick={onclose}>{t('Отмена')}</button>
           {#if step === 'quote' && quote}
             <button
               type="button"
               class="btn btn-sec ml-auto"
               disabled={busy}
               onclick={() => { step = 'form'; quote = null; }}
-            >Назад</button>
+            >{t('Назад')}</button>
           {/if}
         </div>
       </div>
@@ -486,17 +484,14 @@
       <p class="text-[11px] text-ink-3">
         {#if step === 'form'}
           {#if providerId === 'magic369'}
-            Расчёт по текущей цене сервиса. Оплата создаст заказ сразу: деньги списываются
-            в момент создания, отменить нельзя.
+            {t('Расчёт по текущей цене сервиса. Оплата создаст заказ сразу: деньги списываются в момент создания, отменить нельзя.')}
           {:else}
-            Денег не тратит: сохраняет задание в сервисе и показывает точную сумму от него.
-            Запуск и оплата — на следующем шаге, по кнопке с суммой.
+            {t('Денег не тратит: сохраняет задание в сервисе и показывает точную сумму от него. Запуск и оплата — на следующем шаге, по кнопке с суммой.')}
           {/if}
         {:else if providerId === 'magic369'}
-          Вот это уже платит: заказ уходит сразу, токены списываются в момент создания.
+          {t('Вот это уже платит: заказ уходит сразу, токены списываются в момент создания.')}
         {:else}
-          Запускает размещение по подтверждённой стоимости.
-          Сервис применит схему оплаты этого заказа; состояние оплаты видно в его деталях.
+          {t('Запускает размещение по подтверждённой стоимости. Сервис применит схему оплаты этого заказа; состояние оплаты видно в его деталях.')}
         {/if}
       </p>
     {/if}

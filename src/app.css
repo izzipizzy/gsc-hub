@@ -30,6 +30,19 @@
   --color-warn: rgb(var(--warn));
   --color-warn-t: rgb(var(--warn-t));
 
+  /* text and marks on filled acc / up / ink surfaces */
+  --color-on-acc: rgb(var(--on-acc));
+
+  --color-series-clicks: rgb(var(--series-clicks));
+  --color-series-impr: rgb(var(--series-impr));
+  --color-series-pos: rgb(var(--series-pos));
+  --color-series-ctr: rgb(var(--series-ctr));
+  --color-series-prev: rgb(var(--series-prev));
+
+  /* floating over the desk: menus, list modals, sticky selection tray / order dialog */
+  --shadow-pop: 0 6px 20px -6px rgb(var(--shadow) / 0.25);
+  --shadow-modal: 0 12px 40px -12px rgb(var(--shadow) / 0.35);
+
   --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 }
 
@@ -47,7 +60,7 @@
   ::before,
   ::backdrop,
   ::file-selector-button {
-    border-color: var(--color-gray-200, currentcolor);
+    border-color: var(--color-line, currentcolor);
   }
 }
 
@@ -75,7 +88,7 @@
 }
 
 @utility btn-pri {
-  @apply bg-acc text-white hover:bg-acc-deep;
+  @apply bg-acc text-on-acc hover:bg-acc-deep;
 }
 
 @utility btn-sec {
@@ -87,7 +100,7 @@
 }
 
 @utility btn-buy {
-  @apply bg-up text-white hover:brightness-95;
+  @apply bg-up text-on-acc hover:brightness-95;
 }
 
 @utility btn-danger {
@@ -116,7 +129,7 @@
     @apply inline-flex h-6 min-w-8 cursor-pointer items-center justify-center rounded-sm px-2 text-[11.5px] font-semibold text-ink-2 transition-colors duration-150 hover:bg-bg hover:text-ink;
   }
   & :is(a, button).is-active {
-    @apply bg-acc-t text-acc hover:bg-acc-t hover:text-acc;
+    @apply bg-acc-t text-acc-deep hover:bg-acc-t hover:text-acc-deep;
   }
 }
 
@@ -126,7 +139,7 @@
 
 @utility is-active {
   .app-segmented &:is(a, button) {
-    @apply bg-acc-t text-acc hover:bg-acc-t hover:text-acc;
+    @apply bg-acc-t text-acc-deep hover:bg-acc-t hover:text-acc-deep;
   }
   .tabs > &:is(a, button) {
     @apply border-acc font-semibold text-ink;
@@ -167,7 +180,9 @@
 @utility desk {
   /* Desk: panes joined edge to edge, split by 1px lines; the gray shows only as
      the outer frame. Columns inside are flex stacks whose last pane fills. */
-  @apply grid gap-px overflow-hidden rounded-sm border border-line bg-line;
+  /* minmax(0,1fr): a wide table inside a pane scrolls in its own box instead of
+     stretching the implicit auto column and the whole page sideways on phones. */
+  @apply grid grid-cols-[minmax(0,1fr)] gap-px overflow-hidden rounded-sm border border-line bg-line;
   & .pane {
     @apply rounded-none border-0;
   }
@@ -265,7 +280,7 @@
 }
 
 @utility badge-acc {
-  @apply bg-acc-t text-acc;
+  @apply bg-acc-t text-acc-deep;
 }
 
 @utility page {
@@ -315,7 +330,7 @@
 
 @utility app-gsearch {
   /* Google `site:` search badge — manual indexation check */
-  @apply ml-1.5 inline-flex h-4 w-4 items-center justify-center rounded-xs bg-bg align-middle text-[10px] font-bold leading-none text-ink-3 transition-colors hover:bg-acc hover:text-white;
+  @apply ml-1.5 inline-flex h-4 w-4 items-center justify-center rounded-xs bg-bg align-middle text-[10px] font-bold leading-none text-ink-3 transition-colors hover:bg-acc hover:text-on-acc;
 }
 
 @utility app-section {
@@ -378,7 +393,9 @@
 
 @utility app-table {
   /* ── Tables: dense, right-aligned mono numbers, sticky sunk head ── */
-  @apply w-full border-collapse text-[12.5px];
+  /* relative: screen-reader-only labels in header cells are absolutely positioned;
+     without a positioned table they escape the scroll box and widen the page. */
+  @apply relative w-full border-collapse text-[12.5px];
   & thead tr {
     @apply text-left;
   }
@@ -486,6 +503,12 @@
   @apply flex h-7 items-center bg-sunk px-2 text-[11px] font-medium uppercase tracking-wide text-ink-3;
 }
 
+@utility link {
+  /* Link inside running text: always underlined (WCAG 1.4.1), the line darkens on hover.
+     Stand-alone links in tables and toolbars keep text-acc + hover:underline. */
+  @apply text-acc underline decoration-acc/40 underline-offset-2 transition-colors duration-150 hover:decoration-current;
+}
+
 @utility sort-th {
   @apply cursor-pointer select-none hover:text-ink;
 }
@@ -522,32 +545,118 @@
     --line-soft: 238 240 243; /* row separators */
     --ink: 19 23 34;
     --ink-2: 67 74 87;
-    --ink-3: 110 118 132; /* labels; 4.6:1 on white */
+    --ink-3: 100 108 121; /* labels; 5.3:1 on pane, 4.9:1 on bg, 5.1:1 on sunk */
     --ink-4: 170 177 189; /* placeholders for absent values */
     --acc: 41 98 255;
     --acc-deep: 30 76 214;
     --acc-t: 233 239 255;
-    --up: 8 135 113;
+    --up: 7 120 100; /* 5.4:1 on pane, 4.8:1 on up-t */
     --up-t: 227 245 241;
-    --dn: 224 42 58;
+    --dn: 200 30 46; /* 5.7:1 on pane, 5.0:1 on dn-t */
     --dn-t: 253 235 237;
     --upd: 245 146 60; /* Google update bands */
     --upd-t: 255 243 230;
     --upd-ink: 138 74 12;
     --warn: 161 98 7;
     --warn-t: 254 247 224;
+    --on-acc: 255 255 255; /* text on filled acc, up and ink surfaces */
+    --shadow: 19 23 34; /* tint of floating shadows */
 
-    /* chart series: one colour per metric on every chart */
-    --series-clicks: #2962ff;
-    --series-impr: #9aa3b2;
-    --series-pos: #131722;
-    --series-ctr: #6b7684;
+    /* chart series: one colour per metric on every chart (chart-theme.ts) */
+    --series-clicks: var(--acc);
+    --series-impr: 154 163 178;
+    --series-pos: var(--ink);
+    --series-ctr: 107 118 132;
+    --series-prev: 195 201 211;
+
+    /* Google update bands: the amber family, the label names the type */
+    --upd-core: var(--upd);
+    --upd-spam: 224 163 36;
+    --upd-discover: 240 179 90;
+    --upd-other: 217 160 102;
+
+    /* site event markers: ink, so they never read as a drop */
+    --event-merge: var(--ink);
+    --event-custom: var(--ink-2);
+    --event-purchase: 124 58 237;
+  }
+
+  /* ── Dark desk: the same roles on graphite. Chosen explicitly in the profile
+     (data-theme="dark") or by the system when the profile says "system". ── */
+  :root[data-theme='dark'] {
+    --bg: 14 16 21;
+    --pane: 23 26 33;
+    --sunk: 19 22 28;
+    --line: 44 49 60;
+    --line-soft: 33 37 46;
+    --ink: 228 231 237;
+    --ink-2: 178 185 197;
+    --ink-3: 140 148 162; /* 5.7:1 on pane, 6.2:1 on bg */
+    --ink-4: 94 101 115;
+    --acc: 88 140 255;
+    --acc-deep: 140 176 255; /* hover goes lighter on a dark desk; 6.5:1 on acc-t */
+    --acc-t: 31 43 74;
+    --up: 52 196 160;
+    --up-t: 17 52 45;
+    --dn: 255 107 117;
+    --dn-t: 66 25 31;
+    --upd: 245 146 60;
+    --upd-t: 58 38 20;
+    --upd-ink: 246 182 112;
+    --warn: 234 176 72;
+    --warn-t: 56 43 16;
+    --on-acc: 10 13 20; /* bright fills carry dark text: 6.1:1 on acc, 8.8:1 on up */
+    --shadow: 0 0 0;
+    --series-impr: 110 119 135;
+    --series-ctr: 150 158 172;
+    --series-prev: 70 77 90;
+    --upd-spam: 224 163 36;
+    --upd-discover: 240 179 90;
+    --upd-other: 217 160 102;
+    --event-purchase: 167 132 250;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) {
+      --bg: 14 16 21;
+      --pane: 23 26 33;
+      --sunk: 19 22 28;
+      --line: 44 49 60;
+      --line-soft: 33 37 46;
+      --ink: 228 231 237;
+      --ink-2: 178 185 197;
+      --ink-3: 140 148 162; /* 5.7:1 on pane, 6.2:1 on bg */
+      --ink-4: 94 101 115;
+      --acc: 88 140 255;
+      --acc-deep: 140 176 255; /* hover goes lighter on a dark desk; 6.5:1 on acc-t */
+      --acc-t: 31 43 74;
+      --up: 52 196 160;
+      --up-t: 17 52 45;
+      --dn: 255 107 117;
+      --dn-t: 66 25 31;
+      --upd: 245 146 60;
+      --upd-t: 58 38 20;
+      --upd-ink: 246 182 112;
+      --warn: 234 176 72;
+      --warn-t: 56 43 16;
+      --on-acc: 10 13 20; /* bright fills carry dark text: 6.1:1 on acc, 8.8:1 on up */
+      --shadow: 0 0 0;
+      --series-impr: 110 119 135;
+      --series-ctr: 150 158 172;
+      --series-prev: 70 77 90;
+      --upd-spam: 224 163 36;
+      --upd-discover: 240 179 90;
+      --upd-other: 217 160 102;
+      --event-purchase: 167 132 250;
+      color-scheme: dark;
+    }
   }
 }
 
 @layer base {
   html {
     background: rgb(var(--bg));
+    color-scheme: light;
   }
   body {
     color: rgb(var(--ink));
@@ -591,7 +700,7 @@
   }
   html, body {
     font-size: 11px;
-    background: #fff;
+    background: rgb(var(--pane));
   }
   button,
   input,

@@ -45,3 +45,22 @@ it('backs off failed initial loads without inventing empty successful data and i
   const second=vi.fn().mockResolvedValue({rows:[2]});
   expect(await cachedProviderRead(db,'other:order',second,60_000)).toEqual({rows:[2]});
 });
+it('stale-while-revalidate returns the last answer at once and refreshes in the background', async () => {
+  const load=vi.fn().mockResolvedValue({balance:10});
+  await cachedProviderRead(db,'swr',load,60_000);
+  vi.advanceTimersByTime(60_001);
+  let finish!: (v: object) => void;
+  load.mockImplementation(() => new Promise((r) => { finish = r; }));
+  // expired: the page gets the old value without waiting for the provider
+  expect(await cachedProviderRead(db,'swr',load,60_000,false,Date.now(),true)).toEqual({balance:10});
+  expect(load).toHaveBeenCalledTimes(2);
+  finish({balance:7});
+  await vi.runAllTimersAsync();
+  expect(await cachedProviderRead(db,'swr',load,60_000,false,Date.now(),true)).toEqual({balance:7});
+  expect(load).toHaveBeenCalledTimes(2);
+});
+it('stale-while-revalidate still waits when nothing was ever read', async () => {
+  const load=vi.fn().mockResolvedValue({rows:[1]});
+  expect(await cachedProviderRead(db,'first',load,60_000,false,Date.now(),true)).toEqual({rows:[1]});
+  expect(load).toHaveBeenCalledOnce();
+});

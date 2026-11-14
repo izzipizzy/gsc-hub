@@ -5,6 +5,7 @@ import { fetchPerSiteQueries } from '$lib/server/google';
 import { filterPatterns, queryHidden } from '$lib/server/filters';
 import { rowsToCsv } from '$lib/server/csv';
 import { requireAdmin } from '$lib/server/guard';
+import { listHiddenSites } from '$lib/server/hidden';
 
 // All queries across visible sites for the period, aggregated by query × country,
 // with junk-query filters applied. Columns: query, country, impressions, clicks.
@@ -13,8 +14,10 @@ export const GET: RequestHandler = async ({ url, locals }) => {
   const days = Math.floor(Number(url.searchParams.get('days') ?? '1'));
   if (!Number.isFinite(days) || days < 1 || days > 480) throw error(400, 'days 1..480');
 
-  // accountId|siteUrl keys the client wants excluded (mirrors the UI's hidden set).
-  const hidden = new Set((url.searchParams.get('hidden') ?? '').split(',').filter(Boolean));
+  // accountId|siteUrl keys to exclude: the client's list when it sends one,
+  // otherwise the stored hidden set (the page no longer holds it).
+  const hiddenParam = url.searchParams.get('hidden');
+  const hidden = new Set(hiddenParam !== null ? hiddenParam.split(',').filter(Boolean) : listHiddenSites(db()));
 
   const filters = filterPatterns(db());
   const isFiltered = (q: string) => queryHidden(q, filters);

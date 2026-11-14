@@ -63,7 +63,7 @@ export const load: PageServerLoad = async ({ locals }) => {
   };
   if (token369) {
     try {
-      m369.balance = await cachedMagic369Client(database)!.balance();
+      m369.balance = await cachedMagic369Client(database, false, true)!.balance();
     } catch (e) {
       m369.error =
         e instanceof Magic369Error
@@ -79,7 +79,7 @@ export const load: PageServerLoad = async ({ locals }) => {
   let error: string | null = null;
 
   if (token) {
-    const client = cachedMagicLinksClient(database)!;
+    const client = cachedMagicLinksClient(database, false, true)!;
     let tasks: MagicLinksTask[] = [];
     try {
       // Параллельно: оба вызова читающие, бюджет аккаунта это выдерживает.
@@ -89,7 +89,7 @@ export const load: PageServerLoad = async ({ locals }) => {
       // из CLI или из кабинета сервиса, и тогда таблицы striking о нём не знают.
       // Запросы идут только по заказам, которых ещё нет в истории, поэтому на
       // второй заход это бесплатно.
-      await cachedProviderRead(database, 'fieldlink:history-import', () => importOrderHistory(database, client, hostOfUrl), 15*60_000);
+      await cachedProviderRead(database, 'fieldlink:history-import', () => importOrderHistory(database, client, hostOfUrl), 15*60_000, false, Date.now(), true);
     } catch (e) {
       // Сервис недоступен или ключ отозван - страница всё равно открывается,
       // иначе ключ будет нечем заменить.
@@ -137,7 +137,7 @@ export const load: PageServerLoad = async ({ locals }) => {
   // Заказы 369Team: списка в их API нет, так что берём id из истории покупок
   // хаба, а статус читаем живьём по каждому.
   const purchases = listPurchases(database);
-  const client369 = cachedMagic369Client(database);
+  const client369 = cachedMagic369Client(database, false, true);
   const by369 = new Map<string, { createdAt: number; hosts: Set<string>; briefs: number }>();
   for (const p of purchases) {
     if (p.provider !== PROVIDER_MAGIC369) continue;

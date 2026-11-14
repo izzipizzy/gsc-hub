@@ -36,6 +36,8 @@ const TABS = ['striking', 'cannibal', 'ctr', 'branded', 'decay'] as const;
 // In-memory TTL cache of the portfolio fan-out, keyed by period. Keeps GSC data out of the DB
 // (only tokens live there) while making repeat loads / period switches instant. Cleared on restart.
 interface PortfolioData {
+  /** When this aggregate was read from Search Console (it is cached for an hour). */
+  computedAt: number;
   errors: { accountId: string; accountEmail: string; reason: string }[];
   striking: (SiteTag & {
     query: string;
@@ -203,6 +205,7 @@ async function computePortfolio(days: number): Promise<PortfolioData> {
   const totalClicks = brandedTotal.branded.clicks + brandedTotal.nonBranded.clicks;
 
   const data: PortfolioData = {
+    computedAt: Date.now(),
     errors,
     striking: striking.slice(0, 500),
     strikingTotal: striking.length,

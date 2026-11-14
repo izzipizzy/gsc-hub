@@ -1,9 +1,15 @@
 <script lang="ts">
+  import PeriodPicker from '$lib/components/PeriodPicker.svelte';
+  import { t, tx, plural, fmtNum, fmtPct, fmtDec, fmtDay, getLocale } from '$lib/i18n/index.svelte';
+  import type { MessageKey } from '$lib/i18n/messages';
+  import { isoDate, dateTime, clock } from '$lib/utils/time';
   import SortCaret from '$lib/components/SortCaret.svelte';
   import { goto, replaceState } from '$app/navigation';
   import { displaySite, siteHref } from '$lib/utils/site';
   import type { PageData } from './$types';
   import BuyLinks from '$lib/components/BuyLinks.svelte';
+  import LiveStamp from '$lib/components/LiveStamp.svelte';
+  import { invalidateAll } from '$app/navigation';
 
   let { data }: { data: PageData } = $props();
 
@@ -31,29 +37,24 @@
     }
   });
 
-  const nf = new Intl.NumberFormat('en-US');
-  const fmt = (n: number) => nf.format(Math.round(n));
-  const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
-  const posf = (x: number) => x.toFixed(1);
+  // Numbers follow the interface language.
+  const fmt = (n: number) => fmtNum(Math.round(n));
+  const pct = (x: number) => fmtPct(x);
+  const posf = (x: number) => fmtDec(x, 1);
   // Signed change for chips: always a sign, and a real minus.
   const signedPct = (x: number) => (x > 0 ? `+${pct(x)}` : x < 0 ? `−${pct(-x)}` : pct(x));
   const shortUrl = (u: string) => u.replace(/^https?:\/\/[^/]+/, '') || '/';
   const detailHref = (r: { siteUrl: string; accountId: string }) =>
     `/properties/${encodeURIComponent(r.siteUrl)}?acc=${encodeURIComponent(r.accountId)}`;
 
-  function goToDays(raw: string | number) {
-    const n = Math.floor(Number(raw));
-    if (!Number.isFinite(n) || n < 1) return;
-    goto(`?days=${Math.min(n, 480)}&tab=${tab}`);
-  }
 
   type Tab = 'striking' | 'cannibal' | 'ctr' | 'branded' | 'decay';
-  const TABS: { id: Tab; label: string }[] = [
+  const TABS: { id: Tab; label: MessageKey }[] = [
     { id: 'striking', label: 'Striking Distance' },
-    { id: 'cannibal', label: 'Cannibalization' },
-    { id: 'ctr', label: 'CTR Benchmark' },
-    { id: 'branded', label: 'Branded' },
-    { id: 'decay', label: 'Decay' }
+    { id: 'cannibal', label: 'Каннибализация' },
+    { id: 'ctr', label: 'CTR-бенчмарк' },
+    { id: 'branded', label: 'Брендовые' },
+    { id: 'decay', label: 'Падение' }
   ];
   let tab = $state<Tab>(data.initialTab as Tab);
 
@@ -102,6 +103,27 @@
       ? sortedStriking
       : sortedStriking.filter((r) => selectedCountries.has(r.country))
   );
+  // 100 rows at a time, like /properties: up to 500 rows of checkbox + links
+  // made the table the slowest thing on the page.
+  const STRIKING_STEP = 100;
+  let strikingLimit = $state(STRIKING_STEP);
+  $effect(() => {
+    void filteredStriking;
+    strikingLimit = STRIKING_STEP;
+  });
+  const visibleStriking = $derived(filteredStriking.slice(0, strikingLimit));
+
+  // Refresh promises fresh numbers: drop the hour-long cache, then reload.
+  let refreshing = $state(false);
+  async function refresh() {
+    refreshing = true;
+    try {
+      await fetch('/cache/clear', { method: 'POST' }).catch(() => undefined);
+      await invalidateAll();
+    } finally {
+      refreshing = false;
+    }
+  }
 
   // ── Copy the (filtered) unique queries to the clipboard ──
   let copied = $state(false);
@@ -150,7 +172,7 @@
 
   const boughtFor = (r: BuyableRow) => purchases[pairKey(r)];
   const dayfmt = (ms: number) =>
-    new Date(ms).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+    isoDate(ms);
 
   function toggleRow(r: BuyableRow) {
     const k = pairKey(r);
@@ -238,10 +260,10 @@
   let idxTotal = $state(0);
 
   function idxBadge(v: string): { cls: string; label: string } {
-    if (v === 'PASS') return { cls: 'badge-ok', label: 'Indexed' };
-    if (v === 'PARTIAL') return { cls: 'badge-warn', label: 'Partial' };
-    if (v === 'FAIL') return { cls: 'badge-bad', label: 'Not indexed' };
-    if (v === 'ERR') return { cls: 'badge-muted', label: 'error' };
+    if (v === 'PASS') return { cls: 'badge-ok', label: t('В индексе') };
+    if (v === 'PARTIAL') return { cls: 'badge-warn', label: t('Частично') };
+    if (v === 'FAIL') return { cls: 'badge-bad', label: t('Не в индексе') };
+    if (v === 'ERR') return { cls: 'badge-muted', label: t('ошибка') };
     return { cls: 'badge-muted', label: '—' };
   }
 
@@ -267,12 +289,12 @@
     let ti = 0;
     async function worker() {
       while (ti < tasks.length) {
-        const t = tasks[ti++];
+        const task = tasks[ti++];
         try {
           const r = await fetch('/properties/inspect', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(t)
+            body: JSON.stringify(task)
           });
           if (r.ok) {
             const j = await r.json();
@@ -286,12 +308,12 @@
               });
             }
           } else {
-            for (const u of t.urls) next.set(u, { verdict: 'ERR', error: `HTTP ${r.status}` });
+            for (const u of task.urls) next.set(u, { verdict: 'ERR', error: `HTTP ${r.status}` });
           }
         } catch (e) {
-          for (const u of t.urls) next.set(u, { verdict: 'ERR', error: (e as Error).message });
+          for (const u of task.urls) next.set(u, { verdict: 'ERR', error: (e as Error).message });
         }
-        idxDone += t.urls.length;
+        idxDone += task.urls.length;
         idx = new Map(next);
       }
     }
@@ -305,7 +327,7 @@
   });
 </script>
 
-<svelte:head><title>Portfolio analytics — all sites — gsc-hub</title></svelte:head>
+<svelte:head><title>{t('Портфель · gsc-hub')}</title></svelte:head>
 
 
 {#snippet sortTh(k: SortKey, label: string, num = false)}
@@ -320,78 +342,70 @@
   <header class="app-toolbar">
     <div class="app-toolbar-left">
       <nav class="app-breadcrumbs">
-        <a href="/">Accounts</a>
+        <span>{t('Обзор')}</span>
         <span aria-hidden="true">/</span>
-        <a href="/properties">Sites</a>
-        <span aria-hidden="true">/</span>
-        <span class="text-ink-2">Portfolio</span>
+        <span class="text-ink-2">{t('Портфель')}</span>
       </nav>
-      <h1 class="app-pagetitle">Portfolio analytics — all sites</h1>
-      <p class="text-xs text-ink-3">Every non-hidden site, aggregated. Decay compares the recent period vs the one before it.</p>
+      <h1 class="app-pagetitle">{t('Аналитика портфеля: все сайты')}</h1>
+      <p class="text-xs text-ink-3">{t('Все нескрытые сайты вместе. «Падение» сравнивает последний период с предыдущим.')}</p>
     </div>
     <div class="app-toolbar-right">
-      <a href="/properties" class="btn btn-ghost"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 8H3M7 4 3 8l4 4"/></svg>Sites</a>
+      <a href="/properties" class="btn btn-ghost"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 8H3M7 4 3 8l4 4"/></svg>{t('Сайты')}</a>
       <span class="app-toolbar-divider" aria-hidden="true"></span>
-      <div class="app-segmented">
-        <span class="app-segmented-label">Period</span>
-        {#each [7, 28, 60, 90] as d}
-          <a class:is-active={data.days === d} href="?days={d}&tab={tab}">{d}D</a>
-        {/each}
-        <input
-          type="number" min="1" max="480" placeholder="days"
-          value={[7, 28, 60, 90].includes(data.days) ? '' : data.days}
-          class="input app-num ml-0.5 h-6 w-16 px-1.5 text-xs"
-          onkeydown={(e) => { if (e.key === 'Enter') goToDays(e.currentTarget.value); }}
-          onchange={(e) => goToDays(e.currentTarget.value)}
-        />
-      </div>
+      <PeriodPicker days={data.days} href={(d) => `?days=${d}&tab=${tab}`} />
+      <span class="app-toolbar-divider" aria-hidden="true"></span>
+      <LiveStamp at={pf?.computedAt ?? null} updating={refreshing || (!pf && !pfErr)} note={t('сводка кешируется на час, Refresh читает заново')} />
+      <button type="button" class="btn btn-sec" onclick={refresh} disabled={refreshing}>
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true" class:animate-spin={refreshing}><path d="M13.5 8A5.5 5.5 0 1 1 11.8 4M13.5 2v3h-3"/></svg>
+        {refreshing ? t('Обновляется…') : t('Обновить')}
+      </button>
     </div>
   </header>
 
   {#if tab !== 'decay' && pf && pf.errors.length > 0}
     <div class="app-errors">
-      <div class="app-errors-title">Errors</div>
+      <div class="app-errors-title">{t('Ошибки')}</div>
       <ul class="ml-4 list-disc">
-        {#each pf.errors as e}<li><span class="font-medium">{e.accountEmail}</span>: {e.reason}</li>{/each}
+        {#each pf.errors as e}<li><span class="font-medium">{e.accountEmail}</span>: {tx(e.reason)}</li>{/each}
       </ul>
     </div>
   {/if}
 
   <section class="pane min-w-0">
     <div class="tabs px-2" role="tablist">
-      {#each TABS as t (t.id)}
-        <button role="tab" aria-selected={tab === t.id} class:is-active={tab === t.id} onclick={() => openTab(t.id)}>{t.label}</button>
+      {#each TABS as it (it.id)}
+        <button role="tab" aria-selected={tab === it.id} class:is-active={tab === it.id} onclick={() => openTab(it.id)}>{t(it.label)}</button>
       {/each}
     </div>
 
     <div class="min-w-0">
       {#if tab === 'decay'}
-        {#if decayLoading}<p class="loading p-3">Loading… (fetches 2 windows per site — a bit slower)</p>{/if}
-        {#if decayErr}<p class="text-err p-3">{decayErr}</p>{/if}
+        {#if decayLoading}<p class="loading p-3">{t('Загрузка… (по два окна на сайт, поэтому чуть дольше)')}</p>{/if}
+        {#if decayErr}<p class="text-err p-3">{tx(decayErr)}</p>{/if}
         {#if decay}
           <div class="flex flex-wrap items-center gap-3 border-b border-line px-3 py-2 text-[12.5px] text-ink-2">
             <span>
-              <span class="app-num font-semibold text-ink">{fmt(decay.total)}</span> decaying pages
-              {#if decay.total > decay.rows.length}<span class="text-ink-3"> · top {decay.rows.length}</span>{/if}
+              <span class="app-num font-semibold text-ink">{fmt(decay.total)}</span> {t('падающих страниц')}
+              {#if decay.total > decay.rows.length}<span class="text-ink-3"> · {t('топ {n}', { n: decay.rows.length })}</span>{/if}
             </span>
             {#if decay.rows.length > 0}
               <button onclick={checkIndex} disabled={idxRunning} class="btn btn-pri btn-sm">
                 {idxRunning ? `Checking… ${idxDone}/${idxTotal}` : 'Check index status'}
               </button>
-              <span class="text-xs text-ink-3">GSC URL Inspection · cached 12h · quota 2000/day/site</span>
+              <span class="text-xs text-ink-3">{t('GSC URL Inspection · кеш 12 ч · квота 2000 в день на сайт')}</span>
             {/if}
           </div>
           {#if decay.rows.length === 0}
-            <p class="loading p-3">No decaying pages found — no page lost ≥20% vs the previous period (from ≥20 prior clicks, or ≥50 prior impressions).</p>
+            <p class="loading p-3">{t('Падающих страниц нет: ни одна не потеряла ≥20% к прошлому периоду (от ≥20 кликов или ≥50 показов раньше).')}</p>
           {:else}
             <div class="overflow-x-auto">
               <table class="app-table">
                 <thead>
                   <tr>
-                    <th>Site</th><th>Page</th>
-                    <th class="num">Clk prior→recent</th><th class="num">Δclk</th>
-                    <th class="num">Impr prior→recent</th><th class="num">Δimpr</th>
-                    <th>Index</th>
+                    <th>{t('Сайт')}</th><th>{t('Страница')}</th>
+                    <th class="num">{t('Клики было→стало')}</th><th class="num">{t('Δкликов')}</th>
+                    <th class="num">{t('Показы было→стало')}</th><th class="num">{t('Δпоказов')}</th>
+                    <th>{t('Индекс')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -423,24 +437,24 @@
         {/if}
 
       {:else if pfErr}
-        <p class="text-err p-3">Failed to load portfolio: {pfErr}</p>
+        <p class="text-err p-3">{t('Не удалось загрузить портфель: {error}', { error: tx(pfErr) })}</p>
       {:else if !pf}
-        <p class="loading p-3">Loading portfolio…</p>
+        <p class="loading p-3">{t('Загружаем портфель…')}</p>
 
       {:else if tab === 'striking'}
         <div class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line px-3 py-2 text-[12.5px] text-ink-2">
           <span>
-            <span class="app-num font-semibold text-ink">{fmt(pf.strikingTotal)}</span> striking keywords (pos 4–20)
-            {#if pf.strikingTotal > pf.striking.length}<span class="text-ink-3"> · top {pf.striking.length}</span>{/if}
-            {#if selectedCountries.size > 0}<span class="text-ink-3"> · {fmt(filteredStriking.length)} shown</span>{/if}
+            <span class="app-num font-semibold text-ink">{fmt(pf.strikingTotal)}</span> {t('striking-запросов (позиции 4–20)')}
+            {#if pf.strikingTotal > pf.striking.length}<span class="text-ink-3"> · {t('топ {n}', { n: pf.striking.length })}</span>{/if}
+            {#if selectedCountries.size > 0}<span class="text-ink-3"> · {t('показано {n}', { n: fmt(filteredStriking.length) })}</span>{/if}
           </span>
-          <button onclick={copyQueries} class="btn btn-ghost btn-sm" title="Copy unique queries (respects the Geo filter)">
-            {copied ? 'copied' : 'Copy queries'}
+          <button onclick={copyQueries} class="btn btn-ghost btn-sm" title={t('Скопировать уникальные запросы (с учётом фильтра стран)')}>
+            {copied ? 'copied' : t('Скопировать запросы')}
           </button>
           {#if availableCountries.length > 1}
             <span class="app-toolbar-divider" aria-hidden="true"></span>
             <div class="flex flex-wrap items-center gap-1">
-              <span class="app-segmented-label pl-0">Geo</span>
+              <span class="app-segmented-label pl-0">{t('Страны')}</span>
               {#each availableCountries as c (c)}
                 <button
                   onclick={() => toggleCountry(c)}
@@ -453,41 +467,41 @@
           {/if}
         </div>
         {#if filteredStriking.length === 0}
-          <p class="loading p-3">{selectedCountries.size > 0 ? 'No rows for the selected geo.' : 'Nothing at position 4–20 with enough impressions.'}</p>
+          <p class="loading p-3">{selectedCountries.size > 0 ? t('Для выбранных стран строк нет.') : t('На позициях 4–20 нет запросов с достаточными показами.')}</p>
         {:else}
           <div class="overflow-x-auto">
             <table class="app-table">
               <thead>
                 <tr>
                   <th class="w-8">
-                    <input type="checkbox" checked={allSelected} onchange={toggleAll} aria-label="Выделить всё" />
+                    <input type="checkbox" checked={allSelected} onchange={toggleAll} aria-label={t('Выделить всё')} />
                   </th>
-                  {@render sortTh('site', 'Site')}
-                  {@render sortTh('page', 'Page')}
-                  {@render sortTh('query', 'Query')}
-                  {@render sortTh('country', 'Geo')}
-                  {@render sortTh('position', 'Pos', true)}
-                  {@render sortTh('impressions', 'Impr', true)}
-                  {@render sortTh('clicks', 'Clicks', true)}
-                  {@render sortTh('ctr', 'CTR', true)}
-                  <th class="num" title="Куплено ссылок MagicLinks на связку «страница + запрос»">Куплено</th>
+                  {@render sortTh('site', t('Сайт'))}
+                  {@render sortTh('page', t('Страница'))}
+                  {@render sortTh('query', t('Запрос'))}
+                  {@render sortTh('country', t('Страны'))}
+                  {@render sortTh('position', t('Поз.'), true)}
+                  {@render sortTh('impressions', t('Показы'), true)}
+                  {@render sortTh('clicks', t('Клики'), true)}
+                  {@render sortTh('ctr', t('CTR'), true)}
+                  <th class="num" title={t('Куплено ссылок MagicLinks на связку «страница + запрос»')}>{t('Куплено')}</th>
                   <th class="num w-20"></th>
                 </tr>
               </thead>
               <tbody>
-                {#each filteredStriking as r (r.siteUrl + '|' + r.query + '|' + r.page + '|' + r.country)}
+                {#each visibleStriking as r (r.siteUrl + '|' + r.query + '|' + r.page + '|' + r.country)}
                   <tr class:is-selected={selected.has(pairKey(r))}>
                     <td>
                       <input
                         type="checkbox"
                         checked={selected.has(pairKey(r))}
                         onchange={() => toggleRow(r)}
-                        aria-label="Выделить строку"
+                        aria-label={t('Выделить строку')}
                       />
                     </td>
                     <td class="whitespace-nowrap">
                       {@render siteLink(r)}
-                      <a class="ml-1 inline-flex align-middle text-ink-4 hover:text-ink-2" href={siteHref(r.siteUrl)} target="_blank" rel="noopener noreferrer" aria-label="Open site">
+                      <a class="ml-1 inline-flex align-middle text-ink-4 hover:text-ink-2" href={siteHref(r.siteUrl)} target="_blank" rel="noopener noreferrer" aria-label={t('Открыть сайт')}>
                         <svg class="h-3 w-3" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6.5 3.5h-3v9h9v-3M9 3.5h3.5V7M12.5 3.5 7 9"/></svg>
                       </a>
                     </td>
@@ -502,10 +516,10 @@
                       {#if boughtFor(r)}
                         <button
                           class="chip chip-up hover:brightness-95"
-                          title="Показать заказы по этой связке"
+                          title={t('Показать заказы по этой связке')}
                           aria-expanded={historyOpen === pairKey(r)}
                           onclick={() => (historyOpen = historyOpen === pairKey(r) ? null : pairKey(r))}
-                        >{boughtFor(r)!.quantity} шт · {dayfmt(boughtFor(r)!.lastAt)}</button>
+                        >{boughtFor(r)!.quantity} {t('шт ·')} {dayfmt(boughtFor(r)!.lastAt)}</button>
                       {:else}
                         <span class="text-ink-4">—</span>
                       {/if}
@@ -514,9 +528,9 @@
                       {#if data.magicLinksReady}
                         <button
                           class="btn btn-sec btn-sm"
-                          title="Купить ссылки на эту связку"
+                          title={t('Купить ссылки на эту связку')}
                           onclick={() => buyOne(r)}
-                        >Купить</button>
+                        >{t('Купить')}</button>
                       {/if}
                     </td>
                   </tr>
@@ -529,7 +543,7 @@
                             class="mr-4 text-acc hover:underline"
                             href="/magiclinks/{o.orderId}?url={encodeURIComponent(r.page)}&q={encodeURIComponent(r.query)}"
                           >
-                            <span class="app-num">{o.quantity}</span> шт · {dayfmt(o.createdAt)} · заказ <span class="app-num">{o.orderId.slice(0, 8)}</span>
+                            <span class="app-num">{o.quantity}</span> {t('шт ·')} {dayfmt(o.createdAt)} {t('· заказ')} <span class="app-num">{o.orderId.slice(0, 8)}</span>
                           </a>
                         {/each}
                       </td>
@@ -539,26 +553,34 @@
               </tbody>
             </table>
           </div>
+          {#if filteredStriking.length > visibleStriking.length}
+            <div class="flex items-center gap-3 border-t border-line px-3 py-2 text-xs text-ink-3">
+              <button type="button" class="btn btn-sec btn-sm" onclick={() => (strikingLimit += STRIKING_STEP)}>
+                {t('Показать ещё')} {Math.min(STRIKING_STEP, filteredStriking.length - visibleStriking.length)}
+              </button>
+              <span>{t('показано')} <span class="app-num">{fmt(visibleStriking.length)}</span> {t('из')} <span class="app-num">{fmt(filteredStriking.length)}</span></span>
+            </div>
+          {/if}
         {/if}
 
       {:else if tab === 'cannibal'}
         <div class="border-b border-line px-3 py-2 text-[12.5px] text-ink-2">
-          <span class="app-num font-semibold text-ink">{fmt(pf.cannibalTotal)}</span> cannibalized queries
-          {#if pf.cannibalTotal > pf.cannibal.length}<span class="text-ink-3"> · top {pf.cannibal.length}</span>{/if}
+          <span class="app-num font-semibold text-ink">{fmt(pf.cannibalTotal)}</span> {t('запросов с каннибализацией')}
+          {#if pf.cannibalTotal > pf.cannibal.length}<span class="text-ink-3"> · {t('топ {n}', { n: pf.cannibal.length })}</span>{/if}
         </div>
         {#if pf.cannibal.length === 0}
-          <p class="loading p-3">No cannibalization detected.</p>
+          <p class="loading p-3">{t('Каннибализации не найдено.')}</p>
         {:else}
           <div class="overflow-x-auto">
             <table class="app-table">
-              <thead><tr><th>Query / competing pages</th><th class="num">Clicks</th><th class="num">Impr</th><th class="num">Pos</th></tr></thead>
+              <thead><tr><th>{t('Запрос / конкурирующие страницы')}</th><th class="num">{t('Клики')}</th><th class="num">{t('Показы')}</th><th class="num">{t('Поз.')}</th></tr></thead>
               {#each pf.cannibal as g (g.siteUrl + '|' + g.query)}
                 <tbody>
                   <tr class="bg-sunk hover:bg-sunk">
                     <td colspan="4">
                       {@render siteLink(g)}
                       <span class="ml-1.5 font-semibold"><span class="pii">{g.query}</span></span>
-                      <span class="ml-1 text-xs text-ink-3">{g.pages.length} pages</span>
+                      <span class="ml-1 text-xs text-ink-3">{t('{n} стр.', { n: g.pages.length })}</span>
                     </td>
                   </tr>
                   {#each g.pages as p, i (p.page)}
@@ -581,9 +603,9 @@
       {:else if tab === 'ctr'}
         <div class="grid gap-px bg-line lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
           <div class="bg-pane">
-            <div class="pane-head">Portfolio CTR by position vs benchmark</div>
+            <div class="pane-head">{t('CTR портфеля по позициям против бенчмарка')}</div>
             <table class="app-table">
-              <thead><tr><th>Pos</th><th class="num">Your CTR</th><th class="num">Benchmark</th><th class="num">Impr</th></tr></thead>
+              <thead><tr><th>{t('Поз.')}</th><th class="num">{t('Ваш CTR')}</th><th class="num">{t('Бенчмарк')}</th><th class="num">{t('Показы')}</th></tr></thead>
               <tbody>
                 {#each pf.ctr.buckets as b (b.position)}
                   <tr>
@@ -598,21 +620,21 @@
           </div>
           <div class="min-w-0 bg-pane">
             <div class="pane-head">
-              <span>Opportunities <span class="normal-case tracking-normal font-medium">(below-benchmark CTR)</span></span>
+              <span>{t('Возможности')} <span class="normal-case tracking-normal font-medium">({t('CTR ниже бенчмарка')})</span></span>
               <span class="aside">
                 <span class="app-num">{fmt(pf.ctr.opportunitiesTotal)}</span>
                 {#if pf.ctr.opportunitiesTotal > pf.ctr.opportunities.length}<span> · top {pf.ctr.opportunities.length}</span>{/if}
               </span>
             </div>
             {#if pf.ctr.opportunities.length === 0}
-              <p class="loading p-3">None.</p>
+              <p class="loading p-3">{t('Нет.')}</p>
             {:else}
               <div class="overflow-x-auto">
                 <table class="app-table">
                   <thead>
                     <tr>
-                      <th>Site</th><th>Page</th><th>Query</th>
-                      <th class="num">Pos</th><th class="num">Impr</th><th class="num">CTR</th><th class="num">Bench</th>
+                      <th>{t('Сайт')}</th><th>{t('Страница')}</th><th>{t('Запрос')}</th>
+                      <th class="num">{t('Поз.')}</th><th class="num">{t('Показы')}</th><th class="num">{t('CTR')}</th><th class="num">{t('Бенчмарк')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -635,26 +657,26 @@
         </div>
 
       {:else if tab === 'branded'}
-        {@const t = pf.branded.total}
+        {@const bt = pf.branded.total}
         <div class="grid gap-px border-b border-line bg-line sm:grid-cols-3">
           <div class="bg-pane p-3">
-            <div class="stat-label">Branded</div>
-            <div class="stat-value pii">{fmt(t.branded.clicks)} <span class="text-xs font-normal text-ink-3">clicks</span></div>
+            <div class="stat-label">{t('Брендовые')}</div>
+            <div class="stat-value pii">{fmt(bt.branded.clicks)} <span class="text-xs font-normal text-ink-3">{t('кликов')}</span></div>
           </div>
           <div class="bg-pane p-3">
-            <div class="stat-label">Non-branded</div>
-            <div class="stat-value pii">{fmt(t.nonBranded.clicks)} <span class="text-xs font-normal text-ink-3">clicks</span></div>
+            <div class="stat-label">{t('Небрендовые')}</div>
+            <div class="stat-value pii">{fmt(bt.nonBranded.clicks)} <span class="text-xs font-normal text-ink-3">{t('кликов')}</span></div>
           </div>
           <div class="bg-pane p-3">
-            <div class="stat-label">Branded share</div>
-            <div class="stat-value pii">{pct(t.brandedPct)}</div>
+            <div class="stat-label">{t('Доля брендовых')}</div>
+            <div class="stat-value pii">{pct(bt.brandedPct)}</div>
           </div>
         </div>
-        <div class="pane-head">Per site</div>
+        <div class="pane-head">{t('По сайтам')}</div>
         <div class="overflow-x-auto">
           <table class="app-table">
             <thead>
-              <tr><th>Site</th><th class="num">Branded clk</th><th class="num">Non-branded clk</th><th class="num">Branded %</th></tr>
+              <tr><th>{t('Сайт')}</th><th class="num">{t('Брендовые клики')}</th><th class="num">{t('Небрендовые клики')}</th><th class="num">{t('Брендовые, %')}</th></tr>
             </thead>
             <tbody>
               {#each pf.branded.perSite as s (s.siteUrl)}
@@ -671,15 +693,15 @@
       {/if}
 
       {#if tab === 'striking' && selected.size > 0}
-        <div class="sticky bottom-3 z-20 m-3 flex flex-wrap items-center gap-3 rounded-sm border border-acc/30 bg-pane px-3 py-2 shadow-[0_6px_20px_-6px_rgb(19_23_34/0.25)]">
-          <span class="text-[12.5px]">Выбрано пар: <b class="app-num">{selected.size}</b></span>
-          <span class="text-xs text-ink-3">одним заданием; провайдер выбирается в окне покупки</span>
+        <div class="sticky bottom-3 z-20 m-3 flex flex-wrap items-center gap-3 rounded-sm border border-acc/30 bg-pane px-3 py-2 shadow-pop">
+          <span class="text-[12.5px]">{t('Выбрано пар:')} <b class="app-num">{selected.size}</b></span>
+          <span class="text-xs text-ink-3">{t('одним заданием; провайдер выбирается в окне покупки')}</span>
           <span class="flex-1"></span>
-          <button class="btn btn-ghost" onclick={() => (selected = new Set())}>Снять выделение</button>
+          <button class="btn btn-ghost" onclick={() => (selected = new Set())}>{t('Снять выделение')}</button>
           {#if data.magicLinksReady}
-            <button class="btn btn-pri" onclick={buySelected}>Купить ссылки</button>
+            <button class="btn btn-pri" onclick={buySelected}>{t('Купить ссылки')}</button>
           {:else}
-            <a class="btn btn-sec" href="/magiclinks">Сначала введи ключ провайдера на MagicLinks</a>
+            <a class="btn btn-sec" href="/magiclinks">{t('Сначала введи ключ провайдера в разделе «Меджики»')}</a>
           {/if}
         </div>
       {/if}

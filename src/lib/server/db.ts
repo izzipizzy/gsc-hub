@@ -27,6 +27,15 @@ CREATE TABLE IF NOT EXISTS users (
   created_at    INTEGER NOT NULL
 );
 
+-- Interface language and theme per user (ui-prefs.ts). No FK: the local
+-- admin of a passwordless install has no users row but keeps its choice.
+CREATE TABLE IF NOT EXISTS user_prefs (
+  user_id    TEXT PRIMARY KEY,
+  locale     TEXT,
+  theme      TEXT,
+  updated_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS sessions (
   id          TEXT PRIMARY KEY,
   user_id     TEXT NOT NULL,

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t, tx, plural, fmtNum, fmtPct, fmtDec, fmtDay, getLocale } from '$lib/i18n/index.svelte';
   import { fieldlinkTierLabel } from '$lib/utils/fieldlink';
   import BacklinkRunner from '$lib/components/BacklinkRunner.svelte';
   import BacklinkStatus from '$lib/components/BacklinkStatus.svelte';
@@ -27,9 +28,9 @@
           : 'badge-muted';
 
   const indexingLabel: Record<string, string> = {
-    in_progress: 'идёт',
-    completed: 'передано',
-    attention: 'нужна проверка'
+    in_progress: t('идёт'),
+    completed: t('передано'),
+    attention: t('нужна проверка')
   };
 
   // Фильтр приходит ссылкой из striking; сбрасывается тут же, без перезагрузки.
@@ -59,16 +60,16 @@
   const articlesShown = $derived(data.content.kind === 'magic369' ? data.content.articles.length : 0);
 </script>
 
-<svelte:head><title>Заказ {data.content.order.id.slice(0, 8)} · MagicLinks</title></svelte:head>
+<svelte:head><title>{t('Заказ')} {data.content.order.id.slice(0, 8)} · {t('Меджики')}</title></svelte:head>
 
 <main class="page">
   <header class="app-toolbar">
     <div class="app-toolbar-left">
-      <nav class="app-breadcrumbs"><a href="/magiclinks">MagicLinks</a><span aria-hidden="true">/</span><span class="text-ink-2">Заказ</span></nav>
+      <nav class="app-breadcrumbs"><a href="/magiclinks">{t('Меджики')}</a><span aria-hidden="true">/</span><span class="text-ink-2">{t('Заказ')}</span></nav>
       <h1 class="app-pagetitle">
-        Заказ <span class="font-mono text-[15px]">{data.content.order.id}</span>
+        {t('Заказ')} <span class="font-mono text-[14px]">{data.content.order.id}</span>
         <section class="pane mb-3">
-    <div class="pane-head">Проверка ссылок</div>
+    <div class="pane-head">{t('Проверка ссылок')}</div>
     <div class="pane-body flex flex-col gap-2"><BacklinkSummary summary={data.checkSummary} /><BacklinkRunner job={data.checkJob} provider={data.content.kind} orderId={data.content.order.id} /></div>
   </section>
 
@@ -78,7 +79,7 @@
     <div class="app-toolbar-right">
       <a class="btn btn-sec" href="/magiclinks/{data.content.order.id}/csv">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M3 13.5h10"/></svg>
-        Скачать CSV
+        {t('Скачать CSV')}
       </a>
     </div>
   </header>
@@ -89,31 +90,31 @@
     <section class="pane mb-3">
       <div class="pane-body flex flex-col gap-2 text-[12.5px] text-ink-2">
         <p class="flex flex-wrap items-center gap-x-1.5 gap-y-1">
-          <span class="badge badge-muted">{isLinks ? 'Морды' : 'Посты'}</span>
+          <span class="badge badge-muted">{isLinks ? t('Морды') : t('Посты')}</span>
           <span class="badge {badge369(order.status)}">{order.status}</span>
-          <span>· размещено <span class="app-num text-ink">{order.progress.published}</span> из <span class="app-num text-ink">{order.progress.total}</span></span>
-          {#if order.progress.inProgress > 0}<span>· в работе <span class="app-num text-ink">{order.progress.inProgress}</span></span>{/if}
-          {#if order.progress.awaitingContent > 0}<span>· ждут подготовки <span class="app-num text-ink">{order.progress.awaitingContent}</span></span>{/if}
-          {#if order.progress.failed > 0}<span>· <span class="text-dn">ошибок <span class="app-num">{order.progress.failed}</span></span></span>{/if}
-          <span>· создан <span class="app-num text-ink-3">{fmt(order.createdAt)}</span></span>
-          {#if order.finalizedAt}<span>· завершён <span class="app-num text-ink-3">{fmt(order.finalizedAt)}</span></span>{/if}
+          <span>{t('· размещено')} <span class="app-num text-ink">{order.progress.published}</span> {t('из')} <span class="app-num text-ink">{order.progress.total}</span></span>
+          {#if order.progress.inProgress > 0}<span>{t('· в работе')} <span class="app-num text-ink">{order.progress.inProgress}</span></span>{/if}
+          {#if order.progress.awaitingContent > 0}<span>{t('· ждут подготовки')} <span class="app-num text-ink">{order.progress.awaitingContent}</span></span>{/if}
+          {#if order.progress.failed > 0}<span>· <span class="text-dn">{t('ошибок')} <span class="app-num">{order.progress.failed}</span></span></span>{/if}
+          <span>{t('· создан')} <span class="app-num text-ink-3">{fmt(order.createdAt)}</span></span>
+          {#if order.finalizedAt}<span>{t('· завершён')} <span class="app-num text-ink-3">{fmt(order.finalizedAt)}</span></span>{/if}
         </p>
         <p class="flex flex-wrap items-center gap-x-1.5 gap-y-1">
-          <span>Оплата: <span class="app-num text-ink">{credits(order.totalPriceMinor)}</span> ток.</span>
-          <span>· цена размещения <span class="app-num text-ink">{credits(order.priceMinor)}</span></span>
+          <span>{t('Оплата:')} <span class="app-num text-ink">{credits(order.totalPriceMinor)}</span> {t('ток.')}</span>
+          <span>{t('· цена размещения')} <span class="app-num text-ink">{credits(order.priceMinor)}</span></span>
           {#if order.refundedMinor > 0}
-            <span>· <span class="text-up">возвращено <span class="app-num">{credits(order.refundedMinor)}</span></span></span>
+            <span>· <span class="text-up">{t('возвращено')} <span class="app-num">{credits(order.refundedMinor)}</span></span></span>
           {/if}
         </p>
         {#if data.filter}
           <p class="flex flex-wrap items-center gap-2">
             <span class="rounded-sm border border-acc/25 bg-acc-t px-2 py-1 text-xs text-ink-2">
-              {#if filterOn}Показаны размещения связки{:else}Фильтр снят, показан весь заказ{/if}:
+              {#if filterOn}{t('Показаны размещения связки')}{:else}{t('Фильтр снят, показан весь заказ')}{/if}:
               <b class="pii text-ink">{data.filter.query}</b>
               <span class="pii text-ink-3">{data.filter.targetUrl.replace(/^https?:\/\//, '')}</span>
             </span>
             <button class="btn btn-ghost btn-sm" onclick={() => (filterOn = !filterOn)}>
-              {filterOn ? 'показать весь заказ' : 'вернуть фильтр'}
+              {filterOn ? t('показать весь заказ') : t('вернуть фильтр')}
             </button>
           </p>
         {/if}
@@ -121,11 +122,11 @@
     </section>
 
     <section class="pane mb-3">
-      <div class="pane-head">Строки заказа <span class="aside app-num">{data.content.lines.length}</span></div>
+      <div class="pane-head">{t('Строки заказа')} <span class="aside app-num">{data.content.lines.length}</span></div>
       <div class="overflow-x-auto">
         <table class="app-table">
           <thead>
-            <tr><th>акцептор</th><th>анкор</th><th>{isLinks ? 'текст' : 'язык'}</th><th class="num">заказано</th><th class="num">размещено</th><th class="num">в работе</th><th class="num">ошибок</th></tr>
+            <tr><th>{t('акцептор')}</th><th>{t('анкор')}</th><th>{isLinks ? t('текст') : t('язык')}</th><th class="num">{t('заказано')}</th><th class="num">{t('размещено')}</th><th class="num">{t('в работе')}</th><th class="num">{t('ошибок')}</th></tr>
           </thead>
           <tbody>
             {#each data.content.lines as l (l.url + l.anchor)}
@@ -145,14 +146,14 @@
     </section>
 
     <section class="pane">
-      <div class="pane-head">Публикации <span class="aside app-num">{articlesShown}</span></div>
+      <div class="pane-head">{t('Публикации')} <span class="aside app-num">{articlesShown}</span></div>
       {#if data.content.articles.length === 0}
-        <p class="pane-body text-[12.5px] text-ink-3">Пока ни одной: список пополняется по мере выполнения заказа.</p>
+        <p class="pane-body text-[12.5px] text-ink-3">{t('Пока ни одной: список пополняется по мере выполнения заказа.')}</p>
       {:else}
         <div class="overflow-x-auto">
           <table class="app-table">
             <thead>
-              <tr><th>опубликовано</th><th>{isLinks ? 'текст' : 'заголовок'}</th><th>анкор</th><th>акцептор</th><th>{isLinks ? 'донор' : 'статья'}</th><th>проверка ссылки</th><th></th></tr>
+              <tr><th>{t('опубликовано')}</th><th>{isLinks ? t('текст') : t('заголовок')}</th><th>{t('анкор')}</th><th>{t('акцептор')}</th><th>{isLinks ? t('донор') : t('статья')}</th><th>{t('проверка ссылки')}</th><th></th></tr>
             </thead>
             <tbody>
               {#each data.content.articles as a (a.id)}
@@ -182,43 +183,43 @@
       <div class="pane-body flex flex-col gap-2 text-[12.5px] text-ink-2">
         <p class="flex flex-wrap items-center gap-x-1.5 gap-y-1">
           <span class="badge {badge(order.status)}">{order.status}</span>
-          <span class="badge badge-muted">{isLinks ? 'Ссылки с главных' : 'Посты'}</span>
-          <span>· заказано <span class="app-num text-ink">{order.requestedCount ?? '—'}</span>{#if !isLinks} + бонус <span class="app-num text-ink">{order.bonusCount ?? 0}</span>{/if}
-          = <span class="app-num text-ink">{order.rowCount}</span> позиций</span>
-          <span>· выполнено <span class="app-num text-ink">{order.completedCount}</span>{#if order.failedCount > 0}, <span class="text-dn">ошибок <span class="app-num">{order.failedCount}</span></span>{/if}</span>
+          <span class="badge badge-muted">{isLinks ? t('Ссылки с главных') : t('Посты')}</span>
+          <span>{t('· заказано')} <span class="app-num text-ink">{order.requestedCount ?? '—'}</span>{#if !isLinks} {t('+ бонус')} <span class="app-num text-ink">{order.bonusCount ?? 0}</span>{/if}
+          = <span class="app-num text-ink">{order.rowCount}</span> {t('позиций')}</span>
+          <span>{t('· выполнено')} <span class="app-num text-ink">{order.completedCount}</span>{#if order.failedCount > 0}, <span class="text-dn">{t('ошибок')} <span class="app-num">{order.failedCount}</span></span>{/if}</span>
           {#if data.filter && filterOn}
-            <span>· в этой связке <span class="app-num text-ink">{filtered.length}</span>, из них с URL публикации <span class="app-num text-ink">{published}</span></span>
+            <span>{t('· в этой связке')} <span class="app-num text-ink">{filtered.length}</span>{t(', из них с URL публикации')} <span class="app-num text-ink">{published}</span></span>
           {:else}
-            <span>· с URL публикации <span class="app-num text-ink">{published}</span></span>
+            <span>{t('· с URL публикации')} <span class="app-num text-ink">{published}</span></span>
           {/if}
-          {#if order.trashed}<span class="badge badge-bad">в корзине</span>{/if}
-          {#if order.held}<span class="badge badge-warn">удержан</span>{/if}
+          {#if order.trashed}<span class="badge badge-bad">{t('в корзине')}</span>{/if}
+          {#if order.held}<span class="badge badge-warn">{t('удержан')}</span>{/if}
         </p>
 
         {#if order.billing}
           <p class="flex flex-wrap items-center gap-x-1.5 gap-y-1">
-            <span>Оплата: {order.billing.mode}</span>
+            <span>{t('Оплата:')} {order.billing.mode}</span>
             {#if order.billing.mode === 'reserved'}
-              <span>· цена <span class="app-num text-ink">{credits(order.billing.amountMinor)}</span> кр.</span>
-              <span>· списано <span class="app-num text-ink">{credits(order.billing.settledMinor)}</span></span>
-              <span>· в резерве <span class="app-num text-ink">{credits(order.billing.reservedMinor)}</span></span>
-              <span>· освобождено <span class="app-num text-ink">{credits(order.billing.releasedMinor)}</span></span>
+              <span>{t('· цена')} <span class="app-num text-ink">{credits(order.billing.amountMinor)}</span> {t('кр.')}</span>
+              <span>{t('· списано')} <span class="app-num text-ink">{credits(order.billing.settledMinor)}</span></span>
+              <span>{t('· в резерве')} <span class="app-num text-ink">{credits(order.billing.reservedMinor)}</span></span>
+              <span>{t('· освобождено')} <span class="app-num text-ink">{credits(order.billing.releasedMinor)}</span></span>
             {:else}
-              <span>· <span class="app-num text-ink">{credits(order.billing.amountMinor)}</span> кр.</span>
+              <span>· <span class="app-num text-ink">{credits(order.billing.amountMinor)}</span> {t('кр.')}</span>
             {/if}
-            {#if order.locked}<span class="badge badge-warn">отмена заблокирована (индексация включена)</span>{/if}
+            {#if order.locked}<span class="badge badge-warn">{t('отмена заблокирована (индексация включена)')}</span>{/if}
           </p>
         {/if}
 
         {#if data.filter}
           <p class="flex flex-wrap items-center gap-2">
             <span class="rounded-sm border border-acc/25 bg-acc-t px-2 py-1 text-xs text-ink-2">
-              {#if filterOn}Показаны позиции связки{:else}Фильтр снят, показан весь заказ{/if}:
+              {#if filterOn}{t('Показаны позиции связки')}{:else}{t('Фильтр снят, показан весь заказ')}{/if}:
               <b class="pii text-ink">{data.filter.query}</b>
               <span class="pii text-ink-3">{data.filter.targetUrl.replace(/^https?:\/\//, '')}</span>
             </span>
             <button class="btn btn-ghost btn-sm" onclick={() => (filterOn = !filterOn)}>
-              {filterOn ? 'показать весь заказ' : 'вернуть фильтр'}
+              {filterOn ? t('показать весь заказ') : t('вернуть фильтр')}
             </button>
           </p>
         {/if}
@@ -226,20 +227,20 @@
     </section>
 
     <section class="pane">
-      <div class="pane-head">Позиции <span class="aside app-num">{filtered.length}</span></div>
+      <div class="pane-head">{t('Позиции')} <span class="aside app-num">{filtered.length}</span></div>
       <div class="overflow-x-auto">
         <table class="app-table">
           <thead>
             <tr>
-              <th class="num">#</th><th>акцептор</th><th>анкор</th><th>язык</th>
-              <th>статус</th><th>{isLinks ? 'донор' : 'публикация'}</th>{#if isLinks}<th>тариф</th><th>тема</th><th>текст размещения</th>{:else}<th>индексация</th>{/if}<th>проверка ссылки</th><th></th>
+              <th class="num">#</th><th>{t('акцептор')}</th><th>{t('анкор')}</th><th>{t('язык')}</th>
+              <th>{t('статус')}</th><th>{isLinks ? t('донор') : t('публикация')}</th>{#if isLinks}<th>{t('тариф')}</th><th>{t('тема')}</th><th>{t('текст размещения')}</th>{:else}<th>{t('индексация')}</th>{/if}<th>{t('проверка ссылки')}</th><th></th>
             </tr>
           </thead>
           <tbody>
             {#each filtered as r (r.id)}
               <tr>
                 <td class="num app-num whitespace-nowrap text-ink-3">
-                  {#if r.isBonus}<span class="badge badge-ok mr-1 font-sans">бонус</span>{/if}{r.placementIndex ?? ''}
+                  {#if r.isBonus}<span class="badge badge-ok mr-1 font-sans">{t('бонус')}</span>{/if}{r.placementIndex ?? ''}
                 </td>
                 <td class="pii max-w-xs truncate" title={r.targetUrl}>{r.targetUrl}</td>
                 <td class="pii max-w-xs truncate font-medium text-ink" title={r.anchor}>{r.anchor}</td>
@@ -251,7 +252,7 @@
                       {host(r.url)}
                     </a>
                   {:else if r.error}
-                    <span class="text-dn" title={r.error}>ошибка</span>
+                    <span class="text-dn" title={tx(r.error)}>{t('ошибка')}</span>
                   {:else}
                     <span class="text-ink-4">—</span>
                   {/if}
@@ -263,7 +264,7 @@
                 {:else}
                   <td class="text-ink-2">{r.indexing ? (indexingLabel[r.indexing] ?? r.indexing) : '—'}</td>
                 {/if}
-                <td>{#if r.url}<BacklinkStatus check={data.checks[r.id]} />{:else}<span class="text-ink-3">ждёт публикации</span>{/if}</td>
+                <td>{#if r.url}<BacklinkStatus check={data.checks[r.id]} />{:else}<span class="text-ink-3">{t('ждёт публикации')}</span>{/if}</td>
                 <td>{#if r.url}<BacklinkRunner job={data.checkJob} provider="fieldlink" orderId={data.content.order.id} placementId={r.id} compact />{/if}</td>
               </tr>
             {/each}
@@ -273,8 +274,7 @@
     </section>
 
     {#if !isLinks}<p class="mt-3 text-xs text-ink-3">
-      Индексация идёт отдельно от публикации: «передано» не доказывает появление в поиске,
-      и занять это может несколько дней. Отдельной команды на переотправку нет.
+      {t('Индексация идёт отдельно от публикации: «передано» не доказывает появление в поиске, и занять это может несколько дней. Отдельной команды на переотправку нет.')}
     </p>{/if}
   {/if}
 </main>

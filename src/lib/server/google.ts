@@ -1,7 +1,8 @@
 import type { Db } from './db';
 import { gscCached } from './gsc-cache';
-import { addCalendarDays, gscToday, completedDayRange } from './gsc-calendar';
+import { addCalendarDays, completedDayRange } from './gsc-calendar';
 import { INSPECT_LIMIT, mapSettledLimit } from './concurrency';
+import { gscLimiter } from './gsc-limiter';
 import { getGoogleClientId, getGoogleClientSecret } from './config';
 import {
   type AccountRow,
@@ -10,8 +11,6 @@ import {
   markRevoked,
   updateTokens
 } from './accounts';
-import { listHiddenSites } from './hidden';
-import { hostOfSite } from './site-events';
 
 const REFRESH_URL = 'https://oauth2.googleapis.com/token';
 const SITES_URL = 'https://searchconsole.googleapis.com/webmasters/v3/sites';
@@ -125,7 +124,7 @@ export async function listSitesForAccount(
   acc: AccountRow
 ): Promise<SiteRow[]> {
   return gscCached(`sites:${acc.id}`, async () => {
-    const res = await authorizedFetch(db, acc, SITES_URL);
+    const res = await gscLimiter.run(acc.id, () => authorizedFetch(db, acc, SITES_URL));
     if (res.status === 401) {
       markRevoked(db, acc.id, 'sites.list 401');
       throw new Error('401 unauthorized');
@@ -205,23 +204,38 @@ export async function searchAnalyticsQuery(
   // Default to fresh data ('all') so short windows like days=1 work.
   // Callers can override with dataState: 'final' for stable-only queries.
   const payload: SearchAnalyticsBody = { dataState: 'all', ...body };
-  return gscCached(`saq:${acc.id}:${siteUrl}:${stableKey(payload)}`, async () => {
-    const res = await authorizedFetch(
-      db,
-      acc,
-      SEARCH_ANALYTICS_URL(siteUrl),
-      { method: 'POST', body: JSON.stringify(payload) }
-    );
-    if (res.status === 401) {
-      markRevoked(db, acc.id, 'searchAnalytics 401');
-      throw new Error('searchAnalytics 401 unauthorized');
-    }
-    if (!res.ok) {
-      throw new Error(`searchAnalytics ${res.status}: ${(await res.text()).slice(0, 200)}`);
-    }
-    const json = (await res.json()) as { rows?: SearchAnalyticsRow[] };
-    return json.rows ?? [];
-  });
+  return gscCached(`saq:${acc.id}:${siteUrl}:${stableKey(payload)}`, () =>
+    searchAnalyticsUncached(db, acc, siteUrl, payload)
+  );
+}
+
+/**
+ * The same request without the response cache. For callers that keep their own
+ * compact copy (the portfolio snapshot) — caching the raw rows as well would
+ * hold every portfolio-wide answer twice. Still rate-limited.
+ */
+export async function searchAnalyticsUncached(
+  db: Db,
+  acc: AccountRow,
+  siteUrl: string,
+  body: SearchAnalyticsBody
+): Promise<SearchAnalyticsRow[]> {
+  const payload: SearchAnalyticsBody = { dataState: 'all', ...body };
+  const res = await gscLimiter.run(acc.id, () =>
+    authorizedFetch(db, acc, SEARCH_ANALYTICS_URL(siteUrl), {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  );
+  if (res.status === 401) {
+    markRevoked(db, acc.id, 'searchAnalytics 401');
+    throw new Error('searchAnalytics 401 unauthorized');
+  }
+  if (!res.ok) {
+    throw new Error(`searchAnalytics ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  }
+  const json = (await res.json()) as { rows?: SearchAnalyticsRow[] };
+  return json.rows ?? [];
 }
 
 // Deterministic key for a cache entry: the whole body, nested filters
@@ -612,25 +626,6 @@ export interface PeriodTotals {
   position: number;  // weighted by impressions
 }
 
-export interface SiteDailyBreakdown {
-  accountId: string;
-  accountEmail: string;
-  accountLabel: string | null;
-  siteUrl: string;
-  current: DailyRow[];   // sorted by date asc
-  previous: DailyRow[];  // sorted by date asc
-  currentTotals: PeriodTotals;
-  previousTotals: PeriodTotals;
-  error: string | null;  // per-site error if either fetch failed
-}
-
-export interface DailyBreakdownFanOut {
-  entries: SiteDailyBreakdown[];
-  errors: { accountId: string; accountEmail: string; reason: string }[];
-  /** False when the previous period falls outside the history the API keeps. */
-  comparable: boolean;
-}
-
 // Search Console keeps roughly 16 months. Past half of that, the previous
 // period lands where there is no data, and a comparison against nothing reads
 // as a confident -100% rather than as "unknown".
@@ -640,69 +635,7 @@ export function canCompare(days: number): boolean {
   return days * 2 <= GSC_HISTORY_DAYS;
 }
 
-export interface TodayTotals {
-  /** The date these totals are for, in Search Console's timezone. */
-  date: string;
-  totals: PeriodTotals;
-  errors: DailyBreakdownFanOut['errors'];
-  /** True when at least one property could not be read, so the sum is short. */
-  partial: boolean;
-}
-
-// Today on its own, deliberately uncompared: the day is still accumulating, so
-// the only honest thing to do with the number is show it.
-export async function fetchTodayTotals(db: Db): Promise<TodayTotals> {
-  const date = gscToday();
-  const accounts = listAccounts(db).filter((a) => a.status === 'active');
-  const errors: DailyBreakdownFanOut['errors'] = [];
-  const pairs: { acc: AccountRow; site: SiteRow }[] = [];
-
-  const perAccount = await Promise.allSettled(
-    accounts.map((a) => listSitesForAccount(db, a).then((sites) => ({ acc: a, sites })))
-  );
-  perAccount.forEach((r, i) => {
-    const acc = accounts[i];
-    if (r.status === 'fulfilled') r.value.sites.forEach((s) => pairs.push({ acc, site: s }));
-    else errors.push({ accountId: acc.id, accountEmail: acc.email, reason: (r.reason as Error).message });
-  });
-
-  const rows = await mapSettledLimit(pairs, ({ acc, site }) =>
-    searchAnalyticsQuery(db, acc, site.siteUrl, {
-      startDate: date, endDate: date, dimensions: ['date'], dataState: 'all'
-    })
-  );
-
-  const daily: DailyRow[] = [];
-  rows.forEach((r, i) => {
-    if (r.status !== 'fulfilled') {
-      // Dropping these silently turns a partial sum into a confident total, and
-      // an outage into a very bad day.
-      const { acc, site } = pairs[i];
-      errors.push({
-        accountId: acc.id,
-        accountEmail: acc.email,
-        reason: `${site.siteUrl}: ${(r.reason as Error).message.slice(0, 100)}`
-      });
-      return;
-    }
-    r.value.forEach((row) =>
-      daily.push({
-        date: row.keys[0] ?? date,
-        clicks: row.clicks,
-        impressions: row.impressions,
-        ctr: row.ctr,
-        position: row.position
-      })
-    );
-  });
-
-  // Any error at all means the sum is short: a failed account discovery
-  // contributes zero properties, which counting only site-level failures read
-  // as "nothing went wrong".
-  return { date, totals: totalsOf(daily), errors, partial: errors.length > 0 };
-}
-
-function totalsOf(rows: DailyRow[]): PeriodTotals {
+export function totalsOf(rows: DailyRow[]): PeriodTotals {
   let clicks = 0, impressions = 0, posWeightedSum = 0;
   for (const r of rows) {
     clicks += r.clicks;
@@ -715,110 +648,6 @@ function totalsOf(rows: DailyRow[]): PeriodTotals {
     ctr: impressions > 0 ? clicks / impressions : 0,
     position: impressions > 0 ? posWeightedSum / impressions : 0
   };
-}
-
-export async function fetchDailyBreakdown(
-  db: Db,
-  days: number
-): Promise<DailyBreakdownFanOut> {
-  const accounts = listAccounts(db).filter((a) => a.status === 'active');
-
-  const perAccount = await Promise.allSettled(
-    accounts.map((a) =>
-      listSitesForAccount(db, a).then((sites) => ({ acc: a, sites }))
-    )
-  );
-
-  const pairs: { acc: AccountRow; site: SiteRow }[] = [];
-  const errors: DailyBreakdownFanOut['errors'] = [];
-  perAccount.forEach((r, i) => {
-    const acc = accounts[i];
-    if (r.status === 'fulfilled') {
-      r.value.sites.forEach((s) => pairs.push({ acc, site: s }));
-    } else {
-      errors.push({
-        accountId: acc.id,
-        accountEmail: acc.email,
-        reason: (r.reason as Error).message
-      });
-    }
-  });
-
-  if (pairs.length === 0) return { entries: [], errors, comparable: canCompare(days) };
-
-  // Both windows hold exactly `days` completed dates and sit next to each other,
-  // so the comparison is between like and like.
-  const now = Date.now();
-  const { startDate: currentStart, endDate: currentEnd } = gscDateRange(days, now);
-  const prevEndAdj = addCalendarDays(currentStart, -1);
-  const prevStart = addCalendarDays(prevEndAdj, -(days - 1));
-
-  // Per-pair: current, plus previous only when the history reaches it —
-  // otherwise that is a second fan-out spent producing a fake -100%.
-  const comparable = canCompare(days);
-  const windows = pairs.flatMap(({ acc, site }) => [
-    { acc, site, startDate: currentStart, endDate: currentEnd },
-    ...(comparable ? [{ acc, site, startDate: prevStart, endDate: prevEndAdj }] : [])
-  ]);
-  const fetches = await mapSettledLimit(windows, ({ acc, site, startDate, endDate }) =>
-    searchAnalyticsQuery(db, acc, site.siteUrl, {
-      startDate,
-      endDate,
-      dimensions: ['date'],
-      rowLimit: 1000
-    })
-  );
-
-  // One window per pair when the previous period was skipped, two when it was
-  // fetched — the stride has to follow.
-  const stride = comparable ? 2 : 1;
-  const entries: SiteDailyBreakdown[] = pairs.map(({ acc, site }, i) => {
-    const cur = fetches[i * stride];
-    const prev = comparable ? fetches[i * stride + 1] : undefined;
-
-    const toDailyRows = (rows: SearchAnalyticsRow[]): DailyRow[] =>
-      rows
-        .map((r) => ({
-          date: r.keys[0] ?? '',
-          clicks: r.clicks,
-          impressions: r.impressions,
-          ctr: r.ctr,
-          position: r.position
-        }))
-        .sort((a, b) => a.date.localeCompare(b.date));
-
-    const errorParts: string[] = [];
-    let current: DailyRow[] = [];
-    let previous: DailyRow[] = [];
-
-    if (cur.status === 'fulfilled') {
-      current = toDailyRows(cur.value);
-    } else {
-      errorParts.push(`current: ${(cur.reason as Error).message.slice(0, 100)}`);
-    }
-    if (prev === undefined) {
-      // Not fetched: the previous period is outside the available history.
-      previous = [];
-    } else if (prev.status === 'fulfilled') {
-      previous = toDailyRows(prev.value);
-    } else {
-      errorParts.push(`previous: ${(prev.reason as Error).message.slice(0, 100)}`);
-    }
-
-    return {
-      accountId: acc.id,
-      accountEmail: acc.email,
-      accountLabel: acc.label,
-      siteUrl: site.siteUrl,
-      current,
-      previous,
-      currentTotals: totalsOf(current),
-      previousTotals: totalsOf(previous),
-      error: errorParts.length > 0 ? errorParts.join('; ') : null
-    };
-  });
-
-  return { entries, errors, comparable };
 }
 
 export interface AggregatedQuery {
@@ -891,83 +720,6 @@ export async function fetchPerSiteQueries(
       query: row.keys[0] ?? '',
       page: row.keys[1] ?? '',
       country: row.keys[2] ?? '',
-      clicks: row.clicks,
-      impressions: row.impressions,
-      ctr: row.ctr,
-      position: row.position
-    }));
-    entries.push({ accountId: acc.id, siteUrl: site.siteUrl, rows });
-  });
-
-  return { entries, errors };
-}
-
-export interface AggregatedPage {
-  page: string;
-  clicks: number;
-  impressions: number;
-  ctr: number;
-  position: number;
-}
-
-export interface PerSitePages {
-  accountId: string;
-  siteUrl: string;
-  rows: AggregatedPage[];
-}
-
-export interface PerSitePagesFanOut {
-  entries: PerSitePages[];
-  errors: { accountId: string; accountEmail: string; reason: string }[];
-}
-
-export async function fetchPerSitePages(
-  db: Db,
-  days: number,
-  perSiteLimit: number = 200
-): Promise<PerSitePagesFanOut> {
-  const accounts = listAccounts(db).filter((a) => a.status === 'active');
-
-  const perAccount = await Promise.allSettled(
-    accounts.map((a) =>
-      listSitesForAccount(db, a).then((sites) => ({ acc: a, sites }))
-    )
-  );
-
-  const pairs: { acc: AccountRow; site: SiteRow }[] = [];
-  const errors: PerSitePagesFanOut['errors'] = [];
-  perAccount.forEach((r, i) => {
-    const acc = accounts[i];
-    if (r.status === 'fulfilled') {
-      r.value.sites.forEach((s) => pairs.push({ acc, site: s }));
-    } else {
-      errors.push({
-        accountId: acc.id,
-        accountEmail: acc.email,
-        reason: (r.reason as Error).message
-      });
-    }
-  });
-
-  if (pairs.length === 0) return { entries: [], errors };
-
-  const { startDate, endDate } = gscDateRange(days);
-
-  const perSite = await mapSettledLimit(pairs, ({ acc, site }) =>
-    searchAnalyticsQuery(db, acc, site.siteUrl, {
-      startDate,
-      endDate,
-      dimensions: ['page'],
-      rowLimit: perSiteLimit
-    })
-  );
-
-  const entries: PerSitePages[] = [];
-  perSite.forEach((r, i) => {
-    const { acc, site } = pairs[i];
-    if (r.status !== 'fulfilled') return;
-    const rows: AggregatedPage[] = r.value.map((row) => ({
-      page: row.keys[0] ?? '',
       clicks: row.clicks,
       impressions: row.impressions,
       ctr: row.ctr,
@@ -1295,85 +1047,5 @@ export async function fetchSiteDaily(
     ctr: impressions > 0 ? clicks / impressions : 0,
     position: impressions > 0 ? posWeight / impressions : 0,
     series: sorted.map((x) => ({ date: x.keys[0] ?? '', clicks: x.clicks, impressions: x.impressions }))
-  };
-}
-
-export interface PortfolioDaily {
-  totals: { clicks: number; impressions: number; ctr: number };
-  series: { date: string; clicks: number; impressions: number }[]; // oldest → newest
-}
-
-export interface PortfolioDailyFanOut {
-  daily: PortfolioDaily;
-  hosts: string[]; // bare hosts of the sites included in the aggregate (hidden excluded)
-  errors: { accountId: string; accountEmail: string; reason: string }[];
-}
-
-// Portfolio pulse: one dims=['date'] call per site, aggregated by calendar date across
-// every connected account. Hidden sites are excluded so the pulse matches the visible
-// list. Same call count as the sites list — call lazily, not on the main render path.
-export async function fetchPortfolioDaily(db: Db, days: number = 180): Promise<PortfolioDailyFanOut> {
-  const accounts = listAccounts(db).filter((a) => a.status === 'active');
-  const hidden = new Set(listHiddenSites(db));
-
-  const perAccount = await Promise.allSettled(
-    accounts.map((a) => listSitesForAccount(db, a).then((sites) => ({ acc: a, sites })))
-  );
-
-  const pairs: { acc: AccountRow; site: SiteRow }[] = [];
-  const errors: PortfolioDailyFanOut['errors'] = [];
-  perAccount.forEach((r, i) => {
-    const acc = accounts[i];
-    if (r.status === 'fulfilled') {
-      r.value.sites.forEach((s) => {
-        if (!hidden.has(`${acc.id}|${s.siteUrl}`)) pairs.push({ acc, site: s });
-      });
-    } else {
-      errors.push({ accountId: acc.id, accountEmail: acc.email, reason: (r.reason as Error).message });
-    }
-  });
-
-  if (pairs.length === 0) {
-    return { daily: { totals: { clicks: 0, impressions: 0, ctr: 0 }, series: [] }, hosts: [], errors };
-  }
-
-  const { startDate, endDate } = gscDateRange(days);
-  const settled = await mapSettledLimit(pairs, ({ acc, site }) =>
-    searchAnalyticsQuery(db, acc, site.siteUrl, {
-      startDate,
-      endDate,
-      dimensions: ['date'],
-      rowLimit: 500
-    })
-  );
-
-  // Sum every site's rows into one per-date bucket. Positions are dropped on purpose:
-  // an average across domains of different sizes describes no domain in particular.
-  const byDate = new Map<string, { clicks: number; impressions: number }>();
-  settled.forEach((r, i) => {
-    if (r.status !== 'fulfilled') return;
-    for (const x of r.value) {
-      const d = x.keys[0] ?? '';
-      if (!d) continue;
-      const cur = byDate.get(d) ?? { clicks: 0, impressions: 0 };
-      cur.clicks += x.clicks;
-      cur.impressions += x.impressions;
-      byDate.set(d, cur);
-    }
-  });
-
-  const series = [...byDate.entries()]
-    .map(([date, b]) => ({ date, clicks: b.clicks, impressions: b.impressions }))
-    .sort((a, b) => a.date.localeCompare(b.date));
-  const clicks = series.reduce((s, x) => s + x.clicks, 0);
-  const impressions = series.reduce((s, x) => s + x.impressions, 0);
-
-  return {
-    daily: {
-      totals: { clicks, impressions, ctr: impressions > 0 ? clicks / impressions : 0 },
-      series
-    },
-    hosts: [...new Set(pairs.map(({ site }) => hostOfSite(site.siteUrl)))],
-    errors
   };
 }

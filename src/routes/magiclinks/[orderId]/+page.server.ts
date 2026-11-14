@@ -113,7 +113,7 @@ function finalize(e: unknown): never {
 }
 
 async function loadFieldlink(orderId: string, url: URL) {
-  const client = cachedMagicLinksClient(db());
+  const client = cachedMagicLinksClient(db(), false, true);
   if (!client) throw new MagicLinksError(404, 'NO_TOKEN', 'Ключ MagicLinks не задан');
 
   try {
@@ -175,7 +175,7 @@ async function loadFieldlink(orderId: string, url: URL) {
 }
 
 async function loadMagic369(orderId: string, url: URL) {
-  const client = cachedMagic369Client(db());
+  const client = cachedMagic369Client(db(), false, true);
   if (!client) throw new Magic369Error(404, 'NO_TOKEN', 'Ключ 369Team не задан');
 
   try {
