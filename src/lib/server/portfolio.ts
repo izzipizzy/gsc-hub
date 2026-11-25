@@ -196,6 +196,9 @@ export function todayOf(slots: SiteSlot<DailySeries>[], accountErrors: AccountEr
 
 /** Portfolio pulse: clicks and impressions by date over `days`, summed across sites. */
 export function pulseOf(slots: SiteSlot<DailySeries>[], days: number, hidden: Set<string>, now = Date.now()) {
+  // Sites the chart could not read, in the same shape `todayOf` reports them. Without this a
+  // dropped property is indistinguishable from one with no traffic: the line just sits lower.
+  const siteErrors: AccountError[] = [];
   const { startDate } = completedDayRange(days, now);
   // Summed on a day axis with typed arrays: at 10,000 sites × 480 days, a row
   // object per site-day took seconds.
@@ -207,7 +210,15 @@ export function pulseOf(slots: SiteSlot<DailySeries>[], days: number, hidden: Se
     if (hidden.has(`${slot.site.accountId}|${slot.site.siteUrl}`)) continue;
     siteUrls.push(slot.site.siteUrl);
     const s = slot.value;
-    if (!s) continue;
+    if (!s) {
+      if (slot.error)
+        siteErrors.push({
+          accountId: slot.site.accountId,
+          accountEmail: slot.site.accountEmail,
+          reason: `${slot.site.siteUrl}: ${slot.error.slice(0, 100)}`
+        });
+      continue;
+    }
     // Index in the series of the window's first day; the window runs `days` long.
     const offset = dateSpan(s.start, startDate) - 1;
     for (let d = 0; d < days; d++) {
@@ -231,6 +242,7 @@ export function pulseOf(slots: SiteSlot<DailySeries>[], days: number, hidden: Se
   return {
     totals: { clicks, impressions, ctr: impressions > 0 ? clicks / impressions : 0 },
     series,
-    siteUrls
+    siteUrls,
+    siteErrors
   };
 }

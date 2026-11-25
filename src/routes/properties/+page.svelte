@@ -1048,6 +1048,20 @@
             bind:showEvents={showPulseEvents}
           />
         </div>
+        <!-- Sites missing from the chart. Without this the line just sits lower and says nothing. -->
+        {#if pulseState.data.errors.length > 0}
+          <div class="app-errors mx-3 mb-3">
+            <div class="app-errors-title">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="6" cy="6" r="5"/><path d="M6 3.5v3M6 8.5v.01"/></svg>
+              {t('Не попало в график')}
+            </div>
+            <ul class="ml-4 list-disc">
+              {#each pulseState.data.errors as e}
+                <li><span class="font-medium">{e.accountEmail}</span>: {e.reason}</li>
+              {/each}
+            </ul>
+          </div>
+        {/if}
       {/if}
     </section>
 

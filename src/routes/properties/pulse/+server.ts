@@ -16,7 +16,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
   if (!Number.isInteger(days) || days < 1 || days > 480) throw error(400, 'days 1..480');
 
   const { slots, accountErrors, status } = await portfolio.get(db(), { wait: false });
-  const { totals, series, siteUrls } = pulseOf(slots, days, new Set(listHiddenSites(db())));
+  const { totals, series, siteUrls, siteErrors } = pulseOf(slots, days, new Set(listHiddenSites(db())));
 
   // Annotations are decoration: an unreachable updates feed must not fail the chart.
   let updates: ReturnType<typeof updatesForChart> = [];
@@ -31,5 +31,5 @@ export const GET: RequestHandler = async ({ url, locals }) => {
   const hostSet = new Set(siteUrls.map(hostOfSite));
   const events = toChartEvents(listSiteEvents(db()).filter((e) => hostSet.has(e.siteHost)), series.map((r) => r.date));
 
-  return json({ totals, series, updates, events, errors: accountErrors, status });
+  return json({ totals, series, updates, events, errors: [...accountErrors, ...siteErrors], status });
 };

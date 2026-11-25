@@ -71,6 +71,7 @@ export const common = {
   'дней': 'days',
   'Своё число дней, до 480 (16 месяцев)': 'Custom number of days, up to 480 (16 months)',
   'Ошибки': 'Errors',
+  'Не попало в график': 'Missing from this chart',
   'нет данных': 'no data',
   'Действия': 'Actions'
 } as const;
