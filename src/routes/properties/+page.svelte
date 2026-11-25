@@ -1013,7 +1013,7 @@
     </div>
   </header>
   {#if refreshError}<p class="app-errors">{tx(refreshError)}</p>{/if}
-  <SnapshotStatus status={data.status} />
+  <SnapshotStatus status={data.status} schedule={data.schedule} />
 
   <div class="desk">
     <!-- Portfolio pulse — all domains combined, own period switcher, Google update bands. -->

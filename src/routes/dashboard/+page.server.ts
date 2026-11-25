@@ -1,3 +1,4 @@
+import { portfolioSchedule } from '$lib/server/portfolio-schedule';
 import { matchesSiteDomain, siteDomain } from '$lib/utils/site';
 import { paginate, parsePage } from '$lib/utils/paging';
 import { FAVS_COOKIE, parseFavs } from '$lib/utils/favs';
@@ -115,6 +116,7 @@ export const load: PageServerLoad = async ({ url, locals, cookies }) => {
     pageCount: paged.pageCount,
     total: paged.total,
     status,
+    schedule: portfolioSchedule(),
     errors: accountErrors,
     days,
     cols,

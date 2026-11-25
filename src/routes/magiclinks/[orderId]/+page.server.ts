@@ -1,4 +1,4 @@
-import { cachedMagicLinksClient, cachedMagic369Client } from '$lib/server/magiclinks-cache';
+import { cachedMagicLinksClient, cachedMagic369Client, cachedSaitamaClient } from '$lib/server/magiclinks-cache';
 import { syncPlacements, readChecks, latestJob, checkSummary } from '$lib/server/backlink-monitor';
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
@@ -7,7 +7,8 @@ import { requireAdmin } from '$lib/server/guard';
 import { MagicLinksError, type MagicLinksBilling } from '$lib/server/magiclinks';
 import { Magic369Error, type Magic369Progress } from '$lib/server/magic369';
 import { orderProvider, orderService } from '$lib/server/magiclinks-purchases';
-import { PROVIDER_FIELDLINK, PROVIDER_MAGIC369 } from '$lib/server/magiclinks-providers';
+import { SaitamaError, isSaitamaOrderId } from '$lib/server/saitamalinks';
+import { PROVIDER_FIELDLINK, PROVIDER_MAGIC369, PROVIDER_SAITAMALINKS } from '$lib/server/magiclinks-providers';
 
 // Литеры провайдера в kind обязаны остаться литерами: по ним шаблон выбирает,
 // какую таблицу показывать. Поэтому content типизирован явно, а не выведен.
@@ -48,8 +49,9 @@ interface FieldlinkOrderContent {
   }[];
 }
 
+// SaitamaLinks отдаёт заказ той же формы, что 369Team, — шаблон один на оба.
 interface Magic369OrderContent {
-  kind: 'magic369';
+  kind: 'magic369' | 'saitamalinks';
   order: {
     service: 'posts' | 'links';
     id: string;
@@ -73,19 +75,21 @@ interface Magic369OrderContent {
     failed: number;
   }[];
   articles: {
-    id: number;
+    id: number | string;
     targetUrl: string;
     anchor: string;
     title: string;
     language: string;
     publishedUrl: string;
     publishedAt: string | null;
+    indexation?: string;
   }[];
 }
 
 // Позиции одного заказа: что уже опубликовано, где, и что с индексацией.
 // Провайдер заказа берём из истории покупок; заказ, сделанный мимо хаба,
-// пробуем читать сначала у FieldLink, потом у 369Team. Ошибки провайдеров
+// пробуем читать сначала у FieldLink, потом у 369Team, потом у SaitamaLinks
+// (у него id только UUID). Ошибки провайдеров
 // доходят сюда сырыми: только здесь 404 одного превращается в попытку у
 // другого, а всё остальное — в понятный HttpError.
 export const load: PageServerLoad = async ({ locals, params, url }) => {
@@ -93,20 +97,30 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
   const known = orderProvider(db(), params.orderId);
 
   try {
+    if (known === PROVIDER_SAITAMALINKS) return await loadSaitama(params.orderId, url);
     if (known === PROVIDER_MAGIC369) return await loadMagic369(params.orderId, url);
     return await loadFieldlink(params.orderId, url);
   } catch (e) {
-    if (known === null && isFirstNotFound(e)) return await loadMagic369(params.orderId, url);
+    if (known !== null || !isNotFound(e)) throw finalize(e);
+  }
+  try {
+    return await loadMagic369(params.orderId, url);
+  } catch (e) {
+    if (!isNotFound(e) || !isSaitamaOrderId(params.orderId)) throw finalize(e);
+  }
+  try {
+    return await loadSaitama(params.orderId, url);
+  } catch (e) {
     throw finalize(e);
   }
 };
 
-function isFirstNotFound(e: unknown): boolean {
-  return e instanceof MagicLinksError && e.status === 404;
+function isNotFound(e: unknown): boolean {
+  return (e instanceof MagicLinksError || e instanceof Magic369Error || e instanceof SaitamaError) && e.status === 404;
 }
 
 function finalize(e: unknown): never {
-  if (e instanceof MagicLinksError || e instanceof Magic369Error) {
+  if (e instanceof MagicLinksError || e instanceof Magic369Error || e instanceof SaitamaError) {
     throw error(e.status === 404 ? 404 : 502, e.message);
   }
   throw error(502, 'Сервис покупок не ответил');
@@ -232,5 +246,53 @@ async function loadMagic369(orderId: string, url: URL) {
   } catch (e) {
     if (e instanceof Magic369Error) throw e;
     throw new Magic369Error(502, 'UNREACHABLE', '369Team не ответил');
+  }
+}
+
+async function loadSaitama(orderId: string, url: URL) {
+  const client = cachedSaitamaClient(db(), false, true);
+  if (!client) throw new SaitamaError(404, 'NO_TOKEN', 'Ключ SaitamaLinks не задан');
+  try {
+    const order = await client.order(orderId);
+    const articles = await client.orderArticles(orderId);
+    const lang = new Map(order.items.map((it) => [`${it.url}\n${it.anchor}`, it.language]));
+    const filter = { targetUrl: url.searchParams.get('url') ?? '', query: url.searchParams.get('q') ?? '' };
+    const shown = filter.targetUrl || filter.query
+      ? articles.filter((a) => (!filter.targetUrl || a.url === filter.targetUrl) && (!filter.query || a.anchor === filter.query))
+      : articles;
+    const content: Magic369OrderContent = {
+      kind: PROVIDER_SAITAMALINKS,
+      order: {
+        service: 'posts',
+        id: order.id,
+        status: order.status,
+        createdAt: order.createdAt,
+        finalizedAt: order.finalizedAt,
+        priceMinor: order.priceMinor,
+        totalPriceMinor: order.totalPriceMinor,
+        refundedMinor: order.refundedMinor,
+        progress: order.progress
+      },
+      lines: order.items,
+      articles: shown.map((a) => ({
+        id: a.id,
+        targetUrl: a.url,
+        anchor: a.anchor,
+        title: a.title,
+        language: lang.get(`${a.url}\n${a.anchor}`) ?? '',
+        publishedUrl: a.publishedUrl,
+        publishedAt: a.publishedAt,
+        indexation: a.indexation
+      }))
+    };
+    syncPlacements(db(), PROVIDER_SAITAMALINKS, orderId, articles.map((a) => ({ provider: PROVIDER_SAITAMALINKS, orderId, placementId: a.id, sourceUrl: a.publishedUrl, targetUrl: a.url, expectedAnchor: a.anchor })));
+    const checks = readChecks(db(), PROVIDER_SAITAMALINKS, orderId);
+    return {
+      filter: filter.targetUrl || filter.query ? filter : null,
+      content, checks: Object.fromEntries(checks.map((c) => [c.placementId, c])), checkSummary: checkSummary(checks), checkJob: latestJob(db())
+    };
+  } catch (e) {
+    if (e instanceof SaitamaError) throw e;
+    throw new SaitamaError(502, 'UNREACHABLE', 'SaitamaLinks не ответил');
   }
 }

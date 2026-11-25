@@ -3,6 +3,7 @@
   import { invalidateAll } from '$app/navigation';
   import { onDestroy } from 'svelte';
   import LiveStamp from './LiveStamp.svelte';
+  import { stamp, fullStamp } from '$lib/utils/time';
 
   type Status = {
     state: 'cold' | 'ready';
@@ -13,7 +14,7 @@
     updatedAt: number | null;
     error: string | null;
   };
-  let { status }: { status: Status } = $props();
+  let { status, schedule = null }: { status: Status; schedule?: { hours: number; nextAt: number | null } | null } = $props();
 
   // While a pass runs the page re-reads its data: often while there is nothing
   // to show yet, now and then while old numbers are on screen. A failed reload
@@ -43,12 +44,17 @@
     <span class="pii">{t('Не удалось загрузить данные Search Console: {error}', { error: tx(status.error) })}</span>
     <button type="button" class="btn btn-ghost btn-sm" onclick={retry}>{t('Повторить')}</button>
   {:else if status.updatedAt}
-    <LiveStamp at={status.updatedAt} updating={status.refreshing} />
+    <LiveStamp at={status.updatedAt} updating={status.refreshing} full />
     {#if status.refreshing}
       <span class="loading">· {t('обновляется {done} из {total}', { done: fmtNum(status.done), total: status.total ? fmtNum(status.total) : '…' })}</span>
     {:else if status.error}
       <span class="badge badge-warn" title={tx(status.error)}>{t('последнее обновление не удалось')}</span>
       <button type="button" class="btn btn-ghost btn-sm" onclick={retry}>{t('Повторить')}</button>
     {/if}
+  {/if}
+  {#if schedule && !(status.state === 'cold' && status.refreshing)}
+    <span title={schedule.nextAt ? fullStamp(schedule.nextAt) : ''}>
+      · {t('автообновление каждые {n} ч', { n: fmtNum(schedule.hours) })}{#if schedule.nextAt && !status.refreshing}, {t('следующее')} <span class="app-num">{stamp(schedule.nextAt)}</span>{/if}
+    </span>
   {/if}
 </div>

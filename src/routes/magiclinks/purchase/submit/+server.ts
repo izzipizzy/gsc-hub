@@ -6,7 +6,8 @@ import { requireAdmin } from '$lib/server/guard';
 import { magicLinksClient, MagicLinksError, magicLinksErrorMessage, validateBrief, type MagicLinksBrief } from '$lib/server/magiclinks';
 import { magic369Client, languageNameFor, Magic369Error, validateMagic369Link, type Magic369LinkRow } from '$lib/server/magic369';
 import { recordPurchases, orderRecorded, type PurchaseInput } from '$lib/server/magiclinks-purchases';
-import { PROVIDER_FIELDLINK, PROVIDER_MAGIC369, isMagicProviderId } from '$lib/server/magiclinks-providers';
+import { saitamaClient, SaitamaError, validateSaitamaRows, amountMinorFor, saitamaIdempotencyKey, type SaitamaOrderRow } from '$lib/server/saitamalinks';
+import { PROVIDER_FIELDLINK, PROVIDER_MAGIC369, PROVIDER_SAITAMALINKS, isMagicProviderId } from '$lib/server/magiclinks-providers';
 
 function hostOf(url: string): string {
   try {
@@ -22,7 +23,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
   requireAdmin(locals);
 
   const body = (await request.json().catch(() => null)) as
-    | { provider?: string; taskId?: string; expectedMinor?: number; items?: unknown[]; service?: string }
+    | { provider?: string; taskId?: string; expectedMinor?: number; items?: unknown[]; service?: string; requestId?: string; indexation?: boolean }
     | null;
   const provider = isMagicProviderId(body?.provider) ? body.provider : PROVIDER_FIELDLINK;
   if (body?.provider !== undefined && !isMagicProviderId(body.provider)) throw error(400, 'Неизвестный провайдер');
@@ -31,6 +32,9 @@ export const POST: RequestHandler = async ({ locals, request }) => {
   const expectedMinor = Number(body?.expectedMinor);
 
   if (provider === PROVIDER_MAGIC369) return submitMagic369(body?.items ?? [], expectedMinor, service);
+  if (provider === PROVIDER_SAITAMALINKS) {
+    return submitSaitama(body?.items ?? [], expectedMinor, String(body?.requestId ?? ''), body?.indexation !== false);
+  }
   return submitFieldlink(String(body?.taskId ?? ''), expectedMinor);
 };
 
@@ -181,6 +185,92 @@ async function submitFieldlink(taskId: string, expectedMinor: number) {
       }
       if (e.status === 402) throw error(402, 'Не хватает доступных кредитов, заказ не создан');
       throw error(e.status >= 400 && e.status < 500 ? e.status : 502, magicLinksErrorMessage(e));
+    }
+    throw e;
+  }
+}
+
+// SaitamaLinks: одношаговый, как 369Team, но с Idempotency-Key. Ключ выводится
+// из попытки покупки (requestId окна) и состава, поэтому двойной клик и повтор
+// после обрыва возвращают тот же заказ без второго списания. Цена всё равно
+// перепроверяется перед отправкой: сумма на кнопке должна совпасть.
+async function submitSaitama(raw: unknown[], expectedMinor: number, attempt: string, indexation: boolean) {
+  const client = saitamaClient(db());
+  if (!client) throw error(400, 'Ключ SaitamaLinks не задан');
+  if (!/^[a-zA-Z0-9_-]{8,128}$/.test(attempt)) throw error(400, 'Некорректный ID покупки');
+  if (!Number.isInteger(expectedMinor) || expectedMinor < 0) throw error(400, 'Нет ожидаемой суммы');
+  let rows: SaitamaOrderRow[];
+  try {
+    rows = validateSaitamaRows(raw);
+  } catch (e) {
+    throw error(400, (e as Error).message);
+  }
+
+  try {
+    const balance = await client.balance();
+    const price = indexation ? balance.priceMicros : balance.priceNoIndexMicros;
+    if (!price || price <= 0) throw error(502, 'SaitamaLinks не вернул цену');
+    const total = rows.reduce((s, r) => s + r.count, 0);
+    const amountMinor = amountMinorFor(total, price);
+    const key = saitamaIdempotencyKey(attempt, rows, indexation);
+    if (amountMinor !== expectedMinor) {
+      throw error(409, 'Цена изменилась, пока шло подтверждение. Посчитай заново.');
+    }
+    // Баланс здесь не сверяем: при повторе уже оплаченной покупки он уже
+    // уменьшен, а сервис вернёт тот же заказ без списания. Нехватку на новом
+    // заказе сервис отдаёт сам (402).
+    const hosts = [...new Set(rows.map((r) => hostOf(r.url)).filter(Boolean))];
+    const created = await client.createOrder(rows, {
+      idempotencyKey: key,
+      indexation,
+      clientRef: `gsc-hub ${hosts.join(', ')}`
+    });
+
+    if (!orderRecorded(db(), created.orderId)) {
+      recordPurchases(
+        db(),
+        rows.map((r) => ({
+          siteHost: hostOf(r.url),
+          targetUrl: r.url,
+          query: r.anchor,
+          language: r.language,
+          quantity: r.count,
+          taskId: '',
+          orderId: created.orderId,
+          provider: PROVIDER_SAITAMALINKS,
+          service: 'posts' as const
+        }))
+      );
+    }
+
+    invalidateProviderCache(db());
+    return json({
+      provider: PROVIDER_SAITAMALINKS,
+      service: 'posts',
+      orderId: created.orderId,
+      replayed: created.replayed,
+      order: {
+        id: created.orderId,
+        status: created.status,
+        rowCount: created.totalCount,
+        amountMinor: created.totalPriceMinor,
+        balanceAfterMinor: created.balanceAfterMinor
+      }
+    });
+  } catch (e) {
+    if (e instanceof SaitamaError) {
+      if (e.code === 'insufficient_balance' || e.status === 402) {
+        throw error(402, 'Не хватает долларов на балансе SaitamaLinks, заказ не создан');
+      }
+      if (e.code === 'idempotency_conflict') {
+        throw error(409, 'Состав заказа изменился. Посчитай заново.');
+      }
+      if (e.status === 0) {
+        // Сеть оборвалась и после повторов: повтор той же покупки безопасен,
+        // ключ идемпотентности тот же.
+        throw error(504, 'SaitamaLinks не ответил. Повтори оплату - второй заказ не создастся.');
+      }
+      throw error(e.status >= 400 && e.status < 500 ? e.status : 502, e.message);
     }
     throw e;
   }

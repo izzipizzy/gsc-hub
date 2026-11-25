@@ -69,6 +69,11 @@ export function topStore(days: number): PortfolioStore<SiteTop> {
   return current.store;
 }
 
+/** Scheduled refresh of the window currently held, if any page asked for one. */
+export function refreshCurrentTop(db: Db): void {
+  current?.store.refreshNow(db);
+}
+
 export function invalidateTop(): void {
   current?.store.invalidate();
 }

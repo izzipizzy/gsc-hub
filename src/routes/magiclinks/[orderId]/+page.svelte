@@ -23,7 +23,7 @@
       ? 'badge-ok'
       : status === 'partially_completed'
         ? 'badge-warn'
-        : status === 'failed'
+        : status === 'failed' || status === 'cancelled'
           ? 'badge-bad'
           : 'badge-muted';
 
@@ -57,7 +57,16 @@
       : []
   );
   const published = $derived(filtered.filter((r) => r.url).length);
-  const articlesShown = $derived(data.content.kind === 'magic369' ? data.content.articles.length : 0);
+  const articlesShown = $derived(data.content.kind !== 'fieldlink' ? data.content.articles.length : 0);
+  const isSaitama = $derived(data.content.kind === 'saitamalinks');
+  // Индексация статьи SaitamaLinks — по статусу сервиса.
+  const saitamaIndex: Record<string, string> = {
+    pending: t('ждёт'),
+    submitted: t('отправлено'),
+    indexed: t('в индексе'),
+    not_indexed: t('нет в индексе'),
+    not_ordered: t('не заказана')
+  };
 </script>
 
 <svelte:head><title>{t('Заказ')} {data.content.order.id.slice(0, 8)} · {t('Меджики')}</title></svelte:head>
@@ -74,6 +83,7 @@
   </section>
 
   {#if data.content.kind === 'magic369'}<span class="badge badge-muted ml-2 align-middle">369Team</span>{/if}
+  {#if data.content.kind === 'saitamalinks'}<span class="badge badge-muted ml-2 align-middle">SaitamaLinks</span>{/if}
       </h1>
     </div>
     <div class="app-toolbar-right">
@@ -84,7 +94,7 @@
     </div>
   </header>
 
-  {#if data.content.kind === 'magic369'}
+  {#if data.content.kind !== 'fieldlink'}
     {@const order = data.content.order}
     {@const isLinks = order.service === 'links'}
     <section class="pane mb-3">
@@ -100,8 +110,8 @@
           {#if order.finalizedAt}<span>{t('· завершён')} <span class="app-num text-ink-3">{fmt(order.finalizedAt)}</span></span>{/if}
         </p>
         <p class="flex flex-wrap items-center gap-x-1.5 gap-y-1">
-          <span>{t('Оплата:')} <span class="app-num text-ink">{credits(order.totalPriceMinor)}</span> {t('ток.')}</span>
-          <span>{t('· цена размещения')} <span class="app-num text-ink">{credits(order.priceMinor)}</span></span>
+          <span>{t('Оплата:')} <span class="app-num text-ink">{credits(order.totalPriceMinor)}</span> {isSaitama ? '$' : t('ток.')}</span>
+          <span>{t('· цена размещения')} <span class="app-num text-ink">{isSaitama ? (order.priceMinor / 100).toFixed(3) : credits(order.priceMinor)}</span></span>
           {#if order.refundedMinor > 0}
             <span>· <span class="text-up">{t('возвращено')} <span class="app-num">{credits(order.refundedMinor)}</span></span></span>
           {/if}
@@ -153,7 +163,7 @@
         <div class="overflow-x-auto">
           <table class="app-table">
             <thead>
-              <tr><th>{t('опубликовано')}</th><th>{isLinks ? t('текст') : t('заголовок')}</th><th>{t('анкор')}</th><th>{t('акцептор')}</th><th>{isLinks ? t('донор') : t('статья')}</th><th>{t('проверка ссылки')}</th><th></th></tr>
+              <tr><th>{t('опубликовано')}</th><th>{isLinks ? t('текст') : t('заголовок')}</th><th>{t('анкор')}</th><th>{t('акцептор')}</th><th>{isLinks ? t('донор') : t('статья')}</th>{#if isSaitama}<th>{t('индексация')}</th>{/if}<th>{t('проверка ссылки')}</th><th></th></tr>
             </thead>
             <tbody>
               {#each data.content.articles as a (a.id)}
@@ -167,8 +177,9 @@
                       {host(a.publishedUrl)}
                     </a>
                   </td>
+                  {#if isSaitama}<td class="whitespace-nowrap text-ink-2">{saitamaIndex[a.indexation ?? ''] ?? a.indexation ?? '—'}</td>{/if}
                   <td><BacklinkStatus check={data.checks[String(a.id)]} /></td>
-                  <td><BacklinkRunner job={data.checkJob} provider="magic369" orderId={data.content.order.id} placementId={String(a.id)} compact /></td>
+                  <td><BacklinkRunner job={data.checkJob} provider={data.content.kind} orderId={data.content.order.id} placementId={String(a.id)} compact /></td>
                 </tr>
               {/each}
             </tbody>

@@ -1,5 +1,6 @@
 import { building } from '$app/environment';
 import { startBacklinkMonitor } from '$lib/server/backlink-monitor';
+import { startPortfolioSchedule } from '$lib/server/portfolio-schedule';
 import { sequence } from '@sveltejs/kit/hooks';
 import { handle as authHandle } from './auth';
 import { authGuard } from '$lib/server/guard';
@@ -23,4 +24,8 @@ const uiPrefs: Handle = async ({ event, resolve }) => {
 
 export const handle = sequence(authGuard, uiPrefs, authHandle);
 
-export const init = () => { if (!building) startBacklinkMonitor(); };
+export const init = () => {
+  if (building) return;
+  startBacklinkMonitor();
+  startPortfolioSchedule();
+};

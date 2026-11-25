@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import type { Db } from './db';
 import { magicLinksClient, getMagicLinksToken, getMagicLinksBase } from './magiclinks';
 import { magic369Client, getMagic369Token, getMagic369Base } from './magic369';
+import { saitamaClient, getSaitamaToken, getSaitamaBase } from './saitamalinks';
 const MINUTE = 60_000;
 const inflight = new WeakMap<Db, Map<string, Promise<unknown>>>();
 interface CacheRow { payload: string | null; fetched_at: number; expires_at: number; retry_after: number; error: string | null }
@@ -71,7 +72,7 @@ function cacheClient<T extends object>(database: Db, client: T | null, provider:
       return (...args: unknown[]) => {
         const ttl = (data: any) => {
           if (property === 'balance') return MINUTE;
-          if (property === 'order') return /^(completed|partial|partially_completed|failed)$/.test(data?.order?.status ?? data?.status ?? '') ? 6*60*MINUTE : 5*MINUTE;
+          if (property === 'order') return /^(completed|cancelled|partial|partially_completed|failed)$/.test(data?.order?.status ?? data?.status ?? '') ? 6*60*MINUTE : 5*MINUTE;
           if (property === 'orderArticles' || property === 'orderLinks' || property === 'taskRows') return 60*MINUTE;
           return 5*MINUTE;
         };
@@ -87,8 +88,21 @@ export function cachedMagicLinksClient(database: Db, force = false, swr = false)
 export function cachedMagic369Client(database: Db, force = false, swr = false) {
   return cacheClient(database, magic369Client(database), 'magic369', getMagic369Token(database), getMagic369Base(database), force, swr);
 }
+export function cachedSaitamaClient(database: Db, force = false, swr = false) {
+  return cacheClient(database, saitamaClient(database), 'saitamalinks', getSaitamaToken(database), getSaitamaBase(database), force, swr);
+}
+/** `refreshing`: provider reads are running now (the page polls until they finish). */
 export function providerCacheState(database: Db) {
   const row = database.prepare('SELECT MAX(fetched_at) AS at, SUM(CASE WHEN error IS NOT NULL THEN 1 ELSE 0 END) AS errors FROM magiclinks_read_cache').get() as { at: number | null; errors: number | null };
-  return { updatedAt: row.at, stale: (row.errors ?? 0) > 0 };
+  return { updatedAt: row.at, stale: (row.errors ?? 0) > 0, refreshing: (inflight.get(database)?.size ?? 0) > 0 };
 }
-export function invalidateProviderCache(database: Db) { database.prepare('DELETE FROM magiclinks_read_cache').run(); }
+/**
+ * Marks every cached answer expired instead of deleting it: the next page
+ * open shows the previous answers at once and refreshes them in the
+ * background (stale-while-revalidate). Deleting made that open wait for every
+ * order of every provider - minutes on a large account. Error back-offs are
+ * cleared too, so a fixed key is retried right away.
+ */
+export function invalidateProviderCache(database: Db) {
+  database.prepare('UPDATE magiclinks_read_cache SET expires_at = 0, retry_after = 0').run();
+}

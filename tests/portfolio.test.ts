@@ -141,6 +141,29 @@ describe('PortfolioStore', () => {
     expect((await store.get(db, { wait: false })).slots).toEqual([]);
   });
 
+  it('refreshNow starts a pass on a fresh store, keeps old values, and never doubles a running pass', async () => {
+    stubSites(['https://a.com/']);
+    let calls = 0;
+    const gate = deferred<void>();
+    const store = new PortfolioStore(async () => {
+      calls++;
+      if (calls === 2) await gate.promise;
+      return calls;
+    });
+    await store.get(db, { wait: true });
+    expect(calls).toBe(1);
+    expect(store.refreshNow(db)).toBe(true);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(store.refreshNow(db)).toBe(false);
+    const during = await store.get(db, { wait: false });
+    expect(during.slots[0].value).toBe(1);
+    expect(during.status.refreshing).toBe(true);
+    gate.resolve();
+    await store.settled();
+    expect(calls).toBe(2);
+    expect((await store.get(db, { wait: false })).slots[0].value).toBe(2);
+  });
+
   it('runs one more pass when invalidated during a pass', async () => {
     stubSites(['https://a.com/']);
     const gate = deferred<void>();

@@ -83,7 +83,7 @@ function purchaseEvents(db: Db): SiteEvent[] {
           orderHref: `/magiclinks/${encodeURIComponent(p.orderId)}`
         },
         quantity: 0,
-        provider: p.provider === 'magic369' ? '369Team' : 'FieldLink'
+        provider: p.provider === 'magic369' ? '369Team' : p.provider === 'saitamalinks' ? 'SaitamaLinks' : 'FieldLink'
       };
       groups.set(key, group);
     }

@@ -1,6 +1,6 @@
 import { saveBacklinkSnapshot, type BacklinkTotals } from './backlink-snapshots';
 import { db, type Db } from './db';
-import { cachedMagicLinksClient, cachedMagic369Client } from './magiclinks-cache';
+import { cachedMagicLinksClient, cachedMagic369Client, cachedSaitamaClient } from './magiclinks-cache';
 import { MAGIC_PROVIDER_IDS, isMagicProviderId } from './magiclinks-providers';
 import { orderService, listPurchases } from './magiclinks-purchases';
 import type { BacklinkResult } from './backlink-checker';
@@ -112,6 +112,7 @@ export function providerCheckTotals(rows: CheckRecord[]): BacklinkTotals {
 async function discover(database: Db, job: CheckJob, errors: string[]) {
   const field = cachedMagicLinksClient(database, !!job.automatic);
   const magic = cachedMagic369Client(database, !!job.automatic);
+  const saitama = cachedSaitamaClient(database, !!job.automatic);
   const orders = new Map<string, { provider: MagicProviderId; id: string }>();
   if (job.order_id && job.provider) orders.set(job.provider + ':' + job.order_id, { provider: job.provider, id: job.order_id });
   else {
@@ -139,6 +140,10 @@ async function discover(database: Db, job: CheckJob, errors: string[]) {
         const links = service === 'links' ? await magic.orderLinks(order.id) : await magic.orderArticles(order.id);
         placements = links.map((a) => ({ provider: 'magic369', orderId: order.id,
           placementId: String(a.id), sourceUrl: a.publishedUrl, targetUrl: a.url, expectedAnchor: a.anchor }));
+      } else if (order.provider === 'saitamalinks') {
+        if (!saitama) throw new Error('нет ключа SaitamaLinks');
+        placements = (await saitama.orderArticles(order.id)).map((a) => ({ provider: 'saitamalinks', orderId: order.id,
+          placementId: a.id, sourceUrl: a.publishedUrl, targetUrl: a.url, expectedAnchor: a.anchor }));
       } else { throw new Error('Для поставщика не подключён адаптер публикаций'); }
       syncPlacements(database, order.provider, order.id, placements);
     } catch (e) { errors.push(`${order.provider} · ${order.id}: ${(e as Error).message.slice(0, 200)}`); }

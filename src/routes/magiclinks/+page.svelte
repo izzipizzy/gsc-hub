@@ -7,6 +7,8 @@
   import BacklinkSummary from '$lib/components/BacklinkSummary.svelte';
   import { FIELDLINK_SIGNUP_URL, MAGIC369_CONTACT } from '$lib/utils/magiclinks-signup';
   import type { PageData, ActionData } from './$types';
+  import { invalidateAll } from '$app/navigation';
+  import { onDestroy } from 'svelte';
   let { data, form }: { data: PageData; form: ActionData } = $props();
 
   let liveDashboard = $state<BacklinkDashboard | null>(null);
@@ -20,11 +22,22 @@
   const badge = (status: string) =>
     status === 'completed'
       ? 'badge-ok'
-      : status === 'failed'
+      : status === 'failed' || status === 'cancelled'
         ? 'badge-bad'
         : status === 'partial' || status === 'partially_completed'
           ? 'badge-warn'
           : 'badge-muted';
+
+  // While provider reads run in the background the page re-reads its data
+  // every few seconds and stops by itself once they are done.
+  let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+  $effect(() => {
+    if (refreshTimer) clearTimeout(refreshTimer);
+    refreshTimer = null;
+    if (!data.providerCache.refreshing) return;
+    refreshTimer = setTimeout(() => invalidateAll().catch(() => undefined), 4_000);
+  });
+  onDestroy(() => { if (refreshTimer) clearTimeout(refreshTimer); });
 
   const providerName = $derived(Object.fromEntries(data.checkDashboard.providers.map((p) => [p.id, p.name])));
 
@@ -45,6 +58,9 @@
     </div>
     <div class="app-toolbar-right flex flex-col items-end gap-1">
       <form method="POST" action="?/refreshProviders"><button class="btn btn-sec btn-sm">{t('Обновить данные поставщиков')}</button></form>
+      {#if data.providerCache.refreshing}
+        <span class="loading text-xs text-ink-3" role="status" aria-live="polite">{t('Показаны данные из кеша, свежие подгружаются в фоне…')}</span>
+      {/if}
       {#if data.providerCache.updatedAt}<span class="text-xs text-ink-3">{t('Кеш:')} <span class="app-num">{dateTime(data.providerCache.updatedAt)}</span>{data.providerCache.stale ? t(' · есть ошибки обновления') : ''}</span>{/if}
     </div>
   </header>
@@ -60,6 +76,12 @@
   {/if}
   {#if form && 'cleared369' in form && form.cleared369}
     <p class="notice mb-4 border-warn/25 bg-warn-t text-warn">{t('Ключ 369Team убран из базы.')}</p>
+  {/if}
+  {#if form && 'savedSl' in form && form.savedSl}
+    <p class="notice mb-4 border-up/25 bg-up-t text-up">{t('Ключ SaitamaLinks сохранён.')}</p>
+  {/if}
+  {#if form && 'clearedSl' in form && form.clearedSl}
+    <p class="notice mb-4 border-warn/25 bg-warn-t text-warn">{t('Ключ SaitamaLinks убран из базы.')}</p>
   {/if}
   {#if form && 'imported' in form && form.imported}
     <p class="notice mb-4 border-up/25 bg-up-t text-up">
@@ -153,6 +175,7 @@
           {/if}
           <p class="border-t border-line-soft px-3 py-2 text-xs text-ink-3">
             {t('Статус')} <code class="font-mono">queued</code> {t('и')} <code class="font-mono">processing</code> {t('- это очередь, а не публикация. У FieldLink списываются только проверенные выполненные платные позиции, бонусные бесплатны; у 369Team деньги списываются при создании заказа. Индексацию FieldLink запускает сам, когда опубликованы все позиции заказа; у 369Team индексации в API нет.')}
+            {t('SaitamaLinks списывает доллары при создании заказа; статус индексации у каждой статьи - на странице заказа.')}
         </p>
         </section>
       {/if}
@@ -330,6 +353,67 @@
                 aria-label={t('ключ 369Team')}
                 class="input min-w-0 flex-1 font-mono"
               />
+              <button class="btn btn-pri">{t('Сохранить ключ')}</button>
+            </form>
+          {/if}
+        </div>
+      </section>
+      <section class="pane">
+        <div class="pane-head">{t('SaitamaLinks · третий провайдер')}
+          {#if data.sl.configured && data.sl.balance}
+            <span class="aside text-ink-2">{t('Баланс')} <b class="app-num text-ink">${credits(data.sl.balance.balanceMinor)}</b></span>
+          {/if}
+        </div>
+        <div class="pane-body flex flex-col gap-3 text-[12.5px] text-ink-2">
+          {#if data.sl.configured}
+            <p>
+              {t('Ключ')} <code class="pii font-mono text-[12px] text-ink">{data.sl.masked}</code>
+              {#if data.sl.testMode}<span class="badge badge-warn ml-1">{t('тестовый')}</span>{/if}
+              {#if data.sl.source === 'env'}
+                {t('задан переменной окружения')} <code class="font-mono text-[12px]">SAITAMALINKS_API_TOKEN</code> {t('- она главнее базы, и со страницы её не снять.')}
+              {:else}
+                {t('хранится в базе хаба.')}
+              {/if}
+              <br />API: <code class="pii break-all font-mono text-[12px] text-ink">{data.sl.base}</code>
+            </p>
+            {#if data.sl.balance}
+              <div class="grid grid-cols-2 gap-px overflow-hidden rounded-sm border border-line bg-line">
+                <div class="flex flex-col bg-pane px-2 py-1.5"><span class="stat-label">{t('Доступно, $')}</span><span class="stat-value">{credits(data.sl.balance.balanceMinor)}</span></div>
+                <div class="flex flex-col bg-pane px-2 py-1.5"><span class="stat-label">{t('Цена статьи, $')}</span><span class="stat-value">{(data.sl.balance.priceMicros / 1_000_000).toFixed(3)}</span></div>
+                <div class="flex flex-col bg-pane px-2 py-1.5"><span class="stat-label">{t('Без индексации, $')}</span><span class="stat-value">{data.sl.balance.priceNoIndexMicros != null ? (data.sl.balance.priceNoIndexMicros / 1_000_000).toFixed(3) : '—'}</span></div>
+                <div class="flex flex-col bg-pane px-2 py-1.5"><span class="stat-label">{t('Скидка')}</span><span class="stat-value">{data.sl.balance.discountPct}%</span></div>
+              </div>
+            {/if}
+            <p class="text-[11px] text-ink-3">
+              {t('Заказ одношаговый: оплата списывает доллары сразу. Повтор той же покупки не создаёт второй заказ. До 100 строк и 500 ссылок за заказ.')}
+            </p>
+            {#if data.sl.error}
+              <p class="notice notice-warn">{tx(data.sl.error)}</p>
+            {/if}
+            <details class="border-t border-line-soft pt-2">
+              <summary class="cursor-pointer text-ink-3 hover:text-ink">{t('Заменить или убрать ключ')}</summary>
+              <form method="POST" action="?/saveSaitamaToken" class="mt-2 flex flex-wrap items-end gap-2">
+                <input name="token" type="password" required autocomplete="off" placeholder="sl_live_…" aria-label={t('ключ SaitamaLinks')} class="input min-w-0 flex-1 font-mono" />
+                <button class="btn btn-pri">{t('Сохранить')}</button>
+              </form>
+              {#if data.sl.source === 'db'}
+                <form
+                  method="POST"
+                  action="?/clearSaitamaToken"
+                  class="mt-3"
+                  onsubmit={(e) => { if (!confirm(t('Убрать ключ SaitamaLinks из базы?'))) e.preventDefault(); }}
+                >
+                  <button class="btn btn-danger btn-sm">{t('Убрать ключ')}</button>
+                </form>
+              {/if}
+            </details>
+          {:else}
+            <p>
+              {t('Ключ создаётся в кабинете SaitamaLinks (Settings → API): sl_live_ - настоящие заказы, sl_test_ - тестовые без списаний. Хаб хранит его в своей базе и шлёт только на')}
+              <code class="pii break-all font-mono text-[12px] text-ink">{data.sl.base}</code>.
+            </p>
+            <form method="POST" action="?/saveSaitamaToken" class="flex flex-wrap items-end gap-2">
+              <input name="token" type="password" required autocomplete="off" placeholder="sl_live_…" aria-label={t('ключ SaitamaLinks')} class="input min-w-0 flex-1 font-mono" />
               <button class="btn btn-pri">{t('Сохранить ключ')}</button>
             </form>
           {/if}

@@ -1,4 +1,4 @@
-import { cachedMagicLinksClient, cachedMagic369Client, cachedProviderRead, providerCacheState, invalidateProviderCache } from '$lib/server/magiclinks-cache';
+import { cachedMagicLinksClient, cachedMagic369Client, cachedSaitamaClient, cachedProviderRead, providerCacheState, invalidateProviderCache } from '$lib/server/magiclinks-cache';
 import { readBacklinkDashboard } from '$lib/server/backlink-snapshots';
 import { backlinkSettings, validateProxy } from '$lib/server/backlink-fetch';
 import { setConfigValue, clearConfigValue } from '$lib/server/config';
@@ -7,7 +7,7 @@ import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { requireAdmin } from '$lib/server/guard';
-import { importOrderHistory, listPurchases } from '$lib/server/magiclinks-purchases';
+import { importOrderHistory, listPurchases, recordPurchases, orderRecorded } from '$lib/server/magiclinks-purchases';
 import {
   magicLinksTokenSource,
   getMagicLinksToken,
@@ -20,7 +20,19 @@ import {
   type MagicLinksBalance,
   type MagicLinksRow
 } from '$lib/server/magiclinks';
-import { PROVIDER_FIELDLINK, PROVIDER_MAGIC369, type MagicProviderId } from '$lib/server/magiclinks-providers';
+import { PROVIDER_FIELDLINK, PROVIDER_MAGIC369, PROVIDER_SAITAMALINKS, type MagicProviderId } from '$lib/server/magiclinks-providers';
+import {
+  saitamaTokenSource,
+  getSaitamaToken,
+  getSaitamaBase,
+  setSaitamaToken,
+  clearSaitamaToken,
+  looksLikeSaitamaToken,
+  SaitamaError,
+  type SaitamaBalance,
+  type SaitamaClient,
+  type SaitamaOrderListItem
+} from '$lib/server/saitamalinks';
 import {
   magic369TokenSource,
   getMagic369Token,
@@ -69,6 +81,32 @@ export const load: PageServerLoad = async ({ locals }) => {
         e instanceof Magic369Error
           ? `${e.message}${e.status === 401 ? ' (проверь ключ)' : ''}`
           : '369Team не ответил';
+    }
+  }
+
+  const tokenSl = getSaitamaToken(database);
+  const sl = {
+    configured: !!tokenSl,
+    source: saitamaTokenSource(database),
+    base: getSaitamaBase(database),
+    masked: tokenSl ? maskToken(tokenSl) : null,
+    testMode: !!tokenSl?.startsWith('sl_test_'),
+    balance: null as SaitamaBalance | null,
+    error: null as string | null
+  };
+  const clientSl = cachedSaitamaClient(database, false, true);
+  let ordersSl: SaitamaOrderListItem[] = [];
+  if (clientSl) {
+    try {
+      [sl.balance, ordersSl] = await Promise.all([clientSl.balance(), clientSl.listOrders()]);
+      // Заказы мимо хаба (кабинет, другой ключ) догоняются в историю покупок,
+      // чтобы striking знал о них; уже записанные не перечитываются.
+      await cachedProviderRead(database, 'saitamalinks:history-import', () => importSaitamaHistory(clientSl, ordersSl), 15 * 60_000, false, Date.now(), true);
+    } catch (e) {
+      sl.error =
+        e instanceof SaitamaError
+          ? `${e.message}${e.status === 401 || e.status === 403 ? ' (проверь ключ)' : ''}`
+          : 'SaitamaLinks не ответил';
     }
   }
 
@@ -179,6 +217,45 @@ export const load: PageServerLoad = async ({ locals }) => {
     });
   });
 
+  // Заказы SaitamaLinks: список приходит из API (с курсором), имя — сайты из
+  // истории покупок хаба, иначе client_ref заказа.
+  const hostsSl = new Map<string, Set<string>>();
+  for (const p of purchases) {
+    if (p.provider !== PROVIDER_SAITAMALINKS) continue;
+    const set = hostsSl.get(p.orderId) ?? new Set<string>();
+    set.add(p.siteHost);
+    hostsSl.set(p.orderId, set);
+  }
+  // Прогресс читаем только у открытых заказов: у закрытых он известен, а
+  // лимит сервиса — 60 запросов в минуту.
+  const liveSl = await Promise.all(
+    ordersSl.map((o) => (clientSl && (o.status === 'queued' || o.status === 'processing') ? clientSl.order(o.id).catch(() => null) : null))
+  );
+  ordersSl.forEach((o, i) => {
+    const live = liveSl[i];
+    const hosts = hostsSl.get(o.id);
+    orders.push({
+      provider: PROVIDER_SAITAMALINKS,
+      id: o.id,
+      code: o.id.slice(0, 8),
+      name: hosts ? [...hosts].join(', ') : o.clientRef,
+      type: 'posts',
+      createdAt: o.createdAt,
+      rowCount: live?.items.length ?? purchases.filter((p) => p.orderId === o.id).length,
+      placementCount: o.totalCount,
+      order: {
+        id: o.id,
+        status: live?.status ?? o.status,
+        rowCount: o.totalCount,
+        completedCount: live?.progress.published ?? (o.status === 'completed' ? o.totalCount : 0),
+        failedCount: 0,
+        held: false,
+        trashed: false
+      },
+      indexing: null
+    });
+  });
+
   orders.sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
 
   // Сколько заказов уже попало в историю покупок: по ним таблицы striking
@@ -195,6 +272,7 @@ export const load: PageServerLoad = async ({ locals }) => {
     error,
     purchasedOrders,
     m369,
+    sl,
     orders: orders.map((o) => ({ ...o, backlinks: checkSummary(checks.filter((c) => c.provider === o.provider && c.orderId === o.order?.id)) })),
     backlinkSettings: backlinkSettings(database),
     checkJob: latestJob(database),
@@ -203,6 +281,35 @@ export const load: PageServerLoad = async ({ locals }) => {
     providerCache: providerCacheState(database)
   };
 };
+
+/** История покупок по заказам SaitamaLinks, которых хаб ещё не видел. */
+async function importSaitamaHistory(client: SaitamaClient, list: SaitamaOrderListItem[]) {
+  const database = db();
+  let imported = 0;
+  // Не больше 20 за проход: лимит сервиса — 60 запросов в минуту на ключ.
+  for (const o of list.filter((o) => !orderRecorded(database, o.id)).slice(0, 20)) {
+    const order = await client.order(o.id);
+    const at = Date.parse(o.createdAt ?? '') || Date.now();
+    imported += recordPurchases(
+      database,
+      order.items
+        .map((it) => ({
+          siteHost: hostOfUrl(it.url),
+          targetUrl: it.url,
+          query: it.anchor,
+          language: it.language,
+          quantity: it.count,
+          taskId: '',
+          orderId: o.id,
+          provider: PROVIDER_SAITAMALINKS,
+          service: 'posts' as const
+        }))
+        .filter((r) => r.siteHost && r.quantity > 0),
+      at
+    );
+  }
+  return { imported };
+}
 
 interface IndexingSummary {
   inProgress: number;
@@ -300,6 +407,21 @@ export const actions: Actions = {
     clearMagicLinksToken(db());
     invalidateProviderCache(db());
     return { cleared: true };
+  },
+  saveSaitamaToken: async ({ request, locals }) => {
+    requireAdmin(locals);
+    const token = String((await request.formData()).get('token') ?? '').trim();
+    if (!token) return fail(400, { error: 'Пустой ключ SaitamaLinks' });
+    if (!looksLikeSaitamaToken(token)) return fail(400, { error: 'Ключ SaitamaLinks начинается с sl_live_ или sl_test_' });
+    setSaitamaToken(db(), token);
+    invalidateProviderCache(db());
+    return { savedSl: true };
+  },
+  clearSaitamaToken: async ({ locals }) => {
+    requireAdmin(locals);
+    clearSaitamaToken(db());
+    invalidateProviderCache(db());
+    return { clearedSl: true };
   },
   clear369Token: async ({ locals }) => {
     requireAdmin(locals);

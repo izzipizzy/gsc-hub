@@ -116,6 +116,17 @@ export class PortfolioStore<T> {
     if (this.run) this.rerun = true;
   }
 
+  /**
+   * Starts a pass now unless one is already running — the scheduled refresh.
+   * Old values stay on screen meanwhile, exactly as with a stale read.
+   */
+  refreshNow(db: Db): boolean {
+    if (this.run) return false;
+    this.stale = true;
+    this.ensureFresh(db);
+    return true;
+  }
+
   /** Forget everything — tests and account removal. */
   reset(): void {
     this.generation++;

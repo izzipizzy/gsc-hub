@@ -13,7 +13,8 @@ import {
   type MagicLinksLinkBrief
 } from '$lib/server/magiclinks';
 import { magic369Client, Magic369Error, validateMagic369Link } from '$lib/server/magic369';
-import { PROVIDER_FIELDLINK, PROVIDER_MAGIC369, isMagicProviderId, supportsMagicService } from '$lib/server/magiclinks-providers';
+import { saitamaClient, SaitamaError, validateSaitamaRows, amountMinorFor } from '$lib/server/saitamalinks';
+import { PROVIDER_FIELDLINK, PROVIDER_MAGIC369, PROVIDER_SAITAMALINKS, isMagicProviderId, supportsMagicService } from '$lib/server/magiclinks-providers';
 
 interface PurchaseItem {
   targetUrl: string;
@@ -49,7 +50,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
   requireAdmin(locals);
 
   const body = (await request.json().catch(() => null)) as
-    | { items?: PurchaseItem[]; name?: string; provider?: string; service?: string; requestId?: string }
+    | { items?: PurchaseItem[]; name?: string; provider?: string; service?: string; requestId?: string; indexation?: boolean }
     | null;
   const provider = isMagicProviderId(body?.provider) ? body.provider : PROVIDER_FIELDLINK;
   if (body?.provider !== undefined && !isMagicProviderId(body.provider)) throw error(400, 'Неизвестный провайдер');
@@ -82,6 +83,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
       throw e;
     }
   }
+  if (provider === PROVIDER_SAITAMALINKS) return quoteSaitama(body?.items, body?.indexation !== false);
   const items = parseItems(body?.items, service);
 
   const requested = items.reduce((s, b) => s + (b.count ?? 1), 0);
@@ -149,3 +151,44 @@ export const POST: RequestHandler = async ({ locals, request }) => {
     throw e;
   }
 };
+
+// SaitamaLinks: расчёта в API нет, как у 369Team, — считаем по цене с /balance.
+// Без индексации ссылка на $0.01 дешевле, цену для этого режима отдаёт сам сервис.
+async function quoteSaitama(raw: unknown, indexation: boolean) {
+  let rows;
+  try {
+    rows = validateSaitamaRows(raw);
+  } catch (e) {
+    throw error(400, (e as Error).message);
+  }
+  const client = saitamaClient(db());
+  if (!client) throw error(400, 'Ключ SaitamaLinks не задан');
+  try {
+    const balance = await client.balance();
+    const price = indexation ? balance.priceMicros : balance.priceNoIndexMicros;
+    if (!price || price <= 0) throw error(502, 'SaitamaLinks не вернул цену');
+    const requested = rows.reduce((s, r) => s + r.count, 0);
+    const amountMinor = amountMinorFor(requested, price);
+    return json({
+      provider: PROVIDER_SAITAMALINKS,
+      service: 'posts',
+      indexation,
+      requested,
+      rows: rows.length,
+      quote: {
+        placementCount: requested,
+        bonusCount: 0,
+        totalPlacementCount: requested,
+        amountMinor,
+        balanceMinor: balance.balanceMinor,
+        shortfallMinor: Math.max(0, amountMinor - balance.balanceMinor),
+        canSubmit: balance.balanceMinor >= amountMinor && requested > 0,
+        billed: true,
+        testMode: client.testMode
+      }
+    });
+  } catch (e) {
+    if (e instanceof SaitamaError) throw error(e.status === 401 || e.status === 403 ? 400 : 502, e.message);
+    throw e;
+  }
+}

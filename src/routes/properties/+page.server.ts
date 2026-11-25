@@ -1,3 +1,4 @@
+import { portfolioSchedule } from '$lib/server/portfolio-schedule';
 import type { PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { portfolio, summaryOf, type SummaryOf } from '$lib/server/portfolio';
@@ -138,6 +139,7 @@ export const load: PageServerLoad = async ({ url, locals }) => {
     pageCount: paged.pageCount,
     total: paged.total,
     status,
+    schedule: portfolioSchedule(),
     errors: accountErrors,
     queryFilters: listQueryFilters(db()),
     days,

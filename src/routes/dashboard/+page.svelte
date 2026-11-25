@@ -416,7 +416,7 @@
   {#if refreshError}<p class="app-errors">{tx(refreshError)}</p>{/if}
 
   <div class="mb-3"><SiteSearch /></div>
-  <SnapshotStatus status={data.status} />
+  <SnapshotStatus status={data.status} schedule={data.schedule} />
   {#if hideError}<p class="app-errors">{tx(hideError)}</p>{/if}
 
   <section class="pane mb-3 flex flex-wrap items-center gap-x-5 gap-y-1.5 px-3 py-2">

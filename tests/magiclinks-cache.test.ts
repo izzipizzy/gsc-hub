@@ -64,3 +64,25 @@ it('stale-while-revalidate still waits when nothing was ever read', async () => 
   expect(await cachedProviderRead(db,'first',load,60_000,false,Date.now(),true)).toEqual({rows:[1]});
   expect(load).toHaveBeenCalledOnce();
 });
+it('invalidation keeps answers: a page read returns them at once and refreshes in the background', async () => {
+  const load=vi.fn().mockResolvedValue({orders:[1]});
+  await cachedProviderRead(db,'list',load,3_600_000);
+  invalidateProviderCache(db);
+  let finish!: (v: object) => void;
+  load.mockImplementation(() => new Promise((r) => { finish = r; }));
+  expect(await cachedProviderRead(db,'list',load,3_600_000,false,Date.now(),true)).toEqual({orders:[1]});
+  expect(load).toHaveBeenCalledTimes(2);
+  expect(providerCacheState(db).refreshing).toBe(true);
+  finish({orders:[1,2]});
+  await vi.runAllTimersAsync();
+  expect(providerCacheState(db).refreshing).toBe(false);
+  expect(await cachedProviderRead(db,'list',load,3_600_000,false,Date.now(),true)).toEqual({orders:[1,2]});
+  expect(load).toHaveBeenCalledTimes(2);
+});
+it('invalidation clears an error back-off so a fixed key is retried at once', async () => {
+  const load=vi.fn().mockRejectedValue(new Error('401'));
+  await expect(cachedProviderRead(db,'bal',load,60_000)).rejects.toThrow('401');
+  invalidateProviderCache(db);
+  load.mockResolvedValue({balance:5});
+  expect(await cachedProviderRead(db,'bal',load,60_000)).toEqual({balance:5});
+});

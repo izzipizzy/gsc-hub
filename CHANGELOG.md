@@ -5,6 +5,48 @@ All notable changes to this project are documented here. Format loosely follows
 
 Русская версия — [CHANGELOG.ru.md](CHANGELOG.ru.md).
 
+## [0.12.0] - 2026-11-25
+
+### How to update / Как обновиться
+
+Back up SQLite, then:
+
+```bash
+git pull --ff-only
+docker compose up -d --build
+```
+
+No migrations. Optional: `PORTFOLIO_REFRESH_HOURS` sets the scheduled
+portfolio refresh interval in hours (default 3, `0` turns it off).
+
+### Added
+
+- **SaitamaLinks, a third MagicLinks provider** (article links, USD balance).
+  Enter the `sl_live_…` key on the MagicLinks page (`sl_test_…` keys place
+  test orders without charges). In the purchase window pick SaitamaLinks:
+  the price comes from your discount level, indexing is on by default and
+  turning it off makes a link $0.01 cheaper. Up to 100 rows and 500 links per
+  order. Pressing Pay twice or retrying after a dropped connection never
+  creates a second order. Orders show up in the common list (including ones
+  placed outside the hub), on the order page with each article's indexing
+  status, and in the six-column CSV; link checks and site events know the
+  new provider.
+- **Scheduled portfolio refresh.** Dashboard and Sites data is refreshed every
+  3 hours even when nobody opens them, and once shortly after start, so the
+  first visit after a restart finds fresh numbers. Refresh still works. The
+  status line shows the full date and time of the update and when the next
+  auto-refresh runs.
+
+### Changed
+
+- MagicLinks opens at once after a purchase, a saved key or Refresh provider
+  data: the cache is marked stale instead of being wiped, the page shows the
+  previous data, says that fresh data is loading in the background and
+  updates itself when it is done.
+- Dependencies updated to the latest stable versions (Svelte 5.59, Vite 8.3,
+  Vitest 5.1, better-sqlite3 13.2, pnpm 12.23, Remotion 4.0.547). SvelteKit 3
+  and TypeScript 7 are still held back, see `docs/DEPENDENCIES.md`.
+
 ## [0.11.0] - 2026-11-14
 
 ### How to update / Как обновиться

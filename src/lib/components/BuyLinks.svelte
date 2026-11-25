@@ -23,6 +23,7 @@
     balanceMinor: number | null;
     priceMinor: number | null;
     linkPriceMinor?: number | null;
+    priceNoIndexMinor?: number | null;
     error: string | null;
     services: ('posts' | 'links')[];
     linkTiers?: { id: string; traffic: string; priceMinor: number | null }[];
@@ -74,6 +75,9 @@
   let contentHint = $state('');
   let linkText = $state('');
   const is369Links = $derived(providerId === 'magic369' && service === 'links');
+  const isSaitama = $derived(providerId === 'saitamalinks');
+  // SaitamaLinks: индексация по умолчанию включена, без неё ссылка на $0.01 дешевле.
+  let indexation = $state(true);
   const needsLanguage = $derived(!is369Links);
   let requestId = $state('');
   let count = $state(5);
@@ -103,9 +107,16 @@
   const unit = $derived(provider?.unit ?? t('кр.'));
   const selectedTier = $derived(provider?.linkTiers?.find((t) => t.id === tier));
   const linkFieldsMissing = $derived(service === 'links' && !is369Links && (!selectedTier || !contentHint.trim()));
-  const priceMinor = $derived(service === 'links' ? (is369Links ? provider?.linkPriceMinor ?? null : selectedTier?.priceMinor ?? null) : provider?.priceMinor ?? null);
+  const priceMinor = $derived(
+    service === 'links'
+      ? (is369Links ? provider?.linkPriceMinor ?? null : selectedTier?.priceMinor ?? null)
+      : isSaitama && !indexation
+        ? provider?.priceNoIndexMinor ?? null
+        : provider?.priceMinor ?? null
+  );
+  const saitamaOverLimit = $derived(isSaitama && ((customSite ? 1 : rows.length) > 100 || requested > 500));
   const supportedServices = $derived(provider?.services ?? ['posts']);
-  const estimateMinor = $derived(priceMinor !== null ? requested * priceMinor : null);
+  const estimateMinor = $derived(priceMinor !== null ? Math.round(requested * priceMinor) : null);
 
   $effect(() => {
     loadProviders();
@@ -185,6 +196,7 @@
         provider: providerId,
         service,
         requestId,
+        ...(isSaitama ? { indexation } : {}),
         items: items.map((r) => ({
           targetUrl: r.targetUrl,
           query: r.query,
@@ -215,9 +227,11 @@
         provider: providerId,
         service,
         taskId,
+        requestId,
+        ...(isSaitama ? { indexation } : {}),
         expectedMinor: quote.amountMinor,
         items:
-          providerId === 'magic369'
+          providerId === 'magic369' || isSaitama
             ? quotedRows.map((r) => ({
                 targetUrl: r.targetUrl,
                 query: r.query,
@@ -310,6 +324,8 @@
           <p class="text-xs text-ink-3">
             {#if p.id === 'magic369'}
               {p.name}{t(': нет ключа - пиши в Telegram')} <a class="text-acc hover:underline" href={MAGIC369_CONTACT.url} target="_blank" rel="noopener">{MAGIC369_CONTACT.handle}</a>.
+            {:else if p.id === 'saitamalinks'}
+              {p.name}{t(': нет ключа - ключ из кабинета SaitamaLinks вводится в разделе «Меджики».')}
             {:else}
               {p.name}{t(': нет ключа -')} <a class="text-acc hover:underline" href={FIELDLINK_SIGNUP_URL} target="_blank" rel="noopener">{t('регистрация')}</a>{t(', ключ потом в разделе «Меджики».')}
             {/if}
@@ -357,6 +373,17 @@
         </label>
       {:else if providerId === 'fieldlink'}
         <p class="text-[11px] text-ink-3">{t('Тема каждой статьи определяется автоматически по URL, анкору и ключевым словам.')}</p>
+      {:else if isSaitama}
+        <label class="flex items-start gap-2">
+          <input type="checkbox" class="mt-0.5" bind:checked={indexation} onchange={resetQuote} disabled={step === 'quote' || busy} />
+          <span class="flex flex-col gap-0.5">
+            <span class="text-ink">{t('Индексация статей')}</span>
+            <span class="text-[11px] text-ink-3">{t('Сервис отправит статьи на индексацию. Без неё ссылка на $0.01 дешевле, а заказ закрывается сразу после публикации.')}</span>
+          </span>
+        </label>
+        {#if saitamaOverLimit}
+          <p class="text-xs text-warn">{t('SaitamaLinks принимает до 100 строк и 500 ссылок за заказ: уменьши выделение или количество.')}</p>
+        {/if}
       {/if}
 
       {#if !customSite}
@@ -457,7 +484,7 @@
           <button
             type="button"
             class="btn btn-sec w-full"
-            disabled={busy || (!customSite && rows.length === 0) || !Number.isInteger(count) || count < 1 || count > 250 || missingLang.length > 0 || !providerId || linkFieldsMissing}
+            disabled={busy || (!customSite && rows.length === 0) || !Number.isInteger(count) || count < 1 || count > 250 || missingLang.length > 0 || !providerId || linkFieldsMissing || saitamaOverLimit}
             onclick={getQuote}
           >{busy ? t('Считаю…') : t('Посчитать цену')}</button>
         {:else if quote}
@@ -483,13 +510,15 @@
 
       <p class="text-[11px] text-ink-3">
         {#if step === 'form'}
-          {#if providerId === 'magic369'}
+          {#if providerId === 'magic369' || isSaitama}
             {t('Расчёт по текущей цене сервиса. Оплата создаст заказ сразу: деньги списываются в момент создания, отменить нельзя.')}
           {:else}
             {t('Денег не тратит: сохраняет задание в сервисе и показывает точную сумму от него. Запуск и оплата — на следующем шаге, по кнопке с суммой.')}
           {/if}
         {:else if providerId === 'magic369'}
           {t('Вот это уже платит: заказ уходит сразу, токены списываются в момент создания.')}
+        {:else if isSaitama}
+          {t('Вот это уже платит: заказ уходит сразу, доллары списываются в момент создания. Повторное нажатие не создаст второй заказ.')}
         {:else}
           {t('Запускает размещение по подтверждённой стоимости. Сервис применит схему оплаты этого заказа; состояние оплаты видно в его деталях.')}
         {/if}
